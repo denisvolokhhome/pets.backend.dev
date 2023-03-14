@@ -2,6 +2,8 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\PetsController;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -17,3 +19,11 @@ use Illuminate\Support\Facades\Route;
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
+
+
+Route::resource('pets', "App\Http\Controllers\PetsController");
+Route::post('pets/imageUpload', [PetsController::class, 'uploadImage'])->name('pets.imageUpload');
+
+Route::resource('litters', "App\Http\Controllers\LittersController");
+Route::resource('breeds', "App\Http\Controllers\BreedsController");
+
