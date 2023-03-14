@@ -24,6 +24,18 @@ class PetsController extends Controller
 
     }
 
+    public function show($id)
+    {
+        $pets = Pets::where('id', $id)->get();
+
+
+        // Json Response
+        return response()->json([
+            'pets' => $pets
+        ], 200);
+
+    }
+
     public function store(Request $request)
     {
 
@@ -144,7 +156,6 @@ class PetsController extends Controller
                     }else{
                         $request['error'] = $imageUpload->original['0'];
                     }
-
             }else{
                 $request['image_path'] = Pets::where('id', $request->id)->pluck('image')[0];
             }
