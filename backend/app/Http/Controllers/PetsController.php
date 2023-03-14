@@ -6,6 +6,7 @@ use App\Models\Pets;
 use App\Models\Breeds;
 use App\Models\Locations;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use DB;
 
 
@@ -40,7 +41,15 @@ class PetsController extends Controller
             $request['breed_id'] = $breed_id[0];
             $request['location_id'] = $location_id[0];
 
+            $imageUpload = $this->uploadImage($request);
+            if( $imageUpload->status() === 200){
+                $request['image_path'] = $imageUpload->original['path'];
+                $request['error'] = $imageUpload->original['0'];
 
+
+            }else{
+                $request['error'] = $imageUpload->original['0'];
+            }
 
             // Create a pet
             Pets::create([
@@ -51,19 +60,21 @@ class PetsController extends Controller
                 'weight' => $request->weight,
                 'location_id' => $request->location_id,
                 'description' => $request->description,
-                'image' => $request->image,
+                'image' => $request->image_path,
                 'is_puppy' => $request->is_puppy,
                 'litter_id' => $request->litter_id,
                 'has_microchip' => $request->has_microchip,
                 'has_vaccination' => $request->has_vaccination,
                 'has_healthcertificate' => $request->has_healthcertificate,
                 'has_dewormed' => $request->has_dewormed,
-                'has_birthcertificate' => $request->has_birthcertificate
+                'has_birthcertificate' => $request->has_birthcertificate,
+                'error' => $request->error
             ]);
 
             // Return Json Response
             return response()->json([
-                'message' => "A new pet has been added"
+                'message' => "A new pet has been added",
+                'image upload status' => $request['error']
             ], 200);
         } catch (\Exception $e) {
             // Return Json Response
@@ -76,9 +87,12 @@ class PetsController extends Controller
 
     public function uploadImage(Request $request)
     {
+
+
         if(!$request->hasFile('image')) {
             return response()->json(['upload_file_not_found'], 400);
         }
+
 
         $allowedfileExtension=['pdf','jpg','png'];
         $file = $request->file('image');
@@ -90,21 +104,18 @@ class PetsController extends Controller
         if($check) {
 
 
-                $path = $request->image->store('public/images');
-                $name = $request->image->getClientOriginalName();
+            $path = Storage::putFile('image', $request->image);
+            return response()->json([
+                'path' => $path,
+                'image successfully uploaded' ,
 
-                //store image file into directory and db
-                $save = new Image();
-                $save->title = $name;
-                $save->path = $path;
-                $save->save();
+            ], 200);
 
 
         } else {
             return response()->json(['invalid_file_format'], 422);
         }
 
-        return response()->json(['file_uploaded'], 200);
 
     }
 
