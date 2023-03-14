@@ -23,6 +23,8 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 
 Route::resource('pets', "App\Http\Controllers\PetsController");
 Route::post('pets/imageUpload', [PetsController::class, 'uploadImage'])->name('pets.imageUpload');
+Route::post('pets/delete', [PetsController::class, 'markDeleted'])->name('pets.delete');
+
 
 Route::resource('litters', "App\Http\Controllers\LittersController");
 Route::resource('breeds', "App\Http\Controllers\BreedsController");

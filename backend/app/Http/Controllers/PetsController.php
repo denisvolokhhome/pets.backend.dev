@@ -94,7 +94,7 @@ class PetsController extends Controller
         }
 
 
-        $allowedfileExtension=['pdf','jpg','png'];
+        $allowedfileExtension=['jpg','png'];
         $file = $request->file('image');
         $errors = [];
 
@@ -113,26 +113,27 @@ class PetsController extends Controller
 
 
         } else {
-            return response()->json(['invalid_file_format'], 422);
+            return response()->json(['invalid_file_format, only this will work: png, jpg'], 422);
         }
 
 
     }
 
 
-    public function destroy($id)
+    public function markDeleted(Request $request)
     {
-
+        $id = $request->id;
         $pet = Pets::find($id);
         if (!$pet) {
             return response()->json([
                 'message' => 'Entry not found.'
             ], 404);
         }
-        $pet->delete();
+        Pets::where('id',$id)->update(['is_deleted'=>1]);
+
         // Return Json Response
         return response()->json([
-            'message' => 'Record ' . $id . ' deleted'
+            'message' => 'Record ' . $id . ' marked as deleted'
         ], 200);
     }
 
