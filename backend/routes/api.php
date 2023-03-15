@@ -3,6 +3,8 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\PetsController;
+use App\Http\Controllers\LocationsController;
+
 
 
 /*
@@ -24,6 +26,9 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 Route::resource('pets', "App\Http\Controllers\PetsController");
 Route::post('pets/imageUpload', [PetsController::class, 'uploadImage'])->name('pets.imageUpload');
 Route::post('pets/delete', [PetsController::class, 'markDeleted'])->name('pets.delete');
+
+//Locations
+Route::resource('locations', "App\Http\Controllers\LocationsController");
 
 
 Route::resource('litters', "App\Http\Controllers\LittersController");
