@@ -29,8 +29,7 @@ Route::post('pets/delete', [PetsController::class, 'markDeleted'])->name('pets.d
 
 //Locations
 Route::resource('locations', "App\Http\Controllers\LocationsController");
-
-
+//Litters
 Route::resource('litters', "App\Http\Controllers\LittersController");
 Route::resource('breeds', "App\Http\Controllers\BreedsController");
 
