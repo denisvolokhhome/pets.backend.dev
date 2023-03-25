@@ -67,4 +67,23 @@ class AuthController extends Controller
             'message' => 'logged out'
         ], 200);
     }
+
+    public function validateToken(Request $request){
+
+
+        if(auth('sanctum')->check()){
+            // auth()->user()->tokens()->delete();
+            return response()->json([
+                'message' => 'token exists'
+            ], 200);
+        }else{
+            return response()->json([
+                'message' => 'no token'
+            ], 400);
+        }
+
+        // $token = $user->createToken('ribluma_access_token')->plainTextToken;
+    }
+
+
 }

@@ -33,6 +33,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
 Route::post('/register', [AuthController::class, 'register'])->name('user.register');
 Route::post('/login', [AuthController::class, 'login'])->name('user.login');
+Route::get('/validatetoken', [AuthController::class, 'validatetoken'])->name('user.validatetoken');
 
 
 Route::resource('pets', "App\Http\Controllers\PetsController")->only(['update', 'create']);
