@@ -70,16 +70,14 @@ class AuthController extends Controller
 
     public function validateToken(Request $request){
 
+        //todo add token expiration date validation
+
 
         if(auth('sanctum')->check()){
             // auth()->user()->tokens()->delete();
-            return response()->json([
-                'message' => 'token exists'
-            ], 200);
+            return response()->json(true);
         }else{
-            return response()->json([
-                'message' => 'no token'
-            ], 400);
+            return response()->json(false);
         }
 
         // $token = $user->createToken('ribluma_access_token')->plainTextToken;
