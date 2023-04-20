@@ -74,13 +74,11 @@ class AuthController extends Controller
 
 
         if(auth('sanctum')->check()){
-            // auth()->user()->tokens()->delete();
             return response()->json(true);
         }else{
             return response()->json(false);
         }
 
-        // $token = $user->createToken('ribluma_access_token')->plainTextToken;
     }
 
 
