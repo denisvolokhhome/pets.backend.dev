@@ -28,6 +28,7 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('user.logout');
     Route::resource('pets', "App\Http\Controllers\PetsController")->only(['index', 'show']);
+    Route::get('pets/breeder', [PetsController::class, 'breeder'])->name('pets.breeder');
 
 });
 

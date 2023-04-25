@@ -24,7 +24,7 @@ class PetsController extends Controller
 
     }
 
-    public function breeder($id)
+    public function breeder(Request $id)
     {
         $pets = Pets::where('user_id', $id)->get();
 
