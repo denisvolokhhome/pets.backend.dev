@@ -24,6 +24,16 @@ class PetsController extends Controller
 
     }
 
+    public function breeder($id)
+    {
+        $pets = Pets::where('user_id', $id)->get();
+
+        // Json Response
+        return response()->json([
+            'pets' => $pets
+        ], 200);
+
+    }
     public function show($id)
     {
         $pets = Pets::where('id', $id)->get();
