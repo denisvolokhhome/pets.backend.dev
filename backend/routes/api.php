@@ -28,16 +28,17 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('user.logout');
     Route::resource('pets', "App\Http\Controllers\PetsController")->only(['index', 'show']);
-    Route::get('pets/breeder', [PetsController::class, 'breeder'])->name('pets.breeder');
 
 });
+
+Route::get('pets/breeder/{id}', [PetsController::class, 'breeder'])->name('pets.breeder');
 
 Route::post('/register', [AuthController::class, 'register'])->name('user.register');
 Route::post('/login', [AuthController::class, 'login'])->name('user.login');
 Route::get('/validatetoken', [AuthController::class, 'validatetoken'])->name('user.validatetoken');
 
 
-Route::resource('pets', "App\Http\Controllers\PetsController")->only(['update', 'create']);
+Route::resource('pets', "App\Http\Controllers\PetsController")->only(['update', 'store']);
 Route::post('pets/imageUpload', [PetsController::class, 'uploadImage'])->name('pets.imageUpload');
 Route::post('pets/delete', [PetsController::class, 'markDeleted'])->name('pets.delete');
 

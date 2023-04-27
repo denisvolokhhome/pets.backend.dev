@@ -24,14 +24,22 @@ class PetsController extends Controller
 
     }
 
-    public function breeder(Request $id)
+    public function breeder($id)
     {
         $pets = Pets::where('user_id', $id)->get();
 
         // Json Response
+        try {
         return response()->json([
-            'pets' => $pets
+            'pets' => $pets,
+            'id' => $id
         ], 200);
+        } catch (\Exception $e) {
+        // Return Json Response
+        return response()->json([
+            'message' => "Error getting pet " . $e,
+        ], 500);
+        }
 
     }
     public function show($id)
@@ -90,6 +98,7 @@ class PetsController extends Controller
                 'has_healthcertificate' => $request->has_healthcertificate,
                 'has_dewormed' => $request->has_dewormed,
                 'has_birthcertificate' => $request->has_birthcertificate,
+                'user_id'=> $request->id,
                 'error' => $request->error
             ]);
 
@@ -101,7 +110,7 @@ class PetsController extends Controller
         } catch (\Exception $e) {
             // Return Json Response
             return response()->json([
-                'message' => "Error adding pet" . $e
+                'message' => "Error adding pet " . $e,
             ], 500);
         }
     }
