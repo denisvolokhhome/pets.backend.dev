@@ -26,19 +26,23 @@ class PetsController extends Controller
 
     public function breeder($id)
     {
-        $pets = Pets::where('user_id', $id)->get();
+        $pets = Pets::where('user_id', $id)
+            ->join('locations', 'pets.location_id', '=', 'locations.id')
+            ->join('breeds', 'pets.breed_id', '=', 'breeds.id')
+            ->get(['pets.id AS pet_id', 'pets.created_at', 'pets.updated_at', 'pets.name AS pet_name', 'breeds.name AS breed_name','pets.date_of_birth AS pet_dob','pets.gender', 'pets.weight', 'locations.name AS location_name', 'locations.address1', 'locations.address2', 'locations.city', 'locations.country', 'locations.state', 'pets.description AS pet_desc', 'pets.image', 'pets.is_puppy']);
 
         // Json Response
         try {
-        return response()->json([
-            'pets' => $pets,
-            'id' => $id
-        ], 200);
+            return response()->json([
+                'pets' => $pets,
+                'id' => $id
+            ], 200);
+
         } catch (\Exception $e) {
         // Return Json Response
-        return response()->json([
-            'message' => "Error getting pet " . $e,
-        ], 500);
+            return response()->json([
+                'message' => "Error getting pet " . $e,
+            ], 500);
         }
 
     }
@@ -60,7 +64,7 @@ class PetsController extends Controller
         try {
 
             $breed_id = DB::table('breeds')
-                ->where('code' , '=', $request->breed_code)
+                ->where('name' , '=', $request->breed_name)
                 ->pluck('id');
 
             $location_id = DB::table('locations')
