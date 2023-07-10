@@ -33,10 +33,7 @@ class PetsController extends Controller
 
         // Json Response
         try {
-            return response()->json([
-                'pets' => $pets,
-                'id' => $id
-            ], 200);
+            return response()->json($pets);
 
         } catch (\Exception $e) {
         // Return Json Response
