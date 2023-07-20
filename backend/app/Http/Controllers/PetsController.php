@@ -26,7 +26,7 @@ class PetsController extends Controller
 
     public function breeder($id)
     {
-        $pets = Pets::where('user_id', $id)
+        $pets = Pets::where('pets.user_id', $id)
             ->join('locations', 'pets.location_id', '=', 'locations.id')
             ->join('breeds', 'pets.breed_id', '=', 'breeds.id')
             ->get(['pets.id AS pet_id', 'pets.created_at', 'pets.updated_at', 'pets.name AS pet_name', 'breeds.name AS breed_name','pets.date_of_birth AS pet_dob','pets.gender', 'pets.weight', 'locations.name AS location_name', 'locations.address1', 'locations.address2', 'locations.city', 'locations.country', 'locations.state', 'pets.description AS pet_desc', 'pets.image', 'pets.is_puppy']);

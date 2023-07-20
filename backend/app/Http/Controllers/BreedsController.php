@@ -10,12 +10,8 @@ class BreedsController extends Controller
     public function index()
     {
         $breeds = Breeds::all();
-
-
         // Json Response
-        return response()->json([
-            'breeds' => $breeds
-        ], 200);
+        return response()->json($breeds);
 
     }
 }

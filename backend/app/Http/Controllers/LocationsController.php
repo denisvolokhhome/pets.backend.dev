@@ -17,15 +17,12 @@ class LocationsController extends Controller
 
     }
 
-    public function show($id)
+    public function show($user_id)
     {
-        $locations = Locations::where('id', $id)->get();
 
-
+        $locations = Locations::where('user_id', $user_id)->get();
         // Json Response
-        return response()->json([
-            'locations' => $locations
-        ], 200);
+        return response()->json($locations);
 
     }
 
