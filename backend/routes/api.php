@@ -20,6 +20,7 @@ use App\Http\Controllers\LocationsController;
 |
 */
 
+
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
@@ -29,6 +30,23 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('user.logout');
     Route::resource('pets', "App\Http\Controllers\PetsController")->only(['index', 'show']);
 
+
+});
+
+//Move this to controller!!!
+Route::get('images/{filename}', function ($filename)
+{
+    $path = 'storage/'. env('IMG_VIRTUAL_FILE_PATH') . $filename;
+
+    if(!File::exists($path)) abort(404);
+
+    $file = File::get($path);
+    $type = File::mimeType($path);
+
+    $response = Response::make($file, 200);
+    $response->header("Content-Type", $type);
+
+    return $response;
 });
 
 Route::get('pets/breeder/{id}', [PetsController::class, 'breeder'])->name('pets.breeder');

@@ -29,7 +29,7 @@ class PetsController extends Controller
         $pets = Pets::where('pets.user_id', $id)
             ->join('locations', 'pets.location_id', '=', 'locations.id')
             ->join('breeds', 'pets.breed_id', '=', 'breeds.id')
-            ->get(['pets.id AS pet_id', 'pets.created_at', 'pets.updated_at', 'pets.name AS pet_name', 'breeds.name AS breed_name','pets.date_of_birth AS pet_dob','pets.gender', 'pets.weight', 'locations.name AS location_name', 'locations.address1', 'locations.address2', 'locations.city', 'locations.country', 'locations.state', 'pets.description AS pet_desc', 'pets.image', 'pets.is_puppy']);
+            ->get(['pets.id AS pet_id', 'pets.created_at', 'pets.updated_at', 'pets.name AS pet_name', 'breeds.name AS breed_name','pets.date_of_birth AS pet_dob','pets.gender', 'pets.weight', 'locations.name AS location_name', 'locations.address1', 'locations.address2', 'locations.city', 'locations.country', 'locations.state', 'pets.description AS pet_desc', 'pets.image_path', 'pets.is_puppy']);
 
         // Json Response
         try {
@@ -75,6 +75,7 @@ class PetsController extends Controller
             $imageUpload = $this->uploadImage($request);
             if( $imageUpload->status() === 200){
                 $request['image_path'] = $imageUpload->original['path'];
+                $request['image_name'] = $imageUpload->original['fileName'];
                 $request['error'] = $imageUpload->original['0'];
 
 
@@ -91,7 +92,8 @@ class PetsController extends Controller
                 'weight' => $request->weight,
                 'location_id' => $request->location_id,
                 'description' => $request->description,
-                'image' => $request->image_path,
+                'image_path' => $request->image_path,
+                'image_name' => $request->image_name,
                 'is_puppy' => $request->is_puppy,
                 'litter_id' => $request->litter_id,
                 'has_microchip' => $request->has_microchip,
@@ -125,6 +127,9 @@ class PetsController extends Controller
             return response()->json(['upload_file_not_found'], 400);
         }
 
+        if($request->file('image')->getSize()/1000 > env('IMG_MAX_FILE_SIZE')){
+            return response()->json(['uploaded file size is ' . $request->file('image')->getSize()/1000 . 'KB, which is bigger then allowed: '.  env('IMG_MAX_FILE_SIZE') . 'Kb and was not uploaded'], 400);
+        }
 
         $allowedfileExtension=['jpg','png'];
         $file = $request->file('image');
@@ -135,10 +140,15 @@ class PetsController extends Controller
 
         if($check) {
 
+            //save the file to local storage
+            Storage::putFile(env('IMG_PHYSICAL_FILE_PATH'), $request->image);
 
-            $path = Storage::putFile('image', $request->image);
+            // generate pretty file name path
+            $path = env('IMG_VIRTUAL_FILE_PATH').$request->image->hashName();
+
             return response()->json([
                 'path' => $path,
+                'fileName' => $request->image->getClientOriginalName(),
                 'image successfully uploaded' ,
 
             ], 200);
