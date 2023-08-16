@@ -56,10 +56,10 @@ Route::post('/login', [AuthController::class, 'login'])->name('user.login');
 Route::get('/validatetoken', [AuthController::class, 'validatetoken'])->name('user.validatetoken');
 
 
-Route::resource('pets', "App\Http\Controllers\PetsController")->only(['update', 'store']);
-Route::post('pets/imageUpload', [PetsController::class, 'uploadImage'])->name('pets.imageUpload');
-Route::post('pets/delete', [PetsController::class, 'markDeleted'])->name('pets.delete');
 
+Route::get('pets/imageUpload', [PetsController::class, 'uploadImage'])->name('pets.imageUpload');
+Route::post('pets/delete', [PetsController::class, 'markDeleted'])->name('pets.delete');
+Route::resource('pets', "App\Http\Controllers\PetsController")->only(['update', 'store']);
 //Locations
 Route::resource('locations', "App\Http\Controllers\LocationsController");
 //Litters

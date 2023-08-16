@@ -7,11 +7,21 @@ use App\Models\Breeds;
 use App\Models\Locations;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use App\Services\FileService;
+use Illuminate\Support\Facades\Log;
 use DB;
 
 
 class PetsController extends Controller
 {
+
+    private FileService $FileService;
+
+    public function __construct(FileService $FileService)
+    {
+        $this->FileService = $FileService;
+    }
+
     public function index()
     {
         $pets = Pets::all();
@@ -29,7 +39,7 @@ class PetsController extends Controller
         $pets = Pets::where('pets.user_id', $id)
             ->join('locations', 'pets.location_id', '=', 'locations.id')
             ->join('breeds', 'pets.breed_id', '=', 'breeds.id')
-            ->get(['pets.id AS pet_id', 'pets.created_at', 'pets.updated_at', 'pets.name AS pet_name', 'breeds.name AS breed_name','pets.date_of_birth AS pet_dob','pets.gender', 'pets.weight', 'locations.name AS location_name', 'locations.address1', 'locations.address2', 'locations.city', 'locations.country', 'locations.state', 'pets.description AS pet_desc', 'pets.image_path', 'pets.is_puppy']);
+            ->get(['pets.id AS pet_id', 'pets.created_at', 'pets.updated_at', 'pets.name AS name', 'breeds.name AS breed_name','pets.date_of_birth AS date_of_birth','pets.gender', 'pets.weight', 'locations.name AS location_name', 'locations.address1', 'locations.address2', 'locations.city', 'locations.country', 'locations.state', 'pets.description AS description', 'pets.image_path', 'pets.is_puppy']);
 
         // Json Response
         try {
@@ -43,6 +53,7 @@ class PetsController extends Controller
         }
 
     }
+
     public function show($id)
     {
         $pets = Pets::where('id', $id)->get();
@@ -72,7 +83,7 @@ class PetsController extends Controller
             $request['breed_id'] = $breed_id[0];
             $request['location_id'] = $location_id[0];
 
-            $imageUpload = $this->uploadImage($request);
+            $imageUpload = $this->FileService->uploadImage($request);
             if( $imageUpload->status() === 200){
                 $request['image_path'] = $imageUpload->original['path'];
                 $request['image_name'] = $imageUpload->original['fileName'];
@@ -106,59 +117,13 @@ class PetsController extends Controller
             ]);
 
             // Return Json Response
-            return response()->json([
-                'message' => "A new pet has been added",
-                'image upload status' => $request['error']
-            ], 200);
+            return response()->json($request);
         } catch (\Exception $e) {
             // Return Json Response
             return response()->json([
                 'message' => "Error adding pet " . $e,
             ], 500);
         }
-    }
-
-
-    public function uploadImage(Request $request)
-    {
-
-
-        if(!$request->hasFile('image')) {
-            return response()->json(['upload_file_not_found'], 400);
-        }
-
-        if($request->file('image')->getSize()/1000 > env('IMG_MAX_FILE_SIZE')){
-            return response()->json(['uploaded file size is ' . $request->file('image')->getSize()/1000 . 'KB, which is bigger then allowed: '.  env('IMG_MAX_FILE_SIZE') . 'Kb and was not uploaded'], 400);
-        }
-
-        $allowedfileExtension=['jpg','png'];
-        $file = $request->file('image');
-        $errors = [];
-
-        $extension = $file->getClientOriginalExtension();
-        $check = in_array($extension,$allowedfileExtension);
-
-        if($check) {
-
-            //save the file to local storage
-            Storage::putFile(env('IMG_PHYSICAL_FILE_PATH'), $request->image);
-
-            // generate pretty file name path
-            $path = env('IMG_VIRTUAL_FILE_PATH').$request->image->hashName();
-
-            return response()->json([
-                'path' => $path,
-                'fileName' => $request->image->getClientOriginalName(),
-                'image successfully uploaded' ,
-
-            ], 200);
-
-
-        } else {
-            return response()->json(['invalid_file_format, only this will work: png, jpg'], 422);
-        }
-
-
     }
 
 
@@ -179,10 +144,14 @@ class PetsController extends Controller
 
 
             $imageUpload = $this->uploadImage($request);
+            Log::debug("test");
             if ($imageUpload){
                     if( $imageUpload->status() === 200){
                         $request['image_path'] = $imageUpload->original['path'];
                         $request['error'] = $imageUpload->original['0'];
+                        Log::info('Showing the user profile for user: ');
+
+
                     }else{
                         $request['error'] = $imageUpload->original['0'];
                     }
@@ -212,7 +181,7 @@ class PetsController extends Controller
 
             // Return Json Response
             return response()->json([
-                'message' => "A new pet has been added",
+                'message' => "Pet record was updated",
                 'image upload status' => $request['error']
             ], 200);
         } catch (\Exception $e) {
