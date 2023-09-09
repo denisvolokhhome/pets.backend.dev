@@ -83,15 +83,24 @@ class PetsController extends Controller
             $request['breed_id'] = $breed_id[0];
             $request['location_id'] = $location_id[0];
 
+
+
             $imageUpload = $this->FileService->uploadImage($request);
             if( $imageUpload->status() === 200){
+
                 $request['image_path'] = $imageUpload->original['path'];
                 $request['image_name'] = $imageUpload->original['fileName'];
                 $request['error'] = $imageUpload->original['0'];
 
+                Log::info('image path:'.$request['image_path']);
+                Log::info('image name:'.$request['image_name']);
+                Log::info('image error:'.$request['error']);
+
 
             }else{
                 $request['error'] = $imageUpload->original['0'];
+                Log::error('image not uploaded: '.$request['error']);
+
             }
 
             // Create a pet
@@ -149,7 +158,7 @@ class PetsController extends Controller
                     if( $imageUpload->status() === 200){
                         $request['image_path'] = $imageUpload->original['path'];
                         $request['error'] = $imageUpload->original['0'];
-                        Log::info('Showing the user profile for user: ');
+
 
 
                     }else{

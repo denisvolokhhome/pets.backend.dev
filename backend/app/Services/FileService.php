@@ -4,11 +4,16 @@ namespace App\Services;
 
 
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Http\Request;
+
+use Image;
+
 
 class FileService{
 
     public function uploadImage($request)
     {
+
 
 
         if(!$request->hasFile('image')) {
@@ -21,18 +26,28 @@ class FileService{
 
         $allowedfileExtension=['jpg','png'];
         $file = $request->file('image');
+
         $errors = [];
 
         $extension = $file->getClientOriginalExtension();
         $check = in_array($extension,$allowedfileExtension);
 
         if($check) {
-
-            //save the file to local storage
-            Storage::putFile(env('IMG_PHYSICAL_FILE_PATH'), $request->image);
+            $image = Image::make($request->file('image'));
 
             // generate pretty file name path
             $path = env('IMG_VIRTUAL_FILE_PATH').$request->image->hashName();
+
+
+            // Generate Image Upload on Folder
+
+            $destinationPathThumbnail = public_path('\\storage\\images\\');
+            $imageName = $request->file('image')->hashName();
+            $image->resize(null, 300, function ($constraint) {
+                $constraint->aspectRatio();
+            });
+
+            $image->save($destinationPathThumbnail.$imageName);
 
             return response()->json([
                 'path' => $path,
