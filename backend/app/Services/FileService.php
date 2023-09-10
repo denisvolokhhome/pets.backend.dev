@@ -43,7 +43,7 @@ class FileService{
 
             $destinationPathThumbnail = public_path('\\storage\\images\\');
             $imageName = $request->file('image')->hashName();
-            $image->resize(null, 300, function ($constraint) {
+            $image->resize(null, 200, function ($constraint) {
                 $constraint->aspectRatio();
             });
 
