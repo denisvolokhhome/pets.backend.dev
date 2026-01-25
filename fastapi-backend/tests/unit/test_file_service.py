@@ -302,3 +302,180 @@ class TestGetImageUrl:
         # Should not have double 'storage'
         assert url == "/storage/app/test_image.jpg"
         assert url.count("storage") == 1
+
+
+class TestSaveProfileImage:
+    """Tests for save_profile_image method."""
+
+    @pytest.mark.asyncio
+    async def test_save_profile_image_with_valid_jpeg(self, file_service, create_upload_file):
+        """Test saving a valid JPEG profile image."""
+        user_id = uuid.uuid4()
+        upload_file = create_upload_file(filename="profile.jpg", content_type="image/jpeg")
+
+        image_path = await file_service.save_profile_image(upload_file, user_id)
+
+        # Verify return value
+        assert image_path.startswith("app/")
+        assert "profile_" in image_path
+        assert str(user_id) in image_path
+
+        # Verify file was created
+        full_path = file_service.storage_path.parent / image_path
+        assert full_path.exists()
+        assert full_path.is_file()
+
+        # Verify it's a valid image
+        img = Image.open(full_path)
+        assert img.format == "JPEG"
+
+    @pytest.mark.asyncio
+    async def test_save_profile_image_with_valid_png(self, file_service, create_upload_file):
+        """Test saving a valid PNG profile image."""
+        user_id = uuid.uuid4()
+        upload_file = create_upload_file(
+            filename="profile.png",
+            content_type="image/png",
+            format="PNG"
+        )
+
+        image_path = await file_service.save_profile_image(upload_file, user_id)
+
+        # Verify file was created
+        full_path = file_service.storage_path.parent / image_path
+        assert full_path.exists()
+
+        # Verify it's a valid PNG
+        img = Image.open(full_path)
+        assert img.format in ["JPEG", "PNG"]  # May be converted
+
+    @pytest.mark.asyncio
+    async def test_save_profile_image_with_gif(self, file_service, create_upload_file):
+        """Test saving a valid GIF profile image."""
+        user_id = uuid.uuid4()
+        upload_file = create_upload_file(
+            filename="profile.gif",
+            content_type="image/gif",
+            format="GIF"
+        )
+
+        image_path = await file_service.save_profile_image(upload_file, user_id)
+
+        # Verify file was created
+        full_path = file_service.storage_path.parent / image_path
+        assert full_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_save_profile_image_with_webp(self, file_service, create_upload_file):
+        """Test saving a valid WebP profile image."""
+        user_id = uuid.uuid4()
+        upload_file = create_upload_file(
+            filename="profile.webp",
+            content_type="image/webp",
+            format="WEBP"
+        )
+
+        image_path = await file_service.save_profile_image(upload_file, user_id)
+
+        # Verify file was created
+        full_path = file_service.storage_path.parent / image_path
+        assert full_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_save_profile_image_rejects_invalid_type(self, file_service):
+        """Test that invalid file types are rejected."""
+        from starlette.datastructures import Headers
+        user_id = uuid.uuid4()
+        headers = Headers({"content-type": "image/bmp"})
+        upload_file = UploadFile(filename="test.bmp", file=io.BytesIO(b"fake"), headers=headers)
+
+        with pytest.raises(ValueError, match="Invalid file type"):
+            await file_service.save_profile_image(upload_file, user_id)
+
+    @pytest.mark.asyncio
+    async def test_save_profile_image_rejects_oversized_file(self, file_service, create_test_image):
+        """Test that files exceeding 5MB limit are rejected."""
+        from starlette.datastructures import Headers
+        user_id = uuid.uuid4()
+
+        # Create a large image that exceeds the 5MB limit
+        large_image = Image.new("RGB", (3000, 3000), color=(255, 0, 0))
+        img_bytes = io.BytesIO()
+        large_image.save(img_bytes, format="PNG", compress_level=0)
+        img_bytes.seek(0)
+
+        # Ensure it's over 5MB
+        file_size = len(img_bytes.getvalue())
+        if file_size < 5 * 1024 * 1024:
+            padding = b"0" * (5 * 1024 * 1024 - file_size + 1000)
+            img_bytes = io.BytesIO(img_bytes.getvalue() + padding)
+
+        headers = Headers({"content-type": "image/png"})
+        upload_file = UploadFile(filename="large.png", file=img_bytes, headers=headers)
+
+        with pytest.raises(ValueError, match="exceeds maximum allowed size"):
+            await file_service.save_profile_image(upload_file, user_id)
+
+    @pytest.mark.asyncio
+    async def test_save_profile_image_generates_unique_filename(self, file_service, create_upload_file):
+        """Test that each profile image gets a unique filename."""
+        user_id = uuid.uuid4()
+        upload_file1 = create_upload_file(filename="profile.jpg")
+        upload_file2 = create_upload_file(filename="profile.jpg")
+
+        path1 = await file_service.save_profile_image(upload_file1, user_id)
+        path2 = await file_service.save_profile_image(upload_file2, user_id)
+
+        # Paths should be different
+        assert path1 != path2
+
+        # Both files should exist
+        assert (file_service.storage_path.parent / path1).exists()
+        assert (file_service.storage_path.parent / path2).exists()
+
+    @pytest.mark.asyncio
+    async def test_save_profile_image_resizes_to_800x800(self, file_service, create_upload_file):
+        """Test that profile images are resized to max 800x800."""
+        user_id = uuid.uuid4()
+        # Create image larger than 800x800
+        upload_file = create_upload_file(
+            filename="large_profile.jpg",
+            content_type="image/jpeg",
+            width=2000,
+            height=1500
+        )
+
+        image_path = await file_service.save_profile_image(upload_file, user_id)
+
+        # Verify image was resized
+        full_path = file_service.storage_path.parent / image_path
+        img = Image.open(full_path)
+        assert img.width <= 800
+        assert img.height <= 800
+
+
+class TestDeleteProfileImage:
+    """Tests for delete_profile_image method."""
+
+    @pytest.mark.asyncio
+    async def test_delete_profile_image_removes_file(self, file_service, create_upload_file):
+        """Test that delete_profile_image removes the file from storage."""
+        user_id = uuid.uuid4()
+        upload_file = create_upload_file()
+
+        # Save profile image first
+        image_path = await file_service.save_profile_image(upload_file, user_id)
+        full_path = file_service.storage_path.parent / image_path
+        assert full_path.exists()
+
+        # Delete profile image
+        await file_service.delete_profile_image(image_path)
+
+        # Verify file was deleted
+        assert not full_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_delete_profile_image_raises_error_for_nonexistent_file(self, file_service):
+        """Test that deleting non-existent profile image raises FileNotFoundError."""
+        with pytest.raises(FileNotFoundError, match="Profile image file not found"):
+            await file_service.delete_profile_image("storage/app/nonexistent_profile.jpg")

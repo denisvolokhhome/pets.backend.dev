@@ -267,3 +267,145 @@ class TestImageUrlProperties:
         """
         url = file_service.get_image_url(image_path)
         assert url is None, f"URL should be None for invalid path: {image_path}"
+
+
+class TestProfileImageValidationProperties:
+    """Property-based tests for profile image upload validation."""
+
+    @settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    @given(
+        user_id=st.uuids(version=4),
+        content_type=st.sampled_from([
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp"
+        ]),
+        width=st.integers(min_value=100, max_value=1500),
+        height=st.integers(min_value=100, max_value=1500),
+    )
+    @pytest.mark.asyncio
+    async def test_property_profile_image_upload_validation_accepts_valid(
+        self, file_service, user_id, content_type, width, height
+    ):
+        """
+        Property 5: Image Upload Validation
+        For any valid image file (JPEG, PNG, GIF, WebP) under 5MB, the upload should succeed.
+
+        Feature: user-profile-settings, Property 5: Image Upload Validation
+        Validates: Requirements 9.1, 9.2
+        """
+        # Create upload file with valid type and size
+        format_map = {
+            "image/jpeg": "JPEG",
+            "image/png": "PNG",
+            "image/gif": "GIF",
+            "image/webp": "WEBP"
+        }
+        format_name = format_map[content_type]
+        
+        img_bytes = create_test_image(width, height, format=format_name)
+        
+        # Ensure file is under 5MB
+        file_size = len(img_bytes.getvalue())
+        if file_size >= 5 * 1024 * 1024:
+            # Skip this test case if randomly generated image is too large
+            pytest.skip("Generated image exceeds 5MB")
+        
+        headers = Headers({"content-type": content_type})
+        upload_file = UploadFile(
+            filename=f"profile.{format_name.lower()}",
+            file=img_bytes,
+            headers=headers
+        )
+
+        # Upload should succeed
+        image_path = await file_service.save_profile_image(upload_file, user_id)
+
+        # Verify file was saved
+        assert image_path is not None
+        full_path = file_service.storage_path.parent / image_path
+        assert full_path.exists(), "Profile image should be saved to storage"
+
+        # Verify it's a valid image
+        img = Image.open(full_path)
+        assert img is not None
+
+        # Clean up
+        await file_service.delete_profile_image(image_path)
+
+    @settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    @given(
+        user_id=st.uuids(version=4),
+        content_type=st.sampled_from([
+            "image/bmp",
+            "image/tiff",
+            "image/svg+xml",
+            "text/plain",
+            "application/pdf",
+            "video/mp4"
+        ]),
+    )
+    @pytest.mark.asyncio
+    async def test_property_profile_image_upload_validation_rejects_invalid_type(
+        self, file_service, user_id, content_type
+    ):
+        """
+        Property 5: Image Upload Validation (Invalid Types)
+        For any file with invalid content type (not JPEG, PNG, GIF, WebP), the upload should be rejected.
+
+        Feature: user-profile-settings, Property 5: Image Upload Validation
+        Validates: Requirements 9.1, 9.2
+        """
+        # Create upload file with invalid content type
+        headers = Headers({"content-type": content_type})
+        upload_file = UploadFile(
+            filename="invalid.file",
+            file=io.BytesIO(b"fake content"),
+            headers=headers
+        )
+
+        # Upload should be rejected
+        with pytest.raises(ValueError, match="Invalid file type"):
+            await file_service.save_profile_image(upload_file, user_id)
+
+    @settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    @given(
+        user_id=st.uuids(version=4),
+        # Generate file sizes that are definitely over 5MB
+        extra_mb=st.integers(min_value=1, max_value=10),
+    )
+    @pytest.mark.asyncio
+    async def test_property_profile_image_upload_validation_rejects_oversized(
+        self, file_service, user_id, extra_mb
+    ):
+        """
+        Property 5: Image Upload Validation (Size Limit)
+        For any file exceeding 5MB, the upload should be rejected with a size error.
+
+        Feature: user-profile-settings, Property 5: Image Upload Validation
+        Validates: Requirements 9.1, 9.2
+        """
+        # Create a large image that exceeds 5MB
+        large_image = Image.new("RGB", (3000, 3000), color=(255, 0, 0))
+        img_bytes = io.BytesIO()
+        large_image.save(img_bytes, format="PNG", compress_level=0)
+        img_bytes.seek(0)
+
+        # Ensure it's over 5MB by padding if necessary
+        file_size = len(img_bytes.getvalue())
+        target_size = (5 * 1024 * 1024) + (extra_mb * 1024 * 1024)
+        if file_size < target_size:
+            padding = b"0" * (target_size - file_size)
+            img_bytes = io.BytesIO(img_bytes.getvalue() + padding)
+
+        headers = Headers({"content-type": "image/png"})
+        upload_file = UploadFile(
+            filename="large_profile.png",
+            file=img_bytes,
+            headers=headers
+        )
+
+        # Upload should be rejected
+        with pytest.raises(ValueError, match="exceeds maximum allowed size"):
+            await file_service.save_profile_image(upload_file, user_id)

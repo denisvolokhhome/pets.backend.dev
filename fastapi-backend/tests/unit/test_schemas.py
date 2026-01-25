@@ -45,6 +45,112 @@ class TestUserSchemas:
         user_update = UserUpdate(email="newemail@example.com")
         assert user_update.email == "newemail@example.com"
         assert user_update.password is None
+    
+    def test_user_read_with_profile_fields(self):
+        """Test reading user schema with new profile fields."""
+        user_data = {
+            "id": uuid.uuid4(),
+            "email": "breeder@example.com",
+            "is_active": True,
+            "is_superuser": False,
+            "is_verified": True,
+            "created_at": datetime.now(),
+            "updated_at": None,
+            "breedery_name": "Golden Paws Kennel",
+            "profile_image_path": "/storage/app/profile_123.jpg",
+            "breedery_description": "Premium golden retriever breeder",
+            "search_tags": ["golden retriever", "family dogs", "AKC certified"]
+        }
+        user = UserRead(**user_data)
+        assert user.breedery_name == "Golden Paws Kennel"
+        assert user.profile_image_path == "/storage/app/profile_123.jpg"
+        assert user.breedery_description == "Premium golden retriever breeder"
+        assert user.search_tags == ["golden retriever", "family dogs", "AKC certified"]
+    
+    def test_user_read_with_null_profile_fields(self):
+        """Test reading user schema with null profile fields."""
+        user_data = {
+            "id": uuid.uuid4(),
+            "email": "newuser@example.com",
+            "is_active": True,
+            "is_superuser": False,
+            "is_verified": False,
+            "created_at": datetime.now(),
+            "updated_at": None,
+            "breedery_name": None,
+            "profile_image_path": None,
+            "breedery_description": None,
+            "search_tags": None
+        }
+        user = UserRead(**user_data)
+        assert user.breedery_name is None
+        assert user.profile_image_path is None
+        assert user.breedery_description is None
+        assert user.search_tags is None
+    
+    def test_user_read_without_profile_fields(self):
+        """Test reading user schema without providing profile fields (should default to None)."""
+        user_data = {
+            "id": uuid.uuid4(),
+            "email": "minimal@example.com",
+            "is_active": True,
+            "is_superuser": False,
+            "is_verified": False,
+            "created_at": datetime.now()
+        }
+        user = UserRead(**user_data)
+        assert user.breedery_name is None
+        assert user.profile_image_path is None
+        assert user.breedery_description is None
+        assert user.search_tags is None
+    
+    def test_user_update_with_profile_fields(self):
+        """Test updating user with profile fields."""
+        user_update = UserUpdate(
+            breedery_name="Updated Kennel Name",
+            breedery_description="Updated description",
+            search_tags=["labrador", "puppies"]
+        )
+        assert user_update.breedery_name == "Updated Kennel Name"
+        assert user_update.breedery_description == "Updated description"
+        assert user_update.search_tags == ["labrador", "puppies"]
+        assert user_update.email is None
+        assert user_update.password is None
+    
+    def test_user_update_with_empty_search_tags(self):
+        """Test updating user with empty search tags list."""
+        user_update = UserUpdate(search_tags=[])
+        assert user_update.search_tags == []
+    
+    def test_user_update_profile_fields_optional(self):
+        """Test that profile fields are optional in update."""
+        user_update = UserUpdate(email="updated@example.com")
+        assert user_update.email == "updated@example.com"
+        assert user_update.breedery_name is None
+        assert user_update.breedery_description is None
+        assert user_update.search_tags is None
+    
+    def test_profile_image_response_schema(self):
+        """Test ProfileImageResponse schema."""
+        from app.schemas.user import ProfileImageResponse
+        
+        response_data = {
+            "profile_image_path": "/storage/app/profile_abc123.jpg",
+            "message": "Profile image uploaded successfully"
+        }
+        response = ProfileImageResponse(**response_data)
+        assert response.profile_image_path == "/storage/app/profile_abc123.jpg"
+        assert response.message == "Profile image uploaded successfully"
+    
+    def test_profile_image_response_missing_fields(self):
+        """Test that ProfileImageResponse requires all fields."""
+        from app.schemas.user import ProfileImageResponse
+        
+        with pytest.raises(ValidationError) as exc_info:
+            ProfileImageResponse(profile_image_path="/storage/app/image.jpg")
+        
+        errors = exc_info.value.errors()
+        assert any(error["loc"] == ("message",) for error in errors)
 
 
 class TestPetSchemas:

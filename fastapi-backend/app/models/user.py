@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID
-from sqlalchemy import String, Boolean, DateTime, func
+from sqlalchemy import String, Boolean, DateTime, Text, JSON, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -64,6 +64,24 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     )
     remember_token: Mapped[Optional[str]] = mapped_column(
         String(100),
+        nullable=True
+    )
+    
+    # Profile fields for breedery information
+    breedery_name: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True
+    )
+    profile_image_path: Mapped[Optional[str]] = mapped_column(
+        String(500),
+        nullable=True
+    )
+    breedery_description: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True
+    )
+    search_tags: Mapped[Optional[dict]] = mapped_column(
+        JSON,
         nullable=True
     )
     

@@ -14,6 +14,10 @@ from app.config import Settings
 class FileService:
     """Service for handling file uploads, particularly pet images."""
 
+    # Profile image specific constants
+    ALLOWED_PROFILE_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+    MAX_PROFILE_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
+
     def __init__(self, settings: Settings):
         """
         Initialize FileService with configuration.
@@ -146,3 +150,98 @@ class FileService:
             url_path = url_path[8:]  # Remove 'storage/' prefix
 
         return f"{self.settings.storage_url}/{url_path}"
+
+    async def save_profile_image(
+        self,
+        file: UploadFile,
+        user_id: uuid.UUID,
+    ) -> str:
+        """
+        Save uploaded profile image and return relative path.
+
+        Args:
+            file: Uploaded file from FastAPI
+            user_id: UUID of the user this profile image belongs to
+
+        Returns:
+            Relative path to the saved image
+
+        Raises:
+            ValueError: If file is not a valid image or exceeds size limits
+        """
+        # Validate content type
+        if file.content_type not in self.ALLOWED_PROFILE_IMAGE_TYPES:
+            raise ValueError(
+                f"Invalid file type. Allowed types: {', '.join(self.ALLOWED_PROFILE_IMAGE_TYPES)}"
+            )
+
+        # Read file contents
+        contents = await file.read()
+
+        # Validate file size
+        if len(contents) > self.MAX_PROFILE_IMAGE_SIZE:
+            size_mb = len(contents) / (1024 * 1024)
+            max_mb = self.MAX_PROFILE_IMAGE_SIZE / (1024 * 1024)
+            raise ValueError(
+                f"File size ({size_mb:.2f}MB) exceeds maximum allowed size ({max_mb}MB)"
+            )
+
+        # Validate and process image
+        try:
+            image = Image.open(io.BytesIO(contents))
+        except Exception as e:
+            raise ValueError(f"Invalid image file: {str(e)}")
+
+        # Verify it's actually an image
+        try:
+            image.verify()
+            # Reopen after verify (verify closes the file)
+            image = Image.open(io.BytesIO(contents))
+        except Exception as e:
+            raise ValueError(f"File is not a valid image: {str(e)}")
+
+        # Generate unique filename for profile image
+        ext = Path(file.filename).suffix if file.filename else ".jpg"
+        if not ext:
+            ext = ".jpg"
+        filename = f"profile_{user_id}_{uuid.uuid4()}{ext}"
+        file_path = self.storage_path / filename
+
+        # Resize if needed (maintain aspect ratio)
+        # Use smaller dimensions for profile images
+        max_size = (800, 800)
+        if image.width > max_size[0] or image.height > max_size[1]:
+            image.thumbnail(max_size, Image.Resampling.LANCZOS)
+
+        # Convert RGBA to RGB if necessary (for JPEG)
+        if image.mode in ("RGBA", "LA", "P"):
+            # Create white background
+            background = Image.new("RGB", image.size, (255, 255, 255))
+            if image.mode == "P":
+                image = image.convert("RGBA")
+            background.paste(image, mask=image.split()[-1] if image.mode in ("RGBA", "LA") else None)
+            image = background
+
+        # Save processed image
+        image.save(file_path, optimize=True, quality=self.quality)
+
+        # Return relative path
+        relative_path = str(file_path.relative_to(self.storage_path.parent))
+
+        return relative_path
+
+    async def delete_profile_image(self, image_path: str) -> None:
+        """
+        Delete profile image file from storage.
+
+        Args:
+            image_path: Relative path to the profile image file
+
+        Raises:
+            FileNotFoundError: If image file does not exist
+        """
+        file_path = self.storage_path.parent / image_path
+        if not file_path.exists():
+            raise FileNotFoundError(f"Profile image file not found: {image_path}")
+
+        file_path.unlink()

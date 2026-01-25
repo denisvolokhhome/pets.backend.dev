@@ -737,6 +737,61 @@ class TestLocationDeletion:
         get_response = await other_authenticated_client.get(f"/api/locations/{location_id}")
         assert get_response.status_code == 200
 
+    @pytest.mark.asyncio
+    async def test_delete_location_with_associated_pets_fails(
+        self,
+        authenticated_client: AsyncClient,
+        async_session: AsyncSession,
+        test_user: User,
+        test_breed
+    ):
+        """
+        Test that deleting a location with associated pets returns 409 Conflict.
+        
+        Validates: Requirements 4.10
+        """
+        from app.models.pet import Pet
+        
+        # Create a location
+        location_data = {
+            "name": "Location with Pets",
+            "address1": "123 Pet St",
+            "city": "Pet City",
+            "state": "Pet State",
+            "country": "Pet Country",
+            "zipcode": "66666",
+            "location_type": "user"
+        }
+        
+        create_response = await authenticated_client.post("/api/locations/", json=location_data)
+        assert create_response.status_code == 201
+        location_id = create_response.json()["id"]
+        
+        # Create a pet associated with this location
+        pet = Pet(
+            user_id=test_user.id,
+            breed_id=test_breed.id,
+            location_id=location_id,
+            name="Test Pet",
+            gender="male",
+            is_puppy=True,
+        )
+        async_session.add(pet)
+        await async_session.commit()
+        
+        # Try to delete the location
+        response = await authenticated_client.delete(f"/api/locations/{location_id}")
+        
+        # Should return 409 Conflict
+        assert response.status_code == 409
+        data = response.json()
+        assert "detail" in data
+        assert "associated pet" in data["detail"].lower()
+        
+        # Verify location still exists
+        get_response = await authenticated_client.get(f"/api/locations/{location_id}")
+        assert get_response.status_code == 200
+
 
 class TestLocationManagementWorkflow:
     """Integration tests for complete location management workflow."""

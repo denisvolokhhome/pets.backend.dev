@@ -14,7 +14,7 @@ from sqlalchemy.exc import NoResultFound
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import Settings
-from app.routers import auth, pets, breeds, litters, locations
+from app.routers import auth, pets, breeds, litters, locations, users
 
 # Configure logging
 logging.basicConfig(
@@ -129,6 +129,7 @@ app = FastAPI(
     This API provides comprehensive management for pet breeding operations including:
     
     * **Authentication**: User registration, login, and JWT-based authentication
+    * **User Profiles**: Manage breedery information, profile images, and search tags
     * **Pets**: Complete CRUD operations for pet records with image upload support
     * **Breeds**: Management of dog breed information
     * **Litters**: Tracking of puppy litters
@@ -158,6 +159,7 @@ app = FastAPI(
     - **Soft Deletion**: Pets are soft-deleted (is_deleted flag) for data preservation
     - **Health Records**: Comprehensive tracking of pet health information
     - **Referential Integrity**: Foreign key constraints ensure data consistency
+    - **User Isolation**: Users can only access their own locations and pets
     
     ## Error Handling
     
@@ -200,6 +202,10 @@ app = FastAPI(
         {
             "name": "auth",
             "description": "Authentication operations including registration, login, and password management.",
+        },
+        {
+            "name": "users",
+            "description": "User profile management. Update profile information, manage breedery details, and upload profile images.",
         },
         {
             "name": "pets",
@@ -258,6 +264,7 @@ async def root() -> dict:
 
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(users.router, tags=["users"])
 app.include_router(pets.router, tags=["pets"])
 app.include_router(breeds.router, tags=["breeds"])
 app.include_router(litters.router, tags=["litters"])

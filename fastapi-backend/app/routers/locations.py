@@ -197,8 +197,12 @@ async def delete_location(
     
     The location must be owned by the authenticated user.
     This is a hard delete. The location will be permanently removed from the database.
-    Note: This will fail if there are pets associated with this location due to foreign key constraints.
+    
+    **Important:** Cannot delete locations that have associated pets.
+    You must first remove or reassign all pets from this location.
     """
+    from app.models.pet import Pet
+    
     # Fetch the location
     query = select(Location).where(
         Location.id == location_id,
@@ -211,6 +215,18 @@ async def delete_location(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Location not found"
+        )
+    
+    # Check if location has associated pets
+    pet_query = select(Pet).where(Pet.location_id == location_id)
+    pet_result = await session.execute(pet_query)
+    associated_pets = pet_result.scalars().all()
+    
+    if associated_pets:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot delete location with {len(associated_pets)} associated pet(s). "
+                   f"Please remove or reassign all pets from this location first."
         )
     
     # Delete the location
