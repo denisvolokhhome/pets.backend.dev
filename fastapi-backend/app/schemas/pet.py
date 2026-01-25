@@ -91,5 +91,6 @@ class PetRead(PetBase):
     error: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
+    location_name: Optional[str] = None
     
     model_config = ConfigDict(from_attributes=True)

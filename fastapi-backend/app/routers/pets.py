@@ -121,11 +121,12 @@ async def list_pets(
     skip: int = 0,
     limit: int = 100,
     include_deleted: bool = False,
-) -> List[Pet]:
+) -> List[dict]:
     """
     List all pets owned by the authenticated user.
     
     By default, soft-deleted pets are excluded unless include_deleted=True.
+    Each pet includes the location name if assigned to a location.
     """
     query = select(Pet).where(Pet.user_id == user.id)
     
@@ -137,7 +138,42 @@ async def list_pets(
     result = await session.execute(query)
     pets = result.scalars().all()
     
-    return list(pets)
+    # Add location name to each pet
+    pets_with_location = []
+    for pet in pets:
+        pet_dict = {
+            "id": pet.id,
+            "user_id": pet.user_id,
+            "name": pet.name,
+            "breed_id": pet.breed_id,
+            "litter_id": pet.litter_id,
+            "location_id": pet.location_id,
+            "date_of_birth": pet.date_of_birth,
+            "gender": pet.gender,
+            "weight": pet.weight,
+            "description": pet.description,
+            "is_puppy": pet.is_puppy,
+            "microchip": pet.microchip,
+            "vaccination": pet.vaccination,
+            "health_certificate": pet.health_certificate,
+            "deworming": pet.deworming,
+            "birth_certificate": pet.birth_certificate,
+            "has_microchip": pet.has_microchip,
+            "has_vaccination": pet.has_vaccination,
+            "has_healthcertificate": pet.has_healthcertificate,
+            "has_dewormed": pet.has_dewormed,
+            "has_birthcertificate": pet.has_birthcertificate,
+            "image_path": pet.image_path,
+            "image_file_name": pet.image_file_name,
+            "is_deleted": pet.is_deleted,
+            "error": pet.error,
+            "created_at": pet.created_at,
+            "updated_at": pet.updated_at,
+            "location_name": pet.location.name if pet.location else None
+        }
+        pets_with_location.append(pet_dict)
+    
+    return pets_with_location
 
 
 @router.get("/breeder/{breeder_id}", response_model=List[PetRead])
@@ -147,12 +183,13 @@ async def get_pets_by_breeder(
     skip: int = 0,
     limit: int = 100,
     include_deleted: bool = False,
-) -> List[Pet]:
+) -> List[dict]:
     """
     Get all pets owned by a specific breeder.
     
     This endpoint is public and does not require authentication.
     By default, soft-deleted pets are excluded.
+    Each pet includes the location name if assigned to a location.
     """
     query = select(Pet).where(Pet.user_id == breeder_id)
     
@@ -164,7 +201,42 @@ async def get_pets_by_breeder(
     result = await session.execute(query)
     pets = result.scalars().all()
     
-    return list(pets)
+    # Add location name to each pet
+    pets_with_location = []
+    for pet in pets:
+        pet_dict = {
+            "id": pet.id,
+            "user_id": pet.user_id,
+            "name": pet.name,
+            "breed_id": pet.breed_id,
+            "litter_id": pet.litter_id,
+            "location_id": pet.location_id,
+            "date_of_birth": pet.date_of_birth,
+            "gender": pet.gender,
+            "weight": pet.weight,
+            "description": pet.description,
+            "is_puppy": pet.is_puppy,
+            "microchip": pet.microchip,
+            "vaccination": pet.vaccination,
+            "health_certificate": pet.health_certificate,
+            "deworming": pet.deworming,
+            "birth_certificate": pet.birth_certificate,
+            "has_microchip": pet.has_microchip,
+            "has_vaccination": pet.has_vaccination,
+            "has_healthcertificate": pet.has_healthcertificate,
+            "has_dewormed": pet.has_dewormed,
+            "has_birthcertificate": pet.has_birthcertificate,
+            "image_path": pet.image_path,
+            "image_file_name": pet.image_file_name,
+            "is_deleted": pet.is_deleted,
+            "error": pet.error,
+            "created_at": pet.created_at,
+            "updated_at": pet.updated_at,
+            "location_name": pet.location.name if pet.location else None
+        }
+        pets_with_location.append(pet_dict)
+    
+    return pets_with_location
 
 
 @router.get("/{pet_id}", response_model=PetRead)

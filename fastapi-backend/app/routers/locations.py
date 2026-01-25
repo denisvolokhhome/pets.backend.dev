@@ -99,13 +99,16 @@ async def list_locations(
     session: AsyncSession = Depends(get_async_session),
     skip: int = 0,
     limit: int = 100,
-) -> List[Location]:
+) -> List[dict]:
     """
     List all locations owned by the authenticated user.
     
     Results are ordered by creation date descending (most recent first).
     Users can only see their own locations.
+    Each location includes a list of pets assigned to it.
     """
+    from app.models.pet import Pet
+    
     # CRITICAL: Filter by user_id to ensure users only see their own locations
     query = (
         select(Location)
@@ -118,7 +121,32 @@ async def list_locations(
     result = await session.execute(query)
     locations = result.scalars().all()
     
-    return list(locations)
+    # For each location, fetch associated pets
+    locations_with_pets = []
+    for location in locations:
+        pet_query = select(Pet).where(Pet.location_id == location.id)
+        pet_result = await session.execute(pet_query)
+        pets = pet_result.scalars().all()
+        
+        # Convert location to dict and add pets
+        location_dict = {
+            "id": location.id,
+            "user_id": location.user_id,
+            "name": location.name,
+            "address1": location.address1,
+            "address2": location.address2,
+            "city": location.city,
+            "state": location.state,
+            "country": location.country,
+            "zipcode": location.zipcode,
+            "location_type": location.location_type,
+            "created_at": location.created_at,
+            "updated_at": location.updated_at,
+            "pets": [{"id": pet.id, "name": pet.name} for pet in pets]
+        }
+        locations_with_pets.append(location_dict)
+    
+    return locations_with_pets
 
 
 @router.get("/{location_id}", response_model=LocationRead)
@@ -223,10 +251,14 @@ async def delete_location(
     associated_pets = pet_result.scalars().all()
     
     if associated_pets:
+        pet_names = [pet.name for pet in associated_pets]
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Cannot delete location with {len(associated_pets)} associated pet(s). "
-                   f"Please remove or reassign all pets from this location first."
+            detail={
+                "message": f"Cannot delete location with {len(associated_pets)} associated pet(s). Please remove or reassign all pets from this location first.",
+                "pet_count": len(associated_pets),
+                "pet_names": pet_names
+            }
         )
     
     # Delete the location

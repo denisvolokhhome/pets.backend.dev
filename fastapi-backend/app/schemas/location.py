@@ -1,7 +1,7 @@
 """Location schemas for API request/response validation."""
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -51,11 +51,20 @@ class LocationUpdate(BaseModel):
         return v
 
 
+class PetBasicInfo(BaseModel):
+    """Basic pet information for location display."""
+    id: uuid.UUID
+    name: str
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
 class LocationRead(LocationBase):
     """Schema for reading location data."""
     id: int
     user_id: Optional[uuid.UUID] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
+    pets: List[PetBasicInfo] = []
     
     model_config = ConfigDict(from_attributes=True)
