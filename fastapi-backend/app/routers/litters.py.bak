@@ -112,12 +112,13 @@ async def list_litters(
         selectinload(Litter.pets).selectinload(Pet.location)
     )
     
+    # Exclude voided litters by default (unless explicitly requested)
+    if status != "Voided":
+        query = query.where(Litter.status != LitterStatus.VOIDED.value)
+    
     # Apply status filter if provided
     if status:
         query = query.where(Litter.status == status)
-    else:
-        # Exclude voided litters by default (only when no status filter is provided)
-        query = query.where(Litter.status != LitterStatus.VOIDED.value)
     
     # Execute query to get litters
     result = await session.execute(query)
@@ -307,7 +308,7 @@ async def update_litter(
             "name": pet.name,
             "breed_name": pet.breed.name if pet.breed else None,
             "breed_id": pet.breed_id,
-            "location_name": pet.location.name if pet.location else None,
+            "location": pet.location.name if pet.location else None,
             "location_id": pet.location_id,
             "gender": pet.gender
         })
@@ -445,7 +446,7 @@ async def assign_pets_to_litter(
             "name": pet.name,
             "breed_name": pet.breed.name if pet.breed else None,
             "breed_id": pet.breed_id,
-            "location_name": pet.location.name if pet.location else None,
+            "location": pet.location.name if pet.location else None,
             "location_id": pet.location_id,
             "gender": pet.gender
         })
@@ -601,7 +602,7 @@ async def add_puppies_to_litter(
             "name": pet.name,
             "breed_name": pet.breed.name if pet.breed else None,
             "breed_id": pet.breed_id,
-            "location_name": pet.location.name if pet.location else None,
+            "location": pet.location.name if pet.location else None,
             "location_id": pet.location_id,
             "gender": pet.gender
         })
@@ -685,7 +686,7 @@ async def delete_litter(
             "name": pet.name,
             "breed_name": pet.breed.name if pet.breed else None,
             "breed_id": pet.breed_id,
-            "location_name": pet.location.name if pet.location else None,
+            "location": pet.location.name if pet.location else None,
             "location_id": pet.location_id,
             "gender": pet.gender
         })

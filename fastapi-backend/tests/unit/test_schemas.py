@@ -286,33 +286,216 @@ class TestLitterSchemas:
     def test_litter_create_with_valid_data(self):
         """Test creating litter schema with valid data."""
         litter_data = {
-            "date_of_litter": date(2023, 6, 15),
-            "description": "First litter of the year",
-            "is_active": True
+            "description": "First litter of the year"
         }
         litter = LitterCreate(**litter_data)
-        assert litter.date_of_litter == date(2023, 6, 15)
         assert litter.description == "First litter of the year"
-        assert litter.is_active is True
     
-    def test_litter_create_missing_required_date(self):
-        """Test that missing date raises validation error."""
-        with pytest.raises(ValidationError) as exc_info:
-            LitterCreate(description="Test litter")
-        
-        errors = exc_info.value.errors()
-        assert any(error["loc"] == ("date_of_litter",) for error in errors)
-    
-    def test_litter_create_with_default_is_active(self):
-        """Test that is_active defaults to True."""
-        litter = LitterCreate(date_of_litter=date(2023, 6, 15))
-        assert litter.is_active is True
+    def test_litter_create_with_no_description(self):
+        """Test creating litter with no description."""
+        litter = LitterCreate()
+        assert litter.description is None
     
     def test_litter_update_with_partial_data(self):
         """Test updating litter with partial data."""
-        litter_update = LitterUpdate(is_active=False)
-        assert litter_update.is_active is False
-        assert litter_update.date_of_litter is None
+        litter_update = LitterUpdate(description="Updated description")
+        assert litter_update.description == "Updated description"
+    
+    def test_pet_assignment_with_valid_data(self):
+        """Test PetAssignment validates exactly 2 pets."""
+        from app.schemas.litter import PetAssignment
+        
+        pet_ids = [uuid.uuid4(), uuid.uuid4()]
+        assignment = PetAssignment(pet_ids=pet_ids)
+        assert len(assignment.pet_ids) == 2
+        assert assignment.pet_ids[0] != assignment.pet_ids[1]
+    
+    def test_pet_assignment_with_one_pet(self):
+        """Test PetAssignment rejects single pet."""
+        from app.schemas.litter import PetAssignment
+        
+        with pytest.raises(ValidationError) as exc_info:
+            PetAssignment(pet_ids=[uuid.uuid4()])
+        
+        errors = exc_info.value.errors()
+        assert any("at least 2 items" in str(error["msg"]).lower() for error in errors)
+    
+    def test_pet_assignment_with_three_pets(self):
+        """Test PetAssignment rejects more than 2 pets."""
+        from app.schemas.litter import PetAssignment
+        
+        with pytest.raises(ValidationError) as exc_info:
+            PetAssignment(pet_ids=[uuid.uuid4(), uuid.uuid4(), uuid.uuid4()])
+        
+        errors = exc_info.value.errors()
+        assert any("at most 2 items" in str(error["msg"]).lower() for error in errors)
+    
+    def test_pet_assignment_with_duplicate_pets(self):
+        """Test PetAssignment rejects same pet twice."""
+        from app.schemas.litter import PetAssignment
+        
+        pet_id = uuid.uuid4()
+        with pytest.raises(ValidationError) as exc_info:
+            PetAssignment(pet_ids=[pet_id, pet_id])
+        
+        errors = exc_info.value.errors()
+        assert any("cannot assign same pet twice" in str(error["msg"]).lower() for error in errors)
+    
+    def test_puppy_input_with_valid_data(self):
+        """Test PuppyInput with valid data."""
+        from app.schemas.litter import PuppyInput
+        
+        puppy_data = {
+            "name": "Max",
+            "gender": "Male",
+            "birth_date": date(2024, 1, 15),
+            "microchip": "123456789"
+        }
+        puppy = PuppyInput(**puppy_data)
+        assert puppy.name == "Max"
+        assert puppy.gender == "Male"
+        assert puppy.birth_date == date(2024, 1, 15)
+        assert puppy.microchip == "123456789"
+    
+    def test_puppy_input_with_female_gender(self):
+        """Test PuppyInput validates Female gender."""
+        from app.schemas.litter import PuppyInput
+        
+        puppy_data = {
+            "name": "Bella",
+            "gender": "Female",
+            "birth_date": date(2024, 1, 15)
+        }
+        puppy = PuppyInput(**puppy_data)
+        assert puppy.gender == "Female"
+    
+    def test_puppy_input_with_invalid_gender(self):
+        """Test PuppyInput rejects invalid gender values."""
+        from app.schemas.litter import PuppyInput
+        
+        with pytest.raises(ValidationError) as exc_info:
+            PuppyInput(
+                name="Max",
+                gender="Unknown",
+                birth_date=date(2024, 1, 15)
+            )
+        
+        errors = exc_info.value.errors()
+        assert any("gender must be male or female" in str(error["msg"]).lower() for error in errors)
+    
+    def test_puppy_input_without_microchip(self):
+        """Test PuppyInput with optional microchip field."""
+        from app.schemas.litter import PuppyInput
+        
+        puppy = PuppyInput(
+            name="Max",
+            gender="Male",
+            birth_date=date(2024, 1, 15)
+        )
+        assert puppy.microchip is None
+    
+    def test_puppy_batch_with_valid_data(self):
+        """Test PuppyBatch with multiple puppies."""
+        from app.schemas.litter import PuppyBatch, PuppyInput
+        
+        puppies_data = {
+            "puppies": [
+                {
+                    "name": "Max",
+                    "gender": "Male",
+                    "birth_date": date(2024, 1, 15)
+                },
+                {
+                    "name": "Bella",
+                    "gender": "Female",
+                    "birth_date": date(2024, 1, 15)
+                }
+            ]
+        }
+        batch = PuppyBatch(**puppies_data)
+        assert len(batch.puppies) == 2
+        assert batch.puppies[0].name == "Max"
+        assert batch.puppies[1].name == "Bella"
+    
+    def test_puppy_batch_with_empty_list(self):
+        """Test PuppyBatch rejects empty puppy list."""
+        from app.schemas.litter import PuppyBatch
+        
+        with pytest.raises(ValidationError) as exc_info:
+            PuppyBatch(puppies=[])
+        
+        errors = exc_info.value.errors()
+        assert any("at least 1 item" in str(error["msg"]).lower() for error in errors)
+    
+    def test_litter_response_serialization(self):
+        """Test LitterResponse schema serialization."""
+        from app.schemas.litter import LitterResponse, LitterStatus
+        
+        response_data = {
+            "id": 1,
+            "description": "Test litter",
+            "status": LitterStatus.STARTED,
+            "created_at": datetime.now(),
+            "updated_at": None,
+            "parent_pets": None,
+            "puppies": None
+        }
+        response = LitterResponse(**response_data)
+        assert response.id == 1
+        assert response.status == LitterStatus.STARTED
+        assert response.description == "Test litter"
+    
+    def test_litter_response_with_parent_pets(self):
+        """Test LitterResponse with parent pets data."""
+        from app.schemas.litter import LitterResponse, LitterStatus
+        
+        response_data = {
+            "id": 1,
+            "description": "Test litter",
+            "status": LitterStatus.IN_PROCESS,
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
+            "parent_pets": [
+                {"id": str(uuid.uuid4()), "name": "Max", "breed": "Labrador"},
+                {"id": str(uuid.uuid4()), "name": "Bella", "breed": "Labrador"}
+            ],
+            "puppies": None
+        }
+        response = LitterResponse(**response_data)
+        assert len(response.parent_pets) == 2
+        assert response.status == LitterStatus.IN_PROCESS
+    
+    def test_litter_response_with_puppies(self):
+        """Test LitterResponse with puppies data."""
+        from app.schemas.litter import LitterResponse, LitterStatus
+        
+        response_data = {
+            "id": 1,
+            "description": "Test litter",
+            "status": LitterStatus.DONE,
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
+            "parent_pets": [
+                {"id": str(uuid.uuid4()), "name": "Max", "breed": "Labrador"},
+                {"id": str(uuid.uuid4()), "name": "Bella", "breed": "Labrador"}
+            ],
+            "puppies": [
+                {"id": str(uuid.uuid4()), "name": "Puppy1", "gender": "Male"},
+                {"id": str(uuid.uuid4()), "name": "Puppy2", "gender": "Female"}
+            ]
+        }
+        response = LitterResponse(**response_data)
+        assert len(response.puppies) == 2
+        assert response.status == LitterStatus.DONE
+    
+    def test_litter_status_enum_values(self):
+        """Test LitterStatus enum has correct values."""
+        from app.schemas.litter import LitterStatus
+        
+        assert LitterStatus.STARTED.value == "Started"
+        assert LitterStatus.IN_PROCESS.value == "InProcess"
+        assert LitterStatus.DONE.value == "Done"
+        assert LitterStatus.VOIDED.value == "Voided"
 
 
 class TestLocationSchemas:

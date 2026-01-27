@@ -1,11 +1,15 @@
 """Litter model for managing groups of puppies."""
 from datetime import datetime, date
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from sqlalchemy import String, Text, Boolean, Integer, Date, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+if TYPE_CHECKING:
+    from app.models.pet import Pet
+    from app.models.litter_pet import LitterPet
 
 
 class Litter(Base):
@@ -26,9 +30,9 @@ class Litter(Base):
     )
     
     # Litter information
-    date_of_litter: Mapped[date] = mapped_column(
+    date_of_litter: Mapped[Optional[date]] = mapped_column(
         Date,
-        nullable=False
+        nullable=True
     )
     description: Mapped[Optional[str]] = mapped_column(
         Text,
@@ -38,6 +42,11 @@ class Litter(Base):
         Boolean,
         nullable=False,
         default=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="Started"
     )
     
     # Timestamps
@@ -57,6 +66,12 @@ class Litter(Base):
         "Pet",
         back_populates="litter",
         lazy="selectin"
+    )
+    litter_pets: Mapped[list["LitterPet"]] = relationship(
+        "LitterPet",
+        back_populates="litter",
+        lazy="selectin",
+        cascade="all, delete-orphan"
     )
     
     def __repr__(self) -> str:

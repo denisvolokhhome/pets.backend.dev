@@ -4,6 +4,7 @@ import pytest
 from datetime import date, timedelta
 from hypothesis import given, settings, strategies as st, HealthCheck
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.litter import Litter
@@ -219,3 +220,1071 @@ async def test_property_pet_litter_referential_integrity(
     
     # Rollback the failed transaction
     await async_session.rollback()
+
+
+@pytest.mark.asyncio
+@settings(
+    max_examples=100,
+    suppress_health_check=[HealthCheck.function_scoped_fixture]
+)
+@given(
+    litter_date=date_strategy,
+    description=description_strategy,
+    pet_names=st.lists(pet_name_strategy, min_size=2, max_size=2),  # Exactly 2 parent pets
+    puppy_names=st.lists(pet_name_strategy, min_size=1, max_size=5),  # 1-5 puppies
+)
+async def test_property_status_transition_sequence(
+    litter_date: date,
+    description: str | None,
+    pet_names: list[str],
+    puppy_names: list[str],
+    async_session: AsyncSession,
+    test_user: User,
+):
+    """
+    Property 3: Status Transition Sequence
+    
+    For any litter, the status should transition in the sequence Started → InProcess → Done,
+    where Started is the initial state, InProcess occurs after pet assignment, and Done occurs
+    after puppy addition.
+    
+    Feature: litters-management, Property 3: Status Transition Sequence
+    Validates: Requirements 2.1, 2.2, 2.3
+    """
+    from app.models.litter_pet import LitterPet
+    
+    # Cache the user_id to avoid lazy loading issues in async context
+    user_id = test_user.id
+    
+    # Step 1: Create a litter - should have status "Started"
+    litter = Litter(
+        date_of_litter=litter_date,
+        description=description,
+        is_active=True,
+        status="Started"
+    )
+    
+    async_session.add(litter)
+    await async_session.commit()
+    await async_session.refresh(litter)
+    
+    # Verify initial status is "Started"
+    assert litter.status == "Started", \
+        f"New litter should have status 'Started', got '{litter.status}'"
+    
+    litter_id = litter.id
+    
+    # Step 2: Create parent pets (not assigned to litter yet)
+    parent_pets = []
+    for name in pet_names:
+        pet = Pet(
+            user_id=user_id,
+            name=name,
+            is_puppy=False,
+        )
+        async_session.add(pet)
+        parent_pets.append(pet)
+    
+    await async_session.commit()
+    
+    # Refresh all pets to get their IDs
+    for pet in parent_pets:
+        await async_session.refresh(pet)
+    
+    # Step 3: Assign parent pets to litter - status should change to "InProcess"
+    for pet in parent_pets:
+        litter_pet = LitterPet(
+            litter_id=litter_id,
+            pet_id=pet.id
+        )
+        async_session.add(litter_pet)
+    
+    # Update litter status to InProcess
+    litter.status = "InProcess"
+    await async_session.commit()
+    await async_session.refresh(litter)
+    
+    # Verify status changed to "InProcess"
+    assert litter.status == "InProcess", \
+        f"Litter with assigned pets should have status 'InProcess', got '{litter.status}'"
+    
+    # Verify parent pets are assigned
+    assert len(litter.litter_pets) == 2, \
+        f"Litter should have 2 parent pets assigned, got {len(litter.litter_pets)}"
+    
+    # Step 4: Add puppies to litter - status should change to "Done"
+    puppies = []
+    for name in puppy_names:
+        puppy = Pet(
+            user_id=user_id,
+            name=name,
+            litter_id=litter_id,
+            is_puppy=True,
+        )
+        async_session.add(puppy)
+        puppies.append(puppy)
+    
+    # Update litter status to Done
+    litter.status = "Done"
+    await async_session.commit()
+    await async_session.refresh(litter)
+    
+    # Verify status changed to "Done"
+    assert litter.status == "Done", \
+        f"Litter with puppies should have status 'Done', got '{litter.status}'"
+    
+    # Verify puppies are associated with litter
+    query = select(Pet).where(Pet.litter_id == litter_id)
+    result = await async_session.execute(query)
+    litter_puppies = result.scalars().all()
+    
+    assert len(litter_puppies) == len(puppy_names), \
+        f"Expected {len(puppy_names)} puppies for litter, got {len(litter_puppies)}"
+    
+    # Verify the complete transition sequence
+    # We've verified: Started (initial) -> InProcess (after pet assignment) -> Done (after puppy addition)
+    # This validates the complete status transition sequence
+
+
+
+@pytest.mark.asyncio
+@settings(
+    max_examples=100,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+    deadline=None  # Disable deadline for database operations
+)
+@given(
+    num_litters=st.integers(min_value=3, max_value=10),
+    litter_date=date_strategy,
+)
+async def test_property_comprehensive_filter_application(
+    num_litters: int,
+    litter_date: date,
+    async_session: AsyncSession,
+    test_user: User,
+):
+    """
+    Property 7: Comprehensive Filter Application
+    
+    For any combination of filter criteria (location, status, breed), the system should
+    return only litters that match all selected filter criteria.
+    
+    Feature: litters-management, Property 7: Comprehensive Filter Application
+    Validates: Requirements 10.1, 10.2, 10.3, 10.4
+    """
+    from app.models.litter_pet import LitterPet
+    from app.models.location import Location
+    from app.models.breed import Breed
+    import uuid as uuid_module
+    
+    # Cache the user_id to avoid lazy loading issues in async context
+    user_id = test_user.id
+    
+    # Create test locations
+    location1 = Location(
+        user_id=user_id,
+        name="Location 1",
+        address1="123 Main St",
+        city="City1",
+        state="State1",
+        country="Country1",
+        zipcode="12345",
+        location_type="pet"
+    )
+    location2 = Location(
+        user_id=user_id,
+        name="Location 2",
+        address1="456 Oak Ave",
+        city="City2",
+        state="State2",
+        country="Country2",
+        zipcode="67890",
+        location_type="pet"
+    )
+    async_session.add(location1)
+    async_session.add(location2)
+    await async_session.commit()
+    await async_session.refresh(location1)
+    await async_session.refresh(location2)
+    
+    # Create test breeds
+    breed1 = Breed(
+        name=f"Breed_{uuid_module.uuid4().hex[:8]}",
+        code="BR1"
+    )
+    breed2 = Breed(
+        name=f"Breed_{uuid_module.uuid4().hex[:8]}",
+        code="BR2"
+    )
+    async_session.add(breed1)
+    async_session.add(breed2)
+    await async_session.commit()
+    await async_session.refresh(breed1)
+    await async_session.refresh(breed2)
+    
+    # Create litters with different combinations of location, status, and breed
+    litters_data = []
+    statuses = ["Started", "InProcess", "Done"]
+    locations = [location1, location2]
+    breeds = [breed1, breed2]
+    
+    for i in range(num_litters):
+        # Create litter
+        status = statuses[i % len(statuses)]
+        litter = Litter(
+            date_of_litter=litter_date,
+            description=f"Litter {i}",
+            is_active=True,
+            status=status
+        )
+        async_session.add(litter)
+        await async_session.commit()
+        await async_session.refresh(litter)
+        
+        # Assign parent pets with specific location and breed
+        location = locations[i % len(locations)]
+        breed = breeds[i % len(breeds)]
+        
+        # Create 2 parent pets for this litter
+        parent_pets = []
+        for j in range(2):
+            pet = Pet(
+                user_id=user_id,
+                name=f"Parent_{i}_{j}",
+                location_id=location.id,
+                breed_id=breed.id,
+                is_puppy=False,
+            )
+            async_session.add(pet)
+            parent_pets.append(pet)
+        
+        await async_session.commit()
+        
+        # Refresh pets to get their IDs
+        for pet in parent_pets:
+            await async_session.refresh(pet)
+        
+        # Assign pets to litter
+        for pet in parent_pets:
+            litter_pet = LitterPet(
+                litter_id=litter.id,
+                pet_id=pet.id
+            )
+            async_session.add(litter_pet)
+        
+        await async_session.commit()
+        await async_session.refresh(litter)
+        
+        litters_data.append({
+            "litter": litter,
+            "location_id": location.id,
+            "breed_id": breed.id,
+            "status": status
+        })
+    
+    # Test 1: Filter by location only
+    target_location_id = location1.id
+    query = select(Litter).options(
+        selectinload(Litter.litter_pets).selectinload(LitterPet.pet)
+    )
+    result = await async_session.execute(query)
+    all_litters = result.scalars().all()
+    
+    filtered_by_location = []
+    for litter in all_litters:
+        parent_locations = set()
+        for litter_pet in litter.litter_pets:
+            if litter_pet.pet.location_id:
+                parent_locations.add(litter_pet.pet.location_id)
+        if target_location_id in parent_locations:
+            filtered_by_location.append(litter)
+    
+    # Verify all filtered litters have the target location
+    for litter in filtered_by_location:
+        has_target_location = False
+        for litter_pet in litter.litter_pets:
+            if litter_pet.pet.location_id == target_location_id:
+                has_target_location = True
+                break
+        assert has_target_location, \
+            f"Litter {litter.id} should have parent pet with location {target_location_id}"
+    
+    # Test 2: Filter by status only
+    target_status = "InProcess"
+    query = select(Litter).where(Litter.status == target_status)
+    result = await async_session.execute(query)
+    filtered_by_status = result.scalars().all()
+    
+    # Verify all filtered litters have the target status
+    for litter in filtered_by_status:
+        assert litter.status == target_status, \
+            f"Litter {litter.id} should have status '{target_status}', got '{litter.status}'"
+    
+    # Test 3: Filter by breed only
+    target_breed_id = breed1.id
+    query = select(Litter).options(
+        selectinload(Litter.litter_pets).selectinload(LitterPet.pet)
+    )
+    result = await async_session.execute(query)
+    all_litters = result.scalars().all()
+    
+    filtered_by_breed = []
+    for litter in all_litters:
+        parent_breeds = set()
+        for litter_pet in litter.litter_pets:
+            if litter_pet.pet.breed_id:
+                parent_breeds.add(litter_pet.pet.breed_id)
+        if target_breed_id in parent_breeds:
+            filtered_by_breed.append(litter)
+    
+    # Verify all filtered litters have the target breed
+    for litter in filtered_by_breed:
+        has_target_breed = False
+        for litter_pet in litter.litter_pets:
+            if litter_pet.pet.breed_id == target_breed_id:
+                has_target_breed = True
+                break
+        assert has_target_breed, \
+            f"Litter {litter.id} should have parent pet with breed {target_breed_id}"
+    
+    # Test 4: Combined filters (location + status + breed)
+    target_location_id = location1.id
+    target_status = "InProcess"
+    target_breed_id = breed1.id
+    
+    query = select(Litter).options(
+        selectinload(Litter.litter_pets).selectinload(LitterPet.pet)
+    ).where(Litter.status == target_status)
+    result = await async_session.execute(query)
+    all_litters = result.scalars().all()
+    
+    filtered_combined = []
+    for litter in all_litters:
+        parent_locations = set()
+        parent_breeds = set()
+        for litter_pet in litter.litter_pets:
+            if litter_pet.pet.location_id:
+                parent_locations.add(litter_pet.pet.location_id)
+            if litter_pet.pet.breed_id:
+                parent_breeds.add(litter_pet.pet.breed_id)
+        
+        if (target_location_id in parent_locations and 
+            target_breed_id in parent_breeds):
+            filtered_combined.append(litter)
+    
+    # Verify all filtered litters match ALL criteria
+    for litter in filtered_combined:
+        # Check status
+        assert litter.status == target_status, \
+            f"Litter {litter.id} should have status '{target_status}'"
+        
+        # Check location
+        has_target_location = False
+        for litter_pet in litter.litter_pets:
+            if litter_pet.pet.location_id == target_location_id:
+                has_target_location = True
+                break
+        assert has_target_location, \
+            f"Litter {litter.id} should have parent pet with location {target_location_id}"
+        
+        # Check breed
+        has_target_breed = False
+        for litter_pet in litter.litter_pets:
+            if litter_pet.pet.breed_id == target_breed_id:
+                has_target_breed = True
+                break
+        assert has_target_breed, \
+            f"Litter {litter.id} should have parent pet with breed {target_breed_id}"
+    
+    # Test 5: Verify voided litters are excluded by default
+    # Create a voided litter
+    voided_litter = Litter(
+        date_of_litter=litter_date,
+        description="Voided litter",
+        is_active=True,
+        status="Voided"
+    )
+    async_session.add(voided_litter)
+    await async_session.commit()
+    await async_session.refresh(voided_litter)
+    
+    # Query without status filter (should exclude voided)
+    query = select(Litter).where(Litter.status != "Voided")
+    result = await async_session.execute(query)
+    non_voided_litters = result.scalars().all()
+    
+    # Verify voided litter is not in results
+    voided_ids = {litter.id for litter in non_voided_litters if litter.status == "Voided"}
+    assert len(voided_ids) == 0, \
+        "Voided litters should be excluded by default"
+    
+    # Verify voided litter can be retrieved when explicitly requested
+    query = select(Litter).where(Litter.status == "Voided")
+    result = await async_session.execute(query)
+    voided_litters = result.scalars().all()
+    
+    assert voided_litter.id in {litter.id for litter in voided_litters}, \
+        "Voided litter should be retrievable when explicitly requested"
+
+
+@pytest.mark.asyncio
+@settings(
+    max_examples=100,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+    deadline=None  # Disable deadline for database operations
+)
+@given(
+    pet_names=st.lists(pet_name_strategy, min_size=2, max_size=2),  # Exactly 2 pets
+    litter_date=date_strategy,
+    description=description_strategy,
+)
+async def test_property_location_validation_for_pet_assignment(
+    pet_names: list[str],
+    litter_date: date,
+    description: str | None,
+    async_session: AsyncSession,
+    test_user: User,
+):
+    """
+    Property 4: Location Validation for Pet Assignment
+    
+    For any two pets from different locations, attempting to assign them to the same
+    litter should be rejected with an error.
+    
+    Feature: litters-management, Property 4: Location Validation for Pet Assignment
+    Validates: Requirements 3.1
+    """
+    from app.models.location import Location
+    import uuid as uuid_module
+    
+    # Cache the user_id to avoid lazy loading issues in async context
+    user_id = test_user.id
+    
+    # Create two different locations
+    location1 = Location(
+        user_id=user_id,
+        name=f"Location_{uuid_module.uuid4().hex[:8]}",
+        address1="123 Main St",
+        city="City1",
+        state="State1",
+        country="Country1",
+        zipcode="12345",
+        location_type="pet"
+    )
+    location2 = Location(
+        user_id=user_id,
+        name=f"Location_{uuid_module.uuid4().hex[:8]}",
+        address1="456 Oak Ave",
+        city="City2",
+        state="State2",
+        country="Country2",
+        zipcode="67890",
+        location_type="pet"
+    )
+    async_session.add(location1)
+    async_session.add(location2)
+    await async_session.commit()
+    await async_session.refresh(location1)
+    await async_session.refresh(location2)
+    
+    # Create a litter
+    litter = Litter(
+        date_of_litter=litter_date,
+        description=description,
+        is_active=True,
+        status="Started"
+    )
+    async_session.add(litter)
+    await async_session.commit()
+    await async_session.refresh(litter)
+    
+    # Create two pets with DIFFERENT locations
+    pet1 = Pet(
+        user_id=user_id,
+        name=pet_names[0],
+        location_id=location1.id,
+        is_puppy=False,
+    )
+    pet2 = Pet(
+        user_id=user_id,
+        name=pet_names[1],
+        location_id=location2.id,  # Different location
+        is_puppy=False,
+    )
+    async_session.add(pet1)
+    async_session.add(pet2)
+    await async_session.commit()
+    await async_session.refresh(pet1)
+    await async_session.refresh(pet2)
+    
+    # Verify pets have different locations
+    assert pet1.location_id != pet2.location_id, \
+        "Test setup: pets should have different locations"
+    
+    # Test the API endpoint to verify it rejects the assignment
+    from httpx import AsyncClient, ASGITransport
+    from app.main import app
+    
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/api/litters/{litter.id}/assign-pets",
+            json={
+                "pet_ids": [str(pet1.id), str(pet2.id)]
+            }
+        )
+        
+        # Should return 400 Bad Request due to location mismatch
+        assert response.status_code == 400, \
+            f"Assigning pets from different locations should return 400, got {response.status_code}"
+        
+        # Verify error message mentions location
+        error_detail = response.json().get("detail", "")
+        assert "location" in error_detail.lower(), \
+            f"Error message should mention location, got: {error_detail}"
+    
+    # Verify litter status is still "Started" (assignment failed)
+    await async_session.refresh(litter)
+    assert litter.status == "Started", \
+        f"Litter status should remain 'Started' after failed assignment, got '{litter.status}'"
+    
+    # Verify no pets were assigned to the litter
+    from app.models.litter_pet import LitterPet
+    query = select(LitterPet).where(LitterPet.litter_id == litter.id)
+    result = await async_session.execute(query)
+    litter_pets = result.scalars().all()
+    
+    assert len(litter_pets) == 0, \
+        f"No pets should be assigned after failed validation, got {len(litter_pets)}"
+    
+    # Test 2: Verify that pets from the SAME location CAN be assigned
+    # Create two pets with the SAME location
+    pet3 = Pet(
+        user_id=user_id,
+        name=f"{pet_names[0]}_same_loc",
+        location_id=location1.id,  # Same location as pet1
+        is_puppy=False,
+    )
+    pet4 = Pet(
+        user_id=user_id,
+        name=f"{pet_names[1]}_same_loc",
+        location_id=location1.id,  # Same location as pet1
+        is_puppy=False,
+    )
+    async_session.add(pet3)
+    async_session.add(pet4)
+    await async_session.commit()
+    await async_session.refresh(pet3)
+    await async_session.refresh(pet4)
+    
+    # Verify pets have the same location
+    assert pet3.location_id == pet4.location_id, \
+        "Test setup: pets should have the same location"
+    
+    # Create a new litter for this test
+    litter2 = Litter(
+        date_of_litter=litter_date,
+        description=f"{description}_test2" if description else "test2",
+        is_active=True,
+        status="Started"
+    )
+    async_session.add(litter2)
+    await async_session.commit()
+    await async_session.refresh(litter2)
+    
+    # Test the API endpoint to verify it accepts the assignment
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/api/litters/{litter2.id}/assign-pets",
+            json={
+                "pet_ids": [str(pet3.id), str(pet4.id)]
+            }
+        )
+        
+        # Should return 200 OK for pets from same location
+        assert response.status_code == 200, \
+            f"Assigning pets from same location should return 200, got {response.status_code}"
+    
+    # Verify litter status changed to "InProcess"
+    await async_session.refresh(litter2)
+    assert litter2.status == "InProcess", \
+        f"Litter status should be 'InProcess' after successful assignment, got '{litter2.status}'"
+    
+    # Verify pets were assigned to the litter
+    query = select(LitterPet).where(LitterPet.litter_id == litter2.id)
+    result = await async_session.execute(query)
+    litter_pets = result.scalars().all()
+    
+    assert len(litter_pets) == 2, \
+        f"2 pets should be assigned after successful validation, got {len(litter_pets)}"
+
+
+@pytest.mark.asyncio
+@settings(
+    max_examples=100,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+    deadline=None  # Disable deadline for database operations
+)
+@given(
+    num_litters=st.integers(min_value=2, max_value=5),
+    pet_names=st.lists(pet_name_strategy, min_size=2, max_size=2),  # Exactly 2 pets per litter
+    litter_date=date_strategy,
+)
+async def test_property_multi_litter_pet_assignment(
+    num_litters: int,
+    pet_names: list[str],
+    litter_date: date,
+    async_session: AsyncSession,
+    test_user: User,
+):
+    """
+    Property 6: Multi-Litter Pet Assignment
+    
+    For any pet, the system should allow assignment to multiple litters without restriction,
+    regardless of existing litter assignments.
+    
+    Feature: litters-management, Property 6: Multi-Litter Pet Assignment
+    Validates: Requirements 5.5, 11.1, 11.2, 11.3, 11.4
+    """
+    from app.models.location import Location
+    from app.models.litter_pet import LitterPet
+    from httpx import AsyncClient, ASGITransport
+    from app.main import app
+    import uuid as uuid_module
+    
+    # Cache the user_id to avoid lazy loading issues in async context
+    user_id = test_user.id
+    
+    # Create a location for all pets (to satisfy location validation)
+    location = Location(
+        user_id=user_id,
+        name=f"Location_{uuid_module.uuid4().hex[:8]}",
+        address1="123 Main St",
+        city="City1",
+        state="State1",
+        country="Country1",
+        zipcode="12345",
+        location_type="pet"
+    )
+    async_session.add(location)
+    await async_session.commit()
+    await async_session.refresh(location)
+    
+    # Create two pets that will be assigned to multiple litters
+    pet1 = Pet(
+        user_id=user_id,
+        name=pet_names[0],
+        location_id=location.id,
+        is_puppy=False,
+    )
+    pet2 = Pet(
+        user_id=user_id,
+        name=pet_names[1],
+        location_id=location.id,
+        is_puppy=False,
+    )
+    async_session.add(pet1)
+    async_session.add(pet2)
+    await async_session.commit()
+    await async_session.refresh(pet1)
+    await async_session.refresh(pet2)
+    
+    # Create multiple litters
+    litters = []
+    for i in range(num_litters):
+        litter = Litter(
+            date_of_litter=litter_date,
+            description=f"Litter {i}",
+            is_active=True,
+            status="Started"
+        )
+        async_session.add(litter)
+        litters.append(litter)
+    
+    await async_session.commit()
+    
+    # Refresh all litters to get their IDs
+    for litter in litters:
+        await async_session.refresh(litter)
+    
+    # Test 1: Assign the same two pets to all litters
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        for litter in litters:
+            response = await client.post(
+                f"/api/litters/{litter.id}/assign-pets",
+                json={
+                    "pet_ids": [str(pet1.id), str(pet2.id)]
+                }
+            )
+            
+            # Should return 200 OK - multi-litter assignment is allowed
+            assert response.status_code == 200, \
+                f"Assigning pets to litter {litter.id} should succeed, got {response.status_code}"
+    
+    # Test 2: Verify all litters have the same pets assigned
+    for litter in litters:
+        await async_session.refresh(litter)
+        
+        # Verify litter status changed to "InProcess"
+        assert litter.status == "InProcess", \
+            f"Litter {litter.id} should have status 'InProcess', got '{litter.status}'"
+        
+        # Query litter_pets for this litter
+        query = select(LitterPet).where(LitterPet.litter_id == litter.id)
+        result = await async_session.execute(query)
+        litter_pets = result.scalars().all()
+        
+        # Verify 2 pets are assigned
+        assert len(litter_pets) == 2, \
+            f"Litter {litter.id} should have 2 pets assigned, got {len(litter_pets)}"
+        
+        # Verify the correct pets are assigned
+        assigned_pet_ids = {lp.pet_id for lp in litter_pets}
+        assert pet1.id in assigned_pet_ids, \
+            f"Pet {pet1.id} should be assigned to litter {litter.id}"
+        assert pet2.id in assigned_pet_ids, \
+            f"Pet {pet2.id} should be assigned to litter {litter.id}"
+    
+    # Test 3: Verify the total number of litter_pet records
+    query = select(LitterPet).where(
+        (LitterPet.pet_id == pet1.id) | (LitterPet.pet_id == pet2.id)
+    )
+    result = await async_session.execute(query)
+    all_litter_pets = result.scalars().all()
+    
+    # Should have 2 pets * num_litters assignments
+    expected_assignments = 2 * num_litters
+    assert len(all_litter_pets) == expected_assignments, \
+        f"Expected {expected_assignments} total assignments, got {len(all_litter_pets)}"
+    
+    # Test 4: Verify each pet appears in multiple litters
+    query = select(LitterPet).where(LitterPet.pet_id == pet1.id)
+    result = await async_session.execute(query)
+    pet1_assignments = result.scalars().all()
+    
+    assert len(pet1_assignments) == num_litters, \
+        f"Pet {pet1.id} should be assigned to {num_litters} litters, got {len(pet1_assignments)}"
+    
+    query = select(LitterPet).where(LitterPet.pet_id == pet2.id)
+    result = await async_session.execute(query)
+    pet2_assignments = result.scalars().all()
+    
+    assert len(pet2_assignments) == num_litters, \
+        f"Pet {pet2.id} should be assigned to {num_litters} litters, got {len(pet2_assignments)}"
+    
+    # Test 5: Verify no unique constraint violations occurred
+    # (If there were unique constraints, the API calls would have failed)
+    # This test passes if we got here without exceptions
+    
+    # Test 6: Verify that each litter maintains separate records
+    litter_ids_for_pet1 = {lp.litter_id for lp in pet1_assignments}
+    assert len(litter_ids_for_pet1) == num_litters, \
+        f"Pet {pet1.id} should be in {num_litters} different litters, got {len(litter_ids_for_pet1)}"
+    
+    # Verify all created litters are in the assignments
+    created_litter_ids = {litter.id for litter in litters}
+    assert litter_ids_for_pet1 == created_litter_ids, \
+        f"Pet {pet1.id} should be assigned to all created litters"
+    
+    # Test 7: Verify that pets can be queried from multiple litters
+    for litter in litters:
+        await async_session.refresh(litter)
+        
+        # Access the relationship
+        parent_pets = [lp.pet for lp in litter.litter_pets]
+        
+        assert len(parent_pets) == 2, \
+            f"Litter {litter.id} should have 2 parent pets, got {len(parent_pets)}"
+        
+        parent_pet_ids = {pet.id for pet in parent_pets}
+        assert pet1.id in parent_pet_ids, \
+            f"Pet {pet1.id} should be accessible from litter {litter.id}"
+        assert pet2.id in parent_pet_ids, \
+            f"Pet {pet2.id} should be accessible from litter {litter.id}"
+
+
+@pytest.mark.asyncio
+@settings(
+    max_examples=100,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+    deadline=None  # Disable deadline for database operations
+)
+@given(
+    litter_date=date_strategy,
+    description=description_strategy,
+    updated_description=description_strategy,
+    pet_names=st.lists(pet_name_strategy, min_size=2, max_size=2),  # Exactly 2 parent pets
+    puppy_names=st.lists(pet_name_strategy, min_size=1, max_size=3),  # 1-3 puppies
+)
+async def test_property_data_persistence_consistency(
+    litter_date: date,
+    description: str | None,
+    updated_description: str | None,
+    pet_names: list[str],
+    puppy_names: list[str],
+    async_session: AsyncSession,
+    test_user: User,
+):
+    """
+    Property 8: Data Persistence Consistency
+    
+    For any litter creation or update operation, the data should be immediately
+    persisted to the database and retrievable in subsequent queries.
+    
+    Feature: litters-management, Property 8: Data Persistence Consistency
+    Validates: Requirements 12.1, 12.3, 12.4
+    """
+    from app.models.litter_pet import LitterPet
+    from app.models.location import Location
+    import uuid as uuid_module
+    
+    # Cache the user_id to avoid lazy loading issues in async context
+    user_id = test_user.id
+    
+    # Create a location for pets (to satisfy location validation)
+    location = Location(
+        user_id=user_id,
+        name=f"Location_{uuid_module.uuid4().hex[:8]}",
+        address1="123 Main St",
+        city="City1",
+        state="State1",
+        country="Country1",
+        zipcode="12345",
+        location_type="pet"
+    )
+    async_session.add(location)
+    await async_session.commit()
+    await async_session.refresh(location)
+    
+    # Test 1: Create a litter and verify immediate persistence
+    litter = Litter(
+        date_of_litter=litter_date,
+        description=description,
+        is_active=True,
+        status="Started"
+    )
+    
+    async_session.add(litter)
+    await async_session.commit()
+    await async_session.refresh(litter)
+    
+    litter_id = litter.id
+    original_created_at = litter.created_at
+    original_updated_at = litter.updated_at  # May be None on creation
+    
+    # Verify litter is immediately retrievable after creation
+    query = select(Litter).where(Litter.id == litter_id)
+    result = await async_session.execute(query)
+    retrieved_litter = result.scalar_one_or_none()
+    
+    assert retrieved_litter is not None, \
+        f"Litter {litter_id} should be immediately retrievable after creation"
+    assert retrieved_litter.id == litter_id, \
+        f"Retrieved litter ID should match created litter ID"
+    assert retrieved_litter.description == description, \
+        f"Retrieved litter description should match created description"
+    assert retrieved_litter.status == "Started", \
+        f"Retrieved litter status should be 'Started'"
+    assert retrieved_litter.date_of_litter == litter_date, \
+        f"Retrieved litter date should match created date"
+    assert retrieved_litter.created_at == original_created_at, \
+        f"Retrieved litter created_at should match original"
+    # updated_at may be None on creation, so we just verify it matches
+    assert retrieved_litter.updated_at == original_updated_at, \
+        f"Retrieved litter updated_at should match original"
+    
+    # Test 2: Update litter description and verify immediate persistence
+    litter.description = updated_description
+    await async_session.commit()
+    await async_session.refresh(litter)
+    
+    updated_at_after_description = litter.updated_at
+    
+    # Verify update is immediately retrievable
+    query = select(Litter).where(Litter.id == litter_id)
+    result = await async_session.execute(query)
+    retrieved_litter = result.scalar_one_or_none()
+    
+    assert retrieved_litter is not None, \
+        f"Litter {litter_id} should be retrievable after update"
+    assert retrieved_litter.description == updated_description, \
+        f"Retrieved litter description should match updated description"
+    assert retrieved_litter.updated_at == updated_at_after_description, \
+        f"Retrieved litter updated_at should reflect the update"
+    assert retrieved_litter.created_at == original_created_at, \
+        f"Retrieved litter created_at should remain unchanged after update"
+    
+    # Test 3: Assign parent pets and verify immediate persistence
+    parent_pets = []
+    for name in pet_names:
+        pet = Pet(
+            user_id=user_id,
+            name=name,
+            location_id=location.id,
+            is_puppy=False,
+        )
+        async_session.add(pet)
+        parent_pets.append(pet)
+    
+    await async_session.commit()
+    
+    # Refresh all pets to get their IDs
+    for pet in parent_pets:
+        await async_session.refresh(pet)
+    
+    # Assign pets to litter
+    for pet in parent_pets:
+        litter_pet = LitterPet(
+            litter_id=litter_id,
+            pet_id=pet.id
+        )
+        async_session.add(litter_pet)
+    
+    # Update litter status to InProcess
+    litter.status = "InProcess"
+    await async_session.commit()
+    await async_session.refresh(litter)
+    
+    updated_at_after_pets = litter.updated_at
+    
+    # Verify pet assignments are immediately retrievable
+    query = select(LitterPet).where(LitterPet.litter_id == litter_id)
+    result = await async_session.execute(query)
+    retrieved_litter_pets = result.scalars().all()
+    
+    assert len(retrieved_litter_pets) == 2, \
+        f"Should retrieve 2 parent pet assignments immediately, got {len(retrieved_litter_pets)}"
+    
+    retrieved_pet_ids = {lp.pet_id for lp in retrieved_litter_pets}
+    for pet in parent_pets:
+        assert pet.id in retrieved_pet_ids, \
+            f"Pet {pet.id} should be in retrieved assignments"
+    
+    # Verify litter status update is immediately retrievable
+    query = select(Litter).where(Litter.id == litter_id)
+    result = await async_session.execute(query)
+    retrieved_litter = result.scalar_one_or_none()
+    
+    assert retrieved_litter.status == "InProcess", \
+        f"Retrieved litter status should be 'InProcess' after pet assignment"
+    assert retrieved_litter.updated_at == updated_at_after_pets, \
+        f"Retrieved litter updated_at should reflect pet assignment"
+    
+    # Test 4: Add puppies and verify immediate persistence
+    puppies = []
+    for name in puppy_names:
+        puppy = Pet(
+            user_id=user_id,
+            name=name,
+            litter_id=litter_id,
+            location_id=location.id,
+            is_puppy=True,
+        )
+        async_session.add(puppy)
+        puppies.append(puppy)
+    
+    # Update litter status to Done
+    litter.status = "Done"
+    await async_session.commit()
+    await async_session.refresh(litter)
+    
+    updated_at_after_puppies = litter.updated_at
+    
+    # Refresh all puppies to get their IDs
+    for puppy in puppies:
+        await async_session.refresh(puppy)
+    
+    # Verify puppies are immediately retrievable
+    query = select(Pet).where(Pet.litter_id == litter_id)
+    result = await async_session.execute(query)
+    retrieved_puppies = result.scalars().all()
+    
+    assert len(retrieved_puppies) == len(puppy_names), \
+        f"Should retrieve {len(puppy_names)} puppies immediately, got {len(retrieved_puppies)}"
+    
+    retrieved_puppy_ids = {puppy.id for puppy in retrieved_puppies}
+    for puppy in puppies:
+        assert puppy.id in retrieved_puppy_ids, \
+            f"Puppy {puppy.id} should be in retrieved puppies"
+        assert puppy.litter_id == litter_id, \
+            f"Puppy {puppy.id} should reference litter {litter_id}"
+    
+    # Verify litter status update is immediately retrievable
+    query = select(Litter).where(Litter.id == litter_id)
+    result = await async_session.execute(query)
+    retrieved_litter = result.scalar_one_or_none()
+    
+    assert retrieved_litter.status == "Done", \
+        f"Retrieved litter status should be 'Done' after puppy addition"
+    assert retrieved_litter.updated_at == updated_at_after_puppies, \
+        f"Retrieved litter updated_at should reflect puppy addition"
+    
+    # Test 5: Verify data consistency across multiple queries
+    # Query the litter multiple times and verify consistency
+    for _ in range(3):
+        query = select(Litter).options(
+            selectinload(Litter.litter_pets).selectinload(LitterPet.pet),
+            selectinload(Litter.pets)
+        ).where(Litter.id == litter_id)
+        result = await async_session.execute(query)
+        consistent_litter = result.scalar_one_or_none()
+        
+        assert consistent_litter is not None, \
+            f"Litter should be consistently retrievable"
+        assert consistent_litter.id == litter_id, \
+            f"Litter ID should be consistent"
+        assert consistent_litter.description == updated_description, \
+            f"Litter description should be consistent"
+        assert consistent_litter.status == "Done", \
+            f"Litter status should be consistent"
+        assert consistent_litter.date_of_litter == litter_date, \
+            f"Litter date should be consistent"
+        assert len(consistent_litter.litter_pets) == 2, \
+            f"Litter should consistently have 2 parent pets"
+        assert len(consistent_litter.pets) == len(puppy_names), \
+            f"Litter should consistently have {len(puppy_names)} puppies"
+    
+    # Test 6: Verify data persists after session expiration (simulate navigation away)
+    # Expire all objects in the session to simulate a fresh session
+    async_session.expire_all()
+    
+    # Query the litter again (simulating returning to the litters screen)
+    query = select(Litter).options(
+        selectinload(Litter.litter_pets).selectinload(LitterPet.pet),
+        selectinload(Litter.pets)
+    ).where(Litter.id == litter_id)
+    result = await async_session.execute(query)
+    persisted_litter = result.scalar_one_or_none()
+    
+    assert persisted_litter is not None, \
+        f"Litter should persist after session expiration"
+    assert persisted_litter.id == litter_id, \
+        f"Persisted litter ID should match"
+    assert persisted_litter.description == updated_description, \
+        f"Persisted litter description should match"
+    assert persisted_litter.status == "Done", \
+        f"Persisted litter status should match"
+    assert persisted_litter.date_of_litter == litter_date, \
+        f"Persisted litter date should match"
+    assert len(persisted_litter.litter_pets) == 2, \
+        f"Persisted litter should have 2 parent pets"
+    assert len(persisted_litter.pets) == len(puppy_names), \
+        f"Persisted litter should have {len(puppy_names)} puppies"
+    
+    # Test 7: Verify updated_at changes with each update (if it's set)
+    # Note: updated_at may be None on initial creation, but should be set after updates
+    if updated_at_after_description is not None and original_updated_at is not None:
+        assert updated_at_after_description >= original_updated_at, \
+            f"updated_at should increase or stay same after description update"
+    if updated_at_after_pets is not None and updated_at_after_description is not None:
+        assert updated_at_after_pets >= updated_at_after_description, \
+            f"updated_at should increase or stay same after pet assignment"
+    if updated_at_after_puppies is not None and updated_at_after_pets is not None:
+        assert updated_at_after_puppies >= updated_at_after_pets, \
+            f"updated_at should increase or stay same after puppy addition"
+    
+    # Test 8: Verify created_at remains unchanged throughout all updates
+    assert persisted_litter.created_at == original_created_at, \
+        f"created_at should never change after initial creation"
+

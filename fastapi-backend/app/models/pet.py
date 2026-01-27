@@ -178,6 +178,11 @@ class Pet(Base):
         back_populates="pets",
         lazy="selectin"
     )
+    litter_assignments: Mapped[list["LitterPet"]] = relationship(
+        "LitterPet",
+        back_populates="pet",
+        lazy="selectin"
+    )
     
     def __repr__(self) -> str:
         return f"<Pet(id={self.id}, name={self.name}, user_id={self.user_id})>"
