@@ -1,10 +1,10 @@
 """
-Litters router for managing litter records.
+Litters router for managing breeding records.
 
-This module provides CRUD operations for litter management including:
-- Creating and updating litter records
-- Listing litters with filtering options
-- Managing litter information and associations with pets
+This module provides CRUD operations for breeding management including:
+- Creating and updating breeding records
+- Listing breedings with filtering options
+- Managing breeding information and associations with pets
 """
 from typing import List, Optional
 import uuid
@@ -15,65 +15,69 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_async_session
-from app.models.litter import Litter
-from app.models.litter_pet import LitterPet
+from app.dependencies import current_active_user
+from app.models.user import User
+from app.models.breeding import Breeding
+from app.models.breeding_pet import BreedingPet
 from app.models.pet import Pet
 from app.models.breed import Breed
 from app.models.location import Location
-from app.schemas.litter import LitterCreate, LitterRead, LitterUpdate, LitterResponse, LitterStatus, PetAssignment, PuppyBatch
+from app.schemas.breeding import LitterCreate, LitterRead, LitterUpdate, LitterResponse, LitterStatus, PetAssignment, PuppyBatch
 
 
 router = APIRouter(
-    prefix="/api/litters",
-    tags=["litters"],
+    prefix="/api/breedings",
+    tags=["breedings"],
     responses={
-        404: {"description": "Litter not found"},
+        404: {"description": "Breeding not found"},
     }
 )
 
 
 @router.post("/", response_model=LitterResponse, status_code=status.HTTP_201_CREATED)
 async def create_litter(
-    litter_data: LitterCreate,
+    breeding_data: LitterCreate,
     session: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(current_active_user),
 ) -> dict:
     """
-    Create a new litter record.
+    Create a new breeding record.
     
     This endpoint is public and does not require authentication.
-    A litter represents a breeding operation tracking parent pets and puppies.
+    A breeding represents a breeding operation tracking parent pets and puppies.
     
     **Optional fields:**
-    - description: Additional information about the litter
+    - description: Additional information about the breeding
     
     **Example:**
     ```json
     {
-        "description": "First litter of 2024"
+        "description": "First breeding of 2024"
     }
     ```
     
-    **Returns:** The created litter record with generated ID and status "Started"
+    **Returns:** The created breeding record with generated ID and status "Started"
     
     **Requirements:** 4.1, 4.3, 4.4, 4.5
     """
-    # Create new litter instance with status "Started"
-    litter = Litter(
-        description=litter_data.description,
+    # Create new breeding instance with status "Started"
+    breeding = Breeding(
+        user_id=current_user.id,
+        description=breeding_data.description,
         status=LitterStatus.STARTED.value,
     )
     
-    session.add(litter)
+    session.add(breeding)
     await session.commit()
-    await session.refresh(litter)
+    await session.refresh(breeding)
     
     # Return LitterResponse format
     return {
-        "id": litter.id,
-        "description": litter.description,
-        "status": litter.status,
-        "created_at": litter.created_at,
-        "updated_at": litter.updated_at,
+        "id": breeding.id,
+        "description": breeding.description,
+        "status": breeding.status,
+        "created_at": breeding.created_at,
+        "updated_at": breeding.updated_at,
         "parent_pets": None,
         "puppies": None
     }
@@ -82,6 +86,7 @@ async def create_litter(
 @router.get("/", response_model=List[LitterResponse])
 async def list_litters(
     session: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(current_active_user),
     location_id: Optional[int] = Query(None, description="Filter by location ID"),
     status: Optional[str] = Query(None, description="Filter by status"),
     breed_id: Optional[int] = Query(None, description="Filter by breed ID"),
@@ -89,49 +94,49 @@ async def list_litters(
     limit: int = 100,
 ) -> List[dict]:
     """
-    List all litters with optional filtering.
+    List all breedings with optional filtering.
     
     This endpoint is public and does not require authentication.
     Results are ordered by created_at descending (most recent first).
-    Voided litters are excluded by default.
+    Voided breedings are excluded by default.
     
     **Query Parameters:**
-    - location_id: Filter litters by location (derived from parent pets)
-    - status: Filter by litter status (Started, InProcess, Done, Voided)
-    - breed_id: Filter litters by breed (from parent pets)
+    - location_id: Filter breedings by location (derived from parent pets)
+    - status: Filter by breeding status (Started, InProcess, Done, Voided)
+    - breed_id: Filter breedings by breed (from parent pets)
     - skip: Number of records to skip (pagination)
     - limit: Maximum number of records to return
     
-    **Returns:** List of litters with nested parent_pets and puppies
+    **Returns:** List of breedings with nested parent_pets and puppies
     """
-    # Start with base query
-    query = select(Litter).options(
-        selectinload(Litter.litter_pets).selectinload(LitterPet.pet).selectinload(Pet.breed),
-        selectinload(Litter.litter_pets).selectinload(LitterPet.pet).selectinload(Pet.location),
-        selectinload(Litter.pets).selectinload(Pet.breed),
-        selectinload(Litter.pets).selectinload(Pet.location)
+    # Start with base query - filter by current user
+    query = select(Breeding).where(Breeding.user_id == current_user.id).options(
+        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.breed),
+        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.location),
+        selectinload(Breeding.pets).selectinload(Pet.breed),
+        selectinload(Breeding.pets).selectinload(Pet.location)
     )
     
     # Apply status filter if provided
     if status:
-        query = query.where(Litter.status == status)
+        query = query.where(Breeding.status == status)
     else:
-        # Exclude voided litters by default (only when no status filter is provided)
-        query = query.where(Litter.status != LitterStatus.VOIDED.value)
+        # Exclude voided breedings by default (only when no status filter is provided)
+        query = query.where(Breeding.status != LitterStatus.VOIDED.value)
     
-    # Execute query to get litters
+    # Execute query to get breedings
     result = await session.execute(query)
-    litters = result.scalars().all()
+    breedings = result.scalars().all()
     
     # Build response with parent pets and puppies
     response_litters = []
-    for litter in litters:
-        # Get parent pets from litter_pets junction table
+    for breeding in breedings:
+        # Get parent pets from breeding_pets junction table
         parent_pets = []
         parent_pet_locations = set()
         parent_pet_breeds = set()
         
-        for litter_pet in litter.litter_pets:
+        for litter_pet in breeding.breeding_pets:
             pet = litter_pet.pet
             parent_pets.append({
                 "id": str(pet.id),
@@ -155,9 +160,9 @@ async def list_litters(
         if breed_id and breed_id not in parent_pet_breeds:
             continue
         
-        # Get puppies (pets with this litter_id)
+        # Get puppies (pets with this breeding_id)
         puppies = []
-        for pet in litter.pets:
+        for pet in breeding.pets:
             puppies.append({
                 "id": str(pet.id),
                 "name": pet.name,
@@ -167,11 +172,11 @@ async def list_litters(
             })
         
         response_litters.append({
-            "id": litter.id,
-            "description": litter.description,
-            "status": litter.status,
-            "created_at": litter.created_at,
-            "updated_at": litter.updated_at,
+            "id": breeding.id,
+            "description": breeding.description,
+            "status": breeding.status,
+            "created_at": breeding.created_at,
+            "updated_at": breeding.updated_at,
             "parent_pets": parent_pets if parent_pets else None,
             "puppies": puppies if puppies else None
         })
@@ -182,40 +187,40 @@ async def list_litters(
     return response_litters
 
 
-@router.get("/{litter_id}", response_model=LitterResponse)
+@router.get("/{breeding_id}", response_model=LitterResponse)
 async def get_litter(
-    litter_id: int,
+    breeding_id: int,
     session: AsyncSession = Depends(get_async_session),
 ) -> dict:
     """
-    Get a single litter by ID with full details.
+    Get a single breeding by ID with full details.
     
     This endpoint is public and does not require authentication.
-    Returns litter with nested parent_pets and puppies.
+    Returns breeding with nested parent_pets and puppies.
     
     **Returns:** LitterResponse with parent pets and puppies
     
     **Requirements:** 7.2, 7.3, 7.4, 7.5
     """
-    # Query litter with relationships eagerly loaded
-    query = select(Litter).where(Litter.id == litter_id).options(
-        selectinload(Litter.litter_pets).selectinload(LitterPet.pet).selectinload(Pet.breed),
-        selectinload(Litter.litter_pets).selectinload(LitterPet.pet).selectinload(Pet.location),
-        selectinload(Litter.pets).selectinload(Pet.breed),
-        selectinload(Litter.pets).selectinload(Pet.location)
+    # Query breeding with relationships eagerly loaded
+    query = select(Breeding).where(Breeding.id == breeding_id).options(
+        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.breed),
+        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.location),
+        selectinload(Breeding.pets).selectinload(Pet.breed),
+        selectinload(Breeding.pets).selectinload(Pet.location)
     )
     result = await session.execute(query)
-    litter = result.scalar_one_or_none()
+    breeding = result.scalar_one_or_none()
     
-    if litter is None:
+    if breeding is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Litter not found"
+            detail="Breeding not found"
         )
     
-    # Build parent pets list from litter_pets junction table
+    # Build parent pets list from breeding_pets junction table
     parent_pets = []
-    for litter_pet in litter.litter_pets:
+    for litter_pet in breeding.breeding_pets:
         pet = litter_pet.pet
         parent_pets.append({
             "id": str(pet.id),
@@ -227,9 +232,9 @@ async def get_litter(
             "gender": pet.gender
         })
     
-    # Build puppies list from pets with this litter_id
+    # Build puppies list from pets with this breeding_id
     # Query puppies directly to ensure we get them
-    puppy_query = select(Pet).where(Pet.litter_id == litter.id).options(
+    puppy_query = select(Pet).where(Pet.breeding_id == breeding.id).options(
         selectinload(Pet.breed),
         selectinload(Pet.location)
     )
@@ -248,24 +253,24 @@ async def get_litter(
     
     # Return LitterResponse format
     return {
-        "id": litter.id,
-        "description": litter.description,
-        "status": litter.status,
-        "created_at": litter.created_at,
-        "updated_at": litter.updated_at,
+        "id": breeding.id,
+        "description": breeding.description,
+        "status": breeding.status,
+        "created_at": breeding.created_at,
+        "updated_at": breeding.updated_at,
         "parent_pets": parent_pets if parent_pets else None,
         "puppies": puppies if puppies else None
     }
 
 
-@router.put("/{litter_id}", response_model=LitterResponse)
+@router.put("/{breeding_id}", response_model=LitterResponse)
 async def update_litter(
-    litter_id: int,
+    breeding_id: int,
     litter_update: LitterUpdate,
     session: AsyncSession = Depends(get_async_session),
 ) -> dict:
     """
-    Update a litter record.
+    Update a breeding record.
     
     Only provided fields will be updated (currently only description).
     The updated_at timestamp is automatically updated.
@@ -273,34 +278,34 @@ async def update_litter(
     
     **Requirements:** 8.1, 8.2, 8.5
     """
-    # Fetch the litter with relationships
-    query = select(Litter).where(Litter.id == litter_id).options(
-        selectinload(Litter.litter_pets).selectinload(LitterPet.pet).selectinload(Pet.breed),
-        selectinload(Litter.litter_pets).selectinload(LitterPet.pet).selectinload(Pet.location),
-        selectinload(Litter.pets).selectinload(Pet.breed),
-        selectinload(Litter.pets).selectinload(Pet.location)
+    # Fetch the breeding with relationships
+    query = select(Breeding).where(Breeding.id == breeding_id).options(
+        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.breed),
+        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.location),
+        selectinload(Breeding.pets).selectinload(Pet.breed),
+        selectinload(Breeding.pets).selectinload(Pet.location)
     )
     result = await session.execute(query)
-    litter = result.scalar_one_or_none()
+    breeding = result.scalar_one_or_none()
     
-    if litter is None:
+    if breeding is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Litter not found"
+            detail="Breeding not found"
         )
     
     # Update fields that were provided
     update_data = litter_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
-        setattr(litter, field, value)
+        setattr(breeding, field, value)
     
     # Commit changes (updated_at will be automatically updated by SQLAlchemy)
     await session.commit()
-    await session.refresh(litter)
+    await session.refresh(breeding)
     
-    # Build parent pets list from litter_pets junction table
+    # Build parent pets list from breeding_pets junction table
     parent_pets = []
-    for litter_pet in litter.litter_pets:
+    for litter_pet in breeding.breeding_pets:
         pet = litter_pet.pet
         parent_pets.append({
             "id": str(pet.id),
@@ -312,8 +317,8 @@ async def update_litter(
             "gender": pet.gender
         })
     
-    # Build puppies list from pets with this litter_id
-    puppy_query = select(Pet).where(Pet.litter_id == litter.id).options(
+    # Build puppies list from pets with this breeding_id
+    puppy_query = select(Pet).where(Pet.breeding_id == breeding.id).options(
         selectinload(Pet.breed),
         selectinload(Pet.location)
     )
@@ -332,26 +337,26 @@ async def update_litter(
     
     # Return LitterResponse format
     return {
-        "id": litter.id,
-        "description": litter.description,
-        "status": litter.status,
-        "created_at": litter.created_at,
-        "updated_at": litter.updated_at,
+        "id": breeding.id,
+        "description": breeding.description,
+        "status": breeding.status,
+        "created_at": breeding.created_at,
+        "updated_at": breeding.updated_at,
         "parent_pets": parent_pets if parent_pets else None,
         "puppies": puppies if puppies else None
     }
 
 
-@router.post("/{litter_id}/assign-pets", response_model=LitterResponse)
+@router.post("/{breeding_id}/assign-pets", response_model=LitterResponse)
 async def assign_pets_to_litter(
-    litter_id: int,
+    breeding_id: int,
     pet_assignment: PetAssignment,
     session: AsyncSession = Depends(get_async_session),
 ) -> dict:
     """
-    Assign parent pets to a litter.
+    Assign parent pets to a breeding.
     
-    This endpoint assigns exactly 2 parent pets to a litter and updates the litter status to "InProcess".
+    This endpoint assigns exactly 2 parent pets to a breeding and updates the breeding status to "InProcess".
     Both pets must exist and must have the same location_id.
     This endpoint is public and does not require authentication.
     
@@ -372,20 +377,20 @@ async def assign_pets_to_litter(
     
     **Requirements:** 3.1, 3.4, 5.1, 5.2, 5.3, 5.4
     """
-    # Fetch the litter
-    query = select(Litter).where(Litter.id == litter_id).options(
-        selectinload(Litter.litter_pets).selectinload(LitterPet.pet).selectinload(Pet.breed),
-        selectinload(Litter.litter_pets).selectinload(LitterPet.pet).selectinload(Pet.location),
-        selectinload(Litter.pets).selectinload(Pet.breed),
-        selectinload(Litter.pets).selectinload(Pet.location)
+    # Fetch the breeding
+    query = select(Breeding).where(Breeding.id == breeding_id).options(
+        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.breed),
+        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.location),
+        selectinload(Breeding.pets).selectinload(Pet.breed),
+        selectinload(Breeding.pets).selectinload(Pet.location)
     )
     result = await session.execute(query)
-    litter = result.scalar_one_or_none()
+    breeding = result.scalar_one_or_none()
     
-    if litter is None:
+    if breeding is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Litter not found"
+            detail="Breeding not found"
         )
     
     # Validate both pets exist
@@ -411,34 +416,34 @@ async def assign_pets_to_litter(
             detail="Both pets must have the same location"
         )
     
-    # Create entries in litter_pets junction table
+    # Create entries in breeding_pets junction table
     for pet in pets:
-        litter_pet = LitterPet(
-            litter_id=litter.id,
+        litter_pet = BreedingPet(
+            breeding_id=breeding.id,
             pet_id=pet.id
         )
         session.add(litter_pet)
     
-    # Update litter status to "InProcess"
-    litter.status = LitterStatus.IN_PROCESS.value
+    # Update breeding status to "InProcess"
+    breeding.status = LitterStatus.IN_PROCESS.value
     
     # Commit changes (updated_at will be automatically updated)
     await session.commit()
-    await session.refresh(litter)
+    await session.refresh(breeding)
     
-    # Reload litter with relationships to get the newly assigned pets
-    query = select(Litter).where(Litter.id == litter_id).options(
-        selectinload(Litter.litter_pets).selectinload(LitterPet.pet).selectinload(Pet.breed),
-        selectinload(Litter.litter_pets).selectinload(LitterPet.pet).selectinload(Pet.location),
-        selectinload(Litter.pets).selectinload(Pet.breed),
-        selectinload(Litter.pets).selectinload(Pet.location)
+    # Reload breeding with relationships to get the newly assigned pets
+    query = select(Breeding).where(Breeding.id == breeding_id).options(
+        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.breed),
+        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.location),
+        selectinload(Breeding.pets).selectinload(Pet.breed),
+        selectinload(Breeding.pets).selectinload(Pet.location)
     )
     result = await session.execute(query)
-    litter = result.scalar_one()
+    breeding = result.scalar_one()
     
-    # Build parent pets list from litter_pets junction table
+    # Build parent pets list from breeding_pets junction table
     parent_pets = []
-    for litter_pet in litter.litter_pets:
+    for litter_pet in breeding.breeding_pets:
         pet = litter_pet.pet
         parent_pets.append({
             "id": str(pet.id),
@@ -450,8 +455,8 @@ async def assign_pets_to_litter(
             "gender": pet.gender
         })
     
-    # Build puppies list from pets with this litter_id
-    puppy_query = select(Pet).where(Pet.litter_id == litter.id).options(
+    # Build puppies list from pets with this breeding_id
+    puppy_query = select(Pet).where(Pet.breeding_id == breeding.id).options(
         selectinload(Pet.breed),
         selectinload(Pet.location)
     )
@@ -470,27 +475,27 @@ async def assign_pets_to_litter(
     
     # Return LitterResponse format
     return {
-        "id": litter.id,
-        "description": litter.description,
-        "status": litter.status,
-        "created_at": litter.created_at,
-        "updated_at": litter.updated_at,
+        "id": breeding.id,
+        "description": breeding.description,
+        "status": breeding.status,
+        "created_at": breeding.created_at,
+        "updated_at": breeding.updated_at,
         "parent_pets": parent_pets if parent_pets else None,
         "puppies": puppies if puppies else None
     }
 
 
-@router.post("/{litter_id}/add-puppies", response_model=LitterResponse)
+@router.post("/{breeding_id}/add-puppies", response_model=LitterResponse)
 async def add_puppies_to_litter(
-    litter_id: int,
+    breeding_id: int,
     puppy_batch: PuppyBatch,
     session: AsyncSession = Depends(get_async_session),
 ) -> dict:
     """
-    Add puppies to a litter.
+    Add puppies to a breeding.
     
-    This endpoint creates pet records for each puppy and associates them with the litter.
-    The litter status is updated to "Done" after puppies are added.
+    This endpoint creates pet records for each puppy and associates them with the breeding.
+    The breeding status is updated to "Done" after puppies are added.
     Location and breed are derived from the parent pets.
     This endpoint is public and does not require authentication.
     
@@ -509,7 +514,7 @@ async def add_puppies_to_litter(
     ```
     
     **Validation Rules:**
-    - Litter must have parent pets assigned
+    - Breeding must have parent pets assigned
     - At least one puppy must be provided
     - Each puppy must have name, gender, and birth_date
     - Gender must be "Male" or "Female"
@@ -519,31 +524,31 @@ async def add_puppies_to_litter(
     
     **Requirements:** 6.1, 6.2, 6.3, 6.4, 6.5
     """
-    # Fetch the litter with relationships
-    query = select(Litter).where(Litter.id == litter_id).options(
-        selectinload(Litter.litter_pets).selectinload(LitterPet.pet).selectinload(Pet.breed),
-        selectinload(Litter.litter_pets).selectinload(LitterPet.pet).selectinload(Pet.location),
-        selectinload(Litter.pets).selectinload(Pet.breed),
-        selectinload(Litter.pets).selectinload(Pet.location)
+    # Fetch the breeding with relationships
+    query = select(Breeding).where(Breeding.id == breeding_id).options(
+        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.breed),
+        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.location),
+        selectinload(Breeding.pets).selectinload(Pet.breed),
+        selectinload(Breeding.pets).selectinload(Pet.location)
     )
     result = await session.execute(query)
-    litter = result.scalar_one_or_none()
+    breeding = result.scalar_one_or_none()
     
-    if litter is None:
+    if breeding is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Litter not found"
+            detail="Breeding not found"
         )
     
-    # Validate litter has parent pets assigned
-    if not litter.litter_pets or len(litter.litter_pets) == 0:
+    # Validate breeding has parent pets assigned
+    if not breeding.breeding_pets or len(breeding.breeding_pets) == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Litter must have parent pets assigned before adding puppies"
+            detail="Breeding must have parent pets assigned before adding puppies"
         )
     
     # Derive location and breed from parent pets
-    parent_pets = [litter_pet.pet for litter_pet in litter.litter_pets]
+    parent_pets = [litter_pet.pet for litter_pet in breeding.breeding_pets]
     
     # Get location from first parent pet (they should all have the same location)
     location_id = parent_pets[0].location_id if parent_pets[0].location_id else None
@@ -563,7 +568,7 @@ async def add_puppies_to_litter(
             gender=puppy_input.gender,
             date_of_birth=puppy_input.birth_date,
             microchip=puppy_input.microchip,
-            litter_id=litter.id,
+            breeding_id=breeding.id,
             location_id=location_id,
             breed_id=breed_id,
             user_id=user_id,
@@ -572,8 +577,8 @@ async def add_puppies_to_litter(
         session.add(puppy)
         created_puppies.append(puppy)
     
-    # Update litter status to "Done"
-    litter.status = LitterStatus.DONE.value
+    # Update breeding status to "Done"
+    breeding.status = LitterStatus.DONE.value
     
     # Commit changes (updated_at will be automatically updated)
     await session.commit()
@@ -582,19 +587,19 @@ async def add_puppies_to_litter(
     for puppy in created_puppies:
         await session.refresh(puppy)
     
-    # Reload litter with relationships to get the newly added puppies
-    query = select(Litter).where(Litter.id == litter_id).options(
-        selectinload(Litter.litter_pets).selectinload(LitterPet.pet).selectinload(Pet.breed),
-        selectinload(Litter.litter_pets).selectinload(LitterPet.pet).selectinload(Pet.location),
-        selectinload(Litter.pets).selectinload(Pet.breed),
-        selectinload(Litter.pets).selectinload(Pet.location)
+    # Reload breeding with relationships to get the newly added puppies
+    query = select(Breeding).where(Breeding.id == breeding_id).options(
+        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.breed),
+        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.location),
+        selectinload(Breeding.pets).selectinload(Pet.breed),
+        selectinload(Breeding.pets).selectinload(Pet.location)
     )
     result = await session.execute(query)
-    litter = result.scalar_one()
+    breeding = result.scalar_one()
     
-    # Build parent pets list from litter_pets junction table
+    # Build parent pets list from breeding_pets junction table
     parent_pets_list = []
-    for litter_pet in litter.litter_pets:
+    for litter_pet in breeding.breeding_pets:
         pet = litter_pet.pet
         parent_pets_list.append({
             "id": str(pet.id),
@@ -606,8 +611,8 @@ async def add_puppies_to_litter(
             "gender": pet.gender
         })
     
-    # Build puppies list from pets with this litter_id
-    puppy_query = select(Pet).where(Pet.litter_id == litter.id).options(
+    # Build puppies list from pets with this breeding_id
+    puppy_query = select(Pet).where(Pet.breeding_id == breeding.id).options(
         selectinload(Pet.breed),
         selectinload(Pet.location)
     )
@@ -626,59 +631,59 @@ async def add_puppies_to_litter(
     
     # Return LitterResponse format
     return {
-        "id": litter.id,
-        "description": litter.description,
-        "status": litter.status,
-        "created_at": litter.created_at,
-        "updated_at": litter.updated_at,
+        "id": breeding.id,
+        "description": breeding.description,
+        "status": breeding.status,
+        "created_at": breeding.created_at,
+        "updated_at": breeding.updated_at,
         "parent_pets": parent_pets_list if parent_pets_list else None,
         "puppies": puppies if puppies else None
     }
 
 
-@router.delete("/{litter_id}", response_model=LitterResponse)
+@router.delete("/{breeding_id}", response_model=LitterResponse)
 async def delete_litter(
-    litter_id: int,
+    breeding_id: int,
     session: AsyncSession = Depends(get_async_session),
 ) -> dict:
     """
-    Void/cancel a litter record (soft delete).
+    Void/cancel a breeding record (soft delete).
     
-    This endpoint updates the litter status to "Voided" and maintains the litter record
-    for historical tracking. The litter will be excluded from default listings but
-    can still be retrieved by ID or by explicitly filtering for voided litters.
+    This endpoint updates the breeding status to "Voided" and maintains the breeding record
+    for historical tracking. The breeding will be excluded from default listings but
+    can still be retrieved by ID or by explicitly filtering for voided breedings.
     This endpoint is public and does not require authentication.
     
     **Returns:** LitterResponse with updated status "Voided"
     
     **Requirements:** 9.1, 9.2, 9.3, 9.4, 9.5
     """
-    # Fetch the litter with relationships
-    query = select(Litter).where(Litter.id == litter_id).options(
-        selectinload(Litter.litter_pets).selectinload(LitterPet.pet).selectinload(Pet.breed),
-        selectinload(Litter.litter_pets).selectinload(LitterPet.pet).selectinload(Pet.location),
-        selectinload(Litter.pets).selectinload(Pet.breed),
-        selectinload(Litter.pets).selectinload(Pet.location)
+    # Fetch the breeding with relationships
+    query = select(Breeding).where(Breeding.id == breeding_id).options(
+        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.breed),
+        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.location),
+        selectinload(Breeding.pets).selectinload(Pet.breed),
+        selectinload(Breeding.pets).selectinload(Pet.location)
     )
     result = await session.execute(query)
-    litter = result.scalar_one_or_none()
+    breeding = result.scalar_one_or_none()
     
-    if litter is None:
+    if breeding is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Litter not found"
+            detail="Breeding not found"
         )
     
-    # Update litter status to "Voided" (soft delete)
-    litter.status = LitterStatus.VOIDED.value
+    # Update breeding status to "Voided" (soft delete)
+    breeding.status = LitterStatus.VOIDED.value
     
     # Commit changes (updated_at will be automatically updated)
     await session.commit()
-    await session.refresh(litter)
+    await session.refresh(breeding)
     
-    # Build parent pets list from litter_pets junction table
+    # Build parent pets list from breeding_pets junction table
     parent_pets = []
-    for litter_pet in litter.litter_pets:
+    for litter_pet in breeding.breeding_pets:
         pet = litter_pet.pet
         parent_pets.append({
             "id": str(pet.id),
@@ -690,8 +695,8 @@ async def delete_litter(
             "gender": pet.gender
         })
     
-    # Build puppies list from pets with this litter_id
-    puppy_query = select(Pet).where(Pet.litter_id == litter.id).options(
+    # Build puppies list from pets with this breeding_id
+    puppy_query = select(Pet).where(Pet.breeding_id == breeding.id).options(
         selectinload(Pet.breed),
         selectinload(Pet.location)
     )
@@ -710,11 +715,11 @@ async def delete_litter(
     
     # Return LitterResponse format
     return {
-        "id": litter.id,
-        "description": litter.description,
-        "status": litter.status,
-        "created_at": litter.created_at,
-        "updated_at": litter.updated_at,
+        "id": breeding.id,
+        "description": breeding.description,
+        "status": breeding.status,
+        "created_at": breeding.created_at,
+        "updated_at": breeding.updated_at,
         "parent_pets": parent_pets if parent_pets else None,
         "puppies": puppies if puppies else None
     }

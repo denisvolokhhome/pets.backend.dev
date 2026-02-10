@@ -14,7 +14,7 @@ from sqlalchemy.exc import NoResultFound
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import Settings
-from app.routers import auth, pets, breeds, litters, locations, users
+from app.routers import auth, pets, breeds, breedings, locations, users, geocoding, search
 
 # Configure logging
 logging.basicConfig(
@@ -132,7 +132,7 @@ app = FastAPI(
     * **User Profiles**: Manage breedery information, profile images, and search tags
     * **Pets**: Complete CRUD operations for pet records with image upload support
     * **Breeds**: Management of dog breed information
-    * **Litters**: Tracking of puppy litters
+    * **Litters**: Tracking of puppy breedings
     * **Locations**: Management of breeder locations
     
     ## Authentication
@@ -216,12 +216,20 @@ app = FastAPI(
             "description": "Dog breed management. Manage breed information and classifications.",
         },
         {
-            "name": "litters",
-            "description": "Litter management. Track puppy litters and associate pets with litters.",
+            "name": "breedings",
+            "description": "Breeding management. Track puppy breedings and associate pets with breedings.",
         },
         {
             "name": "locations",
             "description": "Location management. Manage breeder locations and facilities.",
+        },
+        {
+            "name": "geocoding",
+            "description": "Geocoding operations. Convert between ZIP codes and coordinates.",
+        },
+        {
+            "name": "search",
+            "description": "Location-based search operations. Find breeders and pets near a geographic location.",
         },
     ],
 )
@@ -267,8 +275,10 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(users.router, tags=["users"])
 app.include_router(pets.router, tags=["pets"])
 app.include_router(breeds.router, tags=["breeds"])
-app.include_router(litters.router, tags=["litters"])
+app.include_router(breedings.router, tags=["breedings"])
 app.include_router(locations.router, tags=["locations"])
+app.include_router(geocoding.router, tags=["geocoding"])
+app.include_router(search.router, tags=["search"])
 
 
 @app.get("/health")

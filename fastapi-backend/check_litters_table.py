@@ -1,4 +1,4 @@
-"""Check if litters table exists."""
+"""Check if breedings table exists."""
 import asyncio
 from app.database import engine
 from sqlalchemy import text
@@ -13,10 +13,10 @@ async def check_tables():
         tables = [row[0] for row in result]
         print("Tables in database:", tables)
         
-        if 'litters' in tables:
-            # Check litters table structure
+        if 'breedings' in tables:
+            # Check breedings table structure
             result = await conn.execute(
-                text("SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = 'litters'")
+                text("SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = 'breedings'")
             )
             print("\nLitters table columns:")
             for row in result:

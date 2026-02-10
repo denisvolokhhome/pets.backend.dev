@@ -11,7 +11,7 @@ from app.schemas.breed import (
     BreedColourUpdate,
     BreedColourRead,
 )
-from app.schemas.litter import LitterBase, LitterCreate, LitterUpdate, LitterRead
+from app.schemas.breeding import LitterBase, LitterCreate, LitterUpdate, LitterRead
 from app.schemas.location import LocationBase, LocationCreate, LocationUpdate, LocationRead
 
 __all__ = [
@@ -33,7 +33,7 @@ __all__ = [
     "BreedColourCreate",
     "BreedColourUpdate",
     "BreedColourRead",
-    # Litter schemas
+    # Breeding schemas
     "LitterBase",
     "LitterCreate",
     "LitterUpdate",

@@ -1,27 +1,31 @@
-"""Litter model for managing groups of puppies."""
+"""Breeding model for managing groups of puppies."""
 from datetime import datetime, date
 from typing import Optional, TYPE_CHECKING
+import uuid
 
-from sqlalchemy import String, Text, Boolean, Integer, Date, DateTime, func
+from sqlalchemy import String, Text, Boolean, Integer, Date, DateTime, ForeignKey, func
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.pet import Pet
-    from app.models.litter_pet import LitterPet
+    from app.models.litter_pet import BreedingPet
+    from app.models.user import User
 
 
-class Litter(Base):
+class Breeding(Base):
     """
-    Litter model representing a group of puppies born together.
+    Breeding model representing a group of puppies born together.
     
-    One-to-many relationship with Pet (multiple pets can belong to one litter).
-    Uses integer primary key to match Laravel schema.
+    One-to-many relationship with Pet (multiple pets can belong to one breeding).
+    Many-to-one relationship with User (each breeding belongs to one breeder).
+    Uses integer primary key to match existing schema.
     """
-    __tablename__ = "litters"
+    __tablename__ = "breedings"
     
-    # Primary key (integer to match Laravel)
+    # Primary key (integer to match existing schema)
     id: Mapped[int] = mapped_column(
         Integer,
         primary_key=True,
@@ -29,7 +33,15 @@ class Litter(Base):
         nullable=False
     )
     
-    # Litter information
+    # Foreign key to user (breeder who owns this breeding)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    
+    # Breeding information
     date_of_litter: Mapped[Optional[date]] = mapped_column(
         Date,
         nullable=True
@@ -62,17 +74,22 @@ class Litter(Base):
     )
     
     # Relationships
-    pets: Mapped[list["Pet"]] = relationship(
-        "Pet",
-        back_populates="litter",
+    user: Mapped["User"] = relationship(
+        "User",
+        back_populates="breedings",
         lazy="selectin"
     )
-    litter_pets: Mapped[list["LitterPet"]] = relationship(
-        "LitterPet",
-        back_populates="litter",
+    pets: Mapped[list["Pet"]] = relationship(
+        "Pet",
+        back_populates="breeding",
+        lazy="selectin"
+    )
+    breeding_pets: Mapped[list["BreedingPet"]] = relationship(
+        "BreedingPet",
+        back_populates="breeding",
         lazy="selectin",
         cascade="all, delete-orphan"
     )
     
     def __repr__(self) -> str:
-        return f"<Litter(id={self.id}, date_of_litter={self.date_of_litter})>"
+        return f"<Breeding(id={self.id}, user_id={self.user_id}, date_of_litter={self.date_of_litter})>"

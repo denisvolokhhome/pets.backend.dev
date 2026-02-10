@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.pet import Pet
 from app.models.breed import Breed
-from app.models.litter import Litter
+from app.models.breeding import Breeding
 from app.models.location import Location
 from app.models.user import User
 

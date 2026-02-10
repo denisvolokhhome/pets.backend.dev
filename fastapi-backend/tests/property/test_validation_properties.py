@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from app.schemas.pet import PetCreate, PetUpdate
 from app.schemas.breed import BreedCreate, BreedUpdate
-from app.schemas.litter import LitterCreate, LitterUpdate
+from app.schemas.breeding import LitterCreate, LitterUpdate
 from app.schemas.location import LocationCreate, LocationUpdate
 
 
@@ -148,7 +148,7 @@ class TestValidationErrorProperties:
     def test_property_litter_missing_date_validation(self, description):
         """
         Property 23: Validation Error Response
-        For any litter creation without required date, should raise ValidationError.
+        For any breeding creation without required date, should raise ValidationError.
         
         Feature: laravel-to-fastapi-migration, Property 23: Validation Error Response
         Validates: Requirements 10.1
@@ -210,17 +210,17 @@ class TestValidationErrorProperties:
     def test_property_valid_litter_data_passes_validation(self, date_of_litter, description, is_active):
         """
         Property 23: Validation Error Response
-        For any valid litter data, creation should succeed without ValidationError.
+        For any valid breeding data, creation should succeed without ValidationError.
         
         Feature: laravel-to-fastapi-migration, Property 23: Validation Error Response
         Validates: Requirements 10.1
         """
         # This should not raise ValidationError
-        litter = LitterCreate(
+        breeding = LitterCreate(
             date_of_litter=date_of_litter,
             description=description,
             is_active=is_active
         )
-        assert litter.date_of_litter == date_of_litter
-        assert litter.description == description
-        assert litter.is_active == is_active
+        assert breeding.date_of_litter == date_of_litter
+        assert breeding.description == description
+        assert breeding.is_active == is_active

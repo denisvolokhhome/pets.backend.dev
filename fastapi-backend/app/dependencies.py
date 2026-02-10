@@ -1,6 +1,6 @@
 """FastAPI dependencies for authentication and database access."""
 import uuid
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
 from fastapi import Depends
 from fastapi_users import FastAPIUsers
@@ -10,6 +10,7 @@ from fastapi_users.authentication import (
     JWTStrategy,
 )
 from fastapi_users.db import SQLAlchemyUserDatabase
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
@@ -20,6 +21,40 @@ from app.services.user_manager import UserManager
 
 # Initialize settings
 settings = Settings()
+
+
+# Redis client singleton
+_redis_client: Optional[Redis] = None
+
+
+async def get_redis() -> Optional[Redis]:
+    """
+    Dependency to get Redis client for caching.
+    
+    Returns None if Redis connection fails (graceful degradation).
+    
+    Yields:
+        Optional[Redis]: Redis client or None
+    """
+    global _redis_client
+    
+    if _redis_client is None:
+        try:
+            _redis_client = Redis.from_url(
+                settings.redis_url,
+                encoding="utf-8",
+                decode_responses=True
+            )
+            # Test connection
+            await _redis_client.ping()
+        except Exception as e:
+            # Log warning but don't fail - service works without cache
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Redis connection failed: {e}. Caching disabled.")
+            _redis_client = None
+    
+    return _redis_client
 
 
 async def get_user_db(

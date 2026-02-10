@@ -26,7 +26,7 @@ async def test_all_required_tables_exist(async_session: AsyncSession):
         "pets",
         "breeds",
         "breed_colours",
-        "litters",
+        "breedings",
         "locations",
         "user_contacts"
     }
@@ -172,11 +172,11 @@ async def test_foreign_key_constraints_exist(async_session: AsyncSession):
         for fk in fk_set
     ), "pets.breed_id -> breeds.id foreign key missing"
     
-    # pets -> litters
+    # pets -> breedings
     assert any(
-        fk[0] == "pets" and fk[1] == "litter_id" and fk[2] == "litters"
+        fk[0] == "pets" and fk[1] == "breeding_id" and fk[2] == "breedings"
         for fk in fk_set
-    ), "pets.litter_id -> litters.id foreign key missing"
+    ), "pets.breeding_id -> breedings.id foreign key missing"
     
     # pets -> locations
     assert any(
@@ -249,9 +249,9 @@ async def test_cascade_delete_rules(async_session: AsyncSession):
         "pets.breed_id should SET NULL on delete"
     )
     
-    # pets.litter_id -> litters.id should SET NULL
-    assert fk_dict.get(("pets", "litter_id", "litters")) == "SET NULL", (
-        "pets.litter_id should SET NULL on delete"
+    # pets.breeding_id -> breedings.id should SET NULL
+    assert fk_dict.get(("pets", "breeding_id", "breedings")) == "SET NULL", (
+        "pets.breeding_id should SET NULL on delete"
     )
     
     # locations.user_id -> users.id should CASCADE

@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from app.schemas.user import UserCreate, UserUpdate, UserRead
 from app.schemas.pet import PetCreate, PetUpdate, PetRead
 from app.schemas.breed import BreedCreate, BreedUpdate, BreedRead, BreedColourCreate
-from app.schemas.litter import LitterCreate, LitterUpdate, LitterRead
+from app.schemas.breeding import LitterCreate, LitterUpdate, LitterRead
 from app.schemas.location import LocationCreate, LocationUpdate, LocationRead
 
 
@@ -208,7 +208,7 @@ class TestPetSchemas:
             "user_id": uuid.uuid4(),
             "name": "Buddy",
             "breed_id": 1,
-            "litter_id": None,
+            "breeding_id": None,
             "location_id": None,
             "date_of_birth": None,
             "gender": None,
@@ -281,29 +281,29 @@ class TestBreedSchemas:
 
 
 class TestLitterSchemas:
-    """Test litter schema validation."""
+    """Test breeding schema validation."""
     
     def test_litter_create_with_valid_data(self):
-        """Test creating litter schema with valid data."""
-        litter_data = {
-            "description": "First litter of the year"
+        """Test creating breeding schema with valid data."""
+        breeding_data = {
+            "description": "First breeding of the year"
         }
-        litter = LitterCreate(**litter_data)
-        assert litter.description == "First litter of the year"
+        breeding = LitterCreate(**breeding_data)
+        assert breeding.description == "First breeding of the year"
     
     def test_litter_create_with_no_description(self):
-        """Test creating litter with no description."""
-        litter = LitterCreate()
-        assert litter.description is None
+        """Test creating breeding with no description."""
+        breeding = LitterCreate()
+        assert breeding.description is None
     
     def test_litter_update_with_partial_data(self):
-        """Test updating litter with partial data."""
+        """Test updating breeding with partial data."""
         litter_update = LitterUpdate(description="Updated description")
         assert litter_update.description == "Updated description"
     
     def test_pet_assignment_with_valid_data(self):
         """Test PetAssignment validates exactly 2 pets."""
-        from app.schemas.litter import PetAssignment
+        from app.schemas.breeding import PetAssignment
         
         pet_ids = [uuid.uuid4(), uuid.uuid4()]
         assignment = PetAssignment(pet_ids=pet_ids)
@@ -312,7 +312,7 @@ class TestLitterSchemas:
     
     def test_pet_assignment_with_one_pet(self):
         """Test PetAssignment rejects single pet."""
-        from app.schemas.litter import PetAssignment
+        from app.schemas.breeding import PetAssignment
         
         with pytest.raises(ValidationError) as exc_info:
             PetAssignment(pet_ids=[uuid.uuid4()])
@@ -322,7 +322,7 @@ class TestLitterSchemas:
     
     def test_pet_assignment_with_three_pets(self):
         """Test PetAssignment rejects more than 2 pets."""
-        from app.schemas.litter import PetAssignment
+        from app.schemas.breeding import PetAssignment
         
         with pytest.raises(ValidationError) as exc_info:
             PetAssignment(pet_ids=[uuid.uuid4(), uuid.uuid4(), uuid.uuid4()])
@@ -332,7 +332,7 @@ class TestLitterSchemas:
     
     def test_pet_assignment_with_duplicate_pets(self):
         """Test PetAssignment rejects same pet twice."""
-        from app.schemas.litter import PetAssignment
+        from app.schemas.breeding import PetAssignment
         
         pet_id = uuid.uuid4()
         with pytest.raises(ValidationError) as exc_info:
@@ -343,7 +343,7 @@ class TestLitterSchemas:
     
     def test_puppy_input_with_valid_data(self):
         """Test PuppyInput with valid data."""
-        from app.schemas.litter import PuppyInput
+        from app.schemas.breeding import PuppyInput
         
         puppy_data = {
             "name": "Max",
@@ -359,7 +359,7 @@ class TestLitterSchemas:
     
     def test_puppy_input_with_female_gender(self):
         """Test PuppyInput validates Female gender."""
-        from app.schemas.litter import PuppyInput
+        from app.schemas.breeding import PuppyInput
         
         puppy_data = {
             "name": "Bella",
@@ -371,7 +371,7 @@ class TestLitterSchemas:
     
     def test_puppy_input_with_invalid_gender(self):
         """Test PuppyInput rejects invalid gender values."""
-        from app.schemas.litter import PuppyInput
+        from app.schemas.breeding import PuppyInput
         
         with pytest.raises(ValidationError) as exc_info:
             PuppyInput(
@@ -385,7 +385,7 @@ class TestLitterSchemas:
     
     def test_puppy_input_without_microchip(self):
         """Test PuppyInput with optional microchip field."""
-        from app.schemas.litter import PuppyInput
+        from app.schemas.breeding import PuppyInput
         
         puppy = PuppyInput(
             name="Max",
@@ -396,7 +396,7 @@ class TestLitterSchemas:
     
     def test_puppy_batch_with_valid_data(self):
         """Test PuppyBatch with multiple puppies."""
-        from app.schemas.litter import PuppyBatch, PuppyInput
+        from app.schemas.breeding import PuppyBatch, PuppyInput
         
         puppies_data = {
             "puppies": [
@@ -419,7 +419,7 @@ class TestLitterSchemas:
     
     def test_puppy_batch_with_empty_list(self):
         """Test PuppyBatch rejects empty puppy list."""
-        from app.schemas.litter import PuppyBatch
+        from app.schemas.breeding import PuppyBatch
         
         with pytest.raises(ValidationError) as exc_info:
             PuppyBatch(puppies=[])
@@ -429,11 +429,11 @@ class TestLitterSchemas:
     
     def test_litter_response_serialization(self):
         """Test LitterResponse schema serialization."""
-        from app.schemas.litter import LitterResponse, LitterStatus
+        from app.schemas.breeding import LitterResponse, LitterStatus
         
         response_data = {
             "id": 1,
-            "description": "Test litter",
+            "description": "Test breeding",
             "status": LitterStatus.STARTED,
             "created_at": datetime.now(),
             "updated_at": None,
@@ -443,15 +443,15 @@ class TestLitterSchemas:
         response = LitterResponse(**response_data)
         assert response.id == 1
         assert response.status == LitterStatus.STARTED
-        assert response.description == "Test litter"
+        assert response.description == "Test breeding"
     
     def test_litter_response_with_parent_pets(self):
         """Test LitterResponse with parent pets data."""
-        from app.schemas.litter import LitterResponse, LitterStatus
+        from app.schemas.breeding import LitterResponse, LitterStatus
         
         response_data = {
             "id": 1,
-            "description": "Test litter",
+            "description": "Test breeding",
             "status": LitterStatus.IN_PROCESS,
             "created_at": datetime.now(),
             "updated_at": datetime.now(),
@@ -467,11 +467,11 @@ class TestLitterSchemas:
     
     def test_litter_response_with_puppies(self):
         """Test LitterResponse with puppies data."""
-        from app.schemas.litter import LitterResponse, LitterStatus
+        from app.schemas.breeding import LitterResponse, LitterStatus
         
         response_data = {
             "id": 1,
-            "description": "Test litter",
+            "description": "Test breeding",
             "status": LitterStatus.DONE,
             "created_at": datetime.now(),
             "updated_at": datetime.now(),
@@ -490,7 +490,7 @@ class TestLitterSchemas:
     
     def test_litter_status_enum_values(self):
         """Test LitterStatus enum has correct values."""
-        from app.schemas.litter import LitterStatus
+        from app.schemas.breeding import LitterStatus
         
         assert LitterStatus.STARTED.value == "Started"
         assert LitterStatus.IN_PROCESS.value == "InProcess"

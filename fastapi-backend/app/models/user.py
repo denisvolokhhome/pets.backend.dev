@@ -103,6 +103,11 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         back_populates="user",
         lazy="selectin"
     )
+    breedings: Mapped[list["Breeding"]] = relationship(
+        "Breeding",
+        back_populates="user",
+        lazy="selectin"
+    )
     locations: Mapped[list["Location"]] = relationship(
         "Location",
         back_populates="user",

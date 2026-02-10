@@ -1,4 +1,4 @@
-"""LitterPet junction model for parent pet assignments."""
+"""BreedingPet junction model for parent pet assignments."""
 from datetime import datetime
 import uuid
 from typing import TYPE_CHECKING
@@ -10,18 +10,18 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 if TYPE_CHECKING:
-    from app.models.litter import Litter
+    from app.models.breeding import Breeding
     from app.models.pet import Pet
 
 
-class LitterPet(Base):
+class BreedingPet(Base):
     """
-    Junction table for many-to-many relationship between litters and parent pets.
+    Junction table for many-to-many relationship between breedings and parent pets.
     
-    Allows tracking which pets are assigned as parents to which litters.
-    A pet can be assigned to multiple litters (multi-litter assignment).
+    Allows tracking which pets are assigned as parents to which breedings.
+    A pet can be assigned to multiple breedings (multi-breeding assignment).
     """
-    __tablename__ = "litter_pets"
+    __tablename__ = "breeding_pets"
     
     # Primary key
     id: Mapped[int] = mapped_column(
@@ -32,9 +32,9 @@ class LitterPet(Base):
     )
     
     # Foreign keys
-    litter_id: Mapped[int] = mapped_column(
+    breeding_id: Mapped[int] = mapped_column(
         Integer,
-        ForeignKey("litters.id", ondelete="CASCADE"),
+        ForeignKey("breedings.id", ondelete="CASCADE"),
         nullable=False,
         index=True
     )
@@ -53,16 +53,16 @@ class LitterPet(Base):
     )
     
     # Relationships
-    litter: Mapped["Litter"] = relationship(
-        "Litter",
-        back_populates="litter_pets",
+    breeding: Mapped["Breeding"] = relationship(
+        "Breeding",
+        back_populates="breeding_pets",
         lazy="selectin"
     )
     pet: Mapped["Pet"] = relationship(
         "Pet",
-        back_populates="litter_assignments",
+        back_populates="breeding_assignments",
         lazy="selectin"
     )
     
     def __repr__(self) -> str:
-        return f"<LitterPet(litter_id={self.litter_id}, pet_id={self.pet_id})>"
+        return f"<BreedingPet(breeding_id={self.breeding_id}, pet_id={self.pet_id})>"

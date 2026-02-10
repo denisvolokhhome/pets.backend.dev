@@ -56,7 +56,7 @@ async def create_pet(
     
     **Optional fields:**
     - breed_id: Reference to breed (must exist)
-    - litter_id: Reference to litter (must exist)
+    - breeding_id: Reference to breeding (must exist)
     - location_id: Reference to location (must exist and be owned by user)
     - date_of_birth: Pet's birth date
     - gender: Pet's gender
@@ -88,7 +88,7 @@ async def create_pet(
         user_id=user.id,
         name=pet_data.name,
         breed_id=pet_data.breed_id,
-        litter_id=pet_data.litter_id,
+        breeding_id=pet_data.breeding_id,
         location_id=pet_data.location_id,
         date_of_birth=pet_data.date_of_birth,
         gender=pet_data.gender,
@@ -146,7 +146,7 @@ async def list_pets(
             "user_id": pet.user_id,
             "name": pet.name,
             "breed_id": pet.breed_id,
-            "litter_id": pet.litter_id,
+            "breeding_id": pet.breeding_id,
             "location_id": pet.location_id,
             "date_of_birth": pet.date_of_birth,
             "gender": pet.gender,
@@ -209,7 +209,7 @@ async def get_pets_by_breeder(
             "user_id": pet.user_id,
             "name": pet.name,
             "breed_id": pet.breed_id,
-            "litter_id": pet.litter_id,
+            "breeding_id": pet.breeding_id,
             "location_id": pet.location_id,
             "date_of_birth": pet.date_of_birth,
             "gender": pet.gender,

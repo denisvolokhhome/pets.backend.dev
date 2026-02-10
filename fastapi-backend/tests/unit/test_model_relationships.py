@@ -3,7 +3,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.models import User, Pet, Breed, Litter, Location
+from app.models import User, Pet, Breed, Breeding, Location
 
 
 @pytest.mark.asyncio
@@ -80,28 +80,28 @@ async def test_pet_breed_relationship(async_session: AsyncSession, test_user: Us
 @pytest.mark.asyncio
 async def test_pet_litter_relationship(async_session: AsyncSession, test_user: User):
     """
-    Test Pet → Litter relationship.
+    Test Pet → Breeding relationship.
     
-    Verifies that a pet is correctly associated with its litter.
+    Verifies that a pet is correctly associated with its breeding.
     Validates: Requirements 11.4
     """
     from datetime import date
     
-    # Create a litter
-    litter = Litter(
+    # Create a breeding
+    breeding = Breeding(
         date_of_litter=date.today(),
-        description="Test Litter",
+        description="Test Breeding",
         is_active=True
     )
-    async_session.add(litter)
+    async_session.add(breeding)
     await async_session.commit()
-    await async_session.refresh(litter)
+    await async_session.refresh(breeding)
     
-    # Create a pet with the litter
+    # Create a pet with the breeding
     pet = Pet(
         name="Test Pet",
         user_id=test_user.id,
-        litter_id=litter.id,
+        breeding_id=breeding.id,
         is_deleted=False
     )
     async_session.add(pet)
@@ -109,15 +109,15 @@ async def test_pet_litter_relationship(async_session: AsyncSession, test_user: U
     await async_session.refresh(pet)
     
     # Verify the relationship
-    assert pet.litter_id == litter.id
-    assert pet.litter is not None
-    assert pet.litter.id == litter.id
-    assert pet.litter.date_of_litter == date.today()
+    assert pet.breeding_id == breeding.id
+    assert pet.breeding is not None
+    assert pet.breeding.id == breeding.id
+    assert pet.breeding.date_of_litter == date.today()
     
     # Verify reverse relationship
-    await async_session.refresh(litter)
-    assert len(litter.pets) > 0
-    assert any(p.id == pet.id for p in litter.pets)
+    await async_session.refresh(breeding)
+    assert len(breeding.pets) > 0
+    assert any(p.id == pet.id for p in breeding.pets)
 
 
 @pytest.mark.asyncio
@@ -185,37 +185,37 @@ async def test_multiple_pets_same_user(async_session: AsyncSession, test_user: U
 @pytest.mark.asyncio
 async def test_multiple_pets_same_litter(async_session: AsyncSession, test_user: User):
     """
-    Test that a litter can have multiple pets.
+    Test that a breeding can have multiple pets.
     
-    Verifies the one-to-many relationship between Litter and Pet.
+    Verifies the one-to-many relationship between Breeding and Pet.
     Validates: Requirements 11.4
     """
     from datetime import date
     
-    # Create a litter
-    litter = Litter(
+    # Create a breeding
+    breeding = Breeding(
         date_of_litter=date.today(),
-        description="Test Litter",
+        description="Test Breeding",
         is_active=True
     )
-    async_session.add(litter)
+    async_session.add(breeding)
     await async_session.commit()
-    await async_session.refresh(litter)
+    await async_session.refresh(breeding)
     
-    # Create multiple pets in the same litter
-    pet1 = Pet(name="Puppy 1", user_id=test_user.id, litter_id=litter.id, is_deleted=False)
-    pet2 = Pet(name="Puppy 2", user_id=test_user.id, litter_id=litter.id, is_deleted=False)
-    pet3 = Pet(name="Puppy 3", user_id=test_user.id, litter_id=litter.id, is_deleted=False)
+    # Create multiple pets in the same breeding
+    pet1 = Pet(name="Puppy 1", user_id=test_user.id, breeding_id=breeding.id, is_deleted=False)
+    pet2 = Pet(name="Puppy 2", user_id=test_user.id, breeding_id=breeding.id, is_deleted=False)
+    pet3 = Pet(name="Puppy 3", user_id=test_user.id, breeding_id=breeding.id, is_deleted=False)
     
     async_session.add_all([pet1, pet2, pet3])
     await async_session.commit()
     
-    # Refresh litter to load relationships
-    await async_session.refresh(litter)
+    # Refresh breeding to load relationships
+    await async_session.refresh(breeding)
     
-    # Verify all pets are associated with the litter
-    assert len(litter.pets) == 3
-    pet_names = {pet.name for pet in litter.pets}
+    # Verify all pets are associated with the breeding
+    assert len(breeding.pets) == 3
+    pet_names = {pet.name for pet in breeding.pets}
     assert "Puppy 1" in pet_names
     assert "Puppy 2" in pet_names
     assert "Puppy 3" in pet_names

@@ -2,8 +2,8 @@
 from app.models.user import User
 from app.models.pet import Pet
 from app.models.breed import Breed, BreedColour
-from app.models.litter import Litter
-from app.models.litter_pet import LitterPet
+from app.models.breeding import Breeding
+from app.models.breeding_pet import BreedingPet
 from app.models.location import Location
 from app.models.user_contact import UserContact
 
@@ -12,8 +12,8 @@ __all__ = [
     "Pet",
     "Breed",
     "BreedColour",
-    "Litter",
-    "LitterPet",
+    "Breeding",
+    "BreedingPet",
     "Location",
     "UserContact",
 ]

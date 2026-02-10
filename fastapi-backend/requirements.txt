@@ -12,6 +12,12 @@ python-multipart>=0.0.20
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
 python-dotenv>=1.0.0
+geoalchemy2>=0.15.0
+shapely>=2.0.0
+httpx>=0.28.0
+redis>=5.0.0
+aioredis>=2.0.1
+aiolimiter>=1.1.0
 
 # Development dependencies
 pytest>=8.3.0

@@ -1,12 +1,12 @@
-"""Integration tests for litters API endpoints.
+"""Integration tests for breedings API endpoints.
 
-Tests the complete litter management workflow including:
-- Creating litters
-- Listing litters
-- Getting single litter
-- Updating litters
-- Deleting litters
-- Associating multiple pets with a litter
+Tests the complete breeding management workflow including:
+- Creating breedings
+- Listing breedings
+- Getting single breeding
+- Updating breedings
+- Deleting breedings
+- Associating multiple pets with a breeding
 """
 
 import pytest
@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import app
 from app.database import get_async_session
-from app.models.litter import Litter
+from app.models.breeding import Breeding
 from app.models.pet import Pet
 from app.models.user import User
 
@@ -38,27 +38,27 @@ async def client(async_session: AsyncSession):
 
 
 class TestLitterCreation:
-    """Integration tests for litter creation."""
+    """Integration tests for breeding creation."""
 
     @pytest.mark.asyncio
     async def test_create_litter_with_description(self, client: AsyncClient):
         """
-        Test creating a litter with description.
+        Test creating a breeding with description.
         
         Validates: Requirements 4.1, 4.3, 4.4, 4.5
         """
-        litter_data = {
-            "description": "Test litter with description"
+        breeding_data = {
+            "description": "Test breeding with description"
         }
         
-        response = await client.post("/api/litters/", json=litter_data)
+        response = await client.post("/api/breedings/", json=breeding_data)
         
         assert response.status_code == 201
         data = response.json()
         
         # Verify response contains all required fields
         assert "id" in data
-        assert data["description"] == litter_data["description"]
+        assert data["description"] == breeding_data["description"]
         assert data["status"] == "Started"  # Default status
         assert "created_at" in data
         assert "updated_at" in data
@@ -68,13 +68,13 @@ class TestLitterCreation:
     @pytest.mark.asyncio
     async def test_create_litter_without_description(self, client: AsyncClient):
         """
-        Test creating a litter without description (minimal fields).
+        Test creating a breeding without description (minimal fields).
         
         Validates: Requirements 4.1, 4.3, 4.4, 4.5
         """
-        litter_data = {}
+        breeding_data = {}
         
-        response = await client.post("/api/litters/", json=litter_data)
+        response = await client.post("/api/breedings/", json=breeding_data)
         
         assert response.status_code == 201
         data = response.json()
@@ -88,19 +88,19 @@ class TestLitterCreation:
     @pytest.mark.asyncio
     async def test_create_litter_default_status_is_started(self, client: AsyncClient):
         """
-        Test that newly created litters have status "Started" by default.
+        Test that newly created breedings have status "Started" by default.
         
         Validates: Requirements 2.1, 4.3
         """
-        litter_data = {
+        breeding_data = {
             "description": "Testing default status"
         }
         
-        response = await client.post("/api/litters/", json=litter_data)
+        response = await client.post("/api/breedings/", json=breeding_data)
         
         assert response.status_code == 201
         data = response.json()
-        assert data["status"] == "Started", "New litter should have status 'Started'"
+        assert data["status"] == "Started", "New breeding should have status 'Started'"
 
     @pytest.mark.asyncio
     async def test_create_litter_timestamps_are_set(self, client: AsyncClient):
@@ -109,11 +109,11 @@ class TestLitterCreation:
         
         Validates: Requirements 4.4, 4.5
         """
-        litter_data = {
+        breeding_data = {
             "description": "Testing timestamps"
         }
         
-        response = await client.post("/api/litters/", json=litter_data)
+        response = await client.post("/api/breedings/", json=breeding_data)
         
         assert response.status_code == 201
         data = response.json()
@@ -136,39 +136,39 @@ class TestLitterCreation:
     @pytest.mark.asyncio
     async def test_create_multiple_litters(self, client: AsyncClient):
         """
-        Test creating multiple litters.
+        Test creating multiple breedings.
         
         Validates: Requirements 4.1
         """
         litters_data = [
-            {"description": "First litter"},
-            {"description": "Second litter"},
+            {"description": "First breeding"},
+            {"description": "Second breeding"},
             {"description": None}  # No description
         ]
         
         created_ids = []
-        for litter_data in litters_data:
-            response = await client.post("/api/litters/", json=litter_data)
+        for breeding_data in litters_data:
+            response = await client.post("/api/breedings/", json=breeding_data)
             assert response.status_code == 201
             data = response.json()
             assert data["status"] == "Started"
             created_ids.append(data["id"])
         
-        # Verify all litters have unique IDs
-        assert len(created_ids) == len(set(created_ids)), "All litters should have unique IDs"
+        # Verify all breedings have unique IDs
+        assert len(created_ids) == len(set(created_ids)), "All breedings should have unique IDs"
 
 
 class TestLitterListing:
-    """Integration tests for listing litters."""
+    """Integration tests for listing breedings."""
 
     @pytest.mark.asyncio
     async def test_list_litters_empty(self, client: AsyncClient):
         """
-        Test listing litters when database is empty.
+        Test listing breedings when database is empty.
         
         Validates: Requirements 7.1, 13.4
         """
-        response = await client.get("/api/litters/")
+        response = await client.get("/api/breedings/")
         
         assert response.status_code == 200
         data = response.json()
@@ -178,25 +178,25 @@ class TestLitterListing:
     @pytest.mark.asyncio
     async def test_list_litters_with_data(self, client: AsyncClient):
         """
-        Test listing litters with multiple litters in database.
+        Test listing breedings with multiple breedings in database.
         
         Validates: Requirements 7.1, 13.4
         """
-        # Create multiple litters
+        # Create multiple breedings
         litters_data = [
-            {"description": "Litter 1"},
-            {"description": "Litter 2"},
-            {"description": "Litter 3"}
+            {"description": "Breeding 1"},
+            {"description": "Breeding 2"},
+            {"description": "Breeding 3"}
         ]
         
         created_ids = []
-        for litter_data in litters_data:
-            response = await client.post("/api/litters/", json=litter_data)
+        for breeding_data in litters_data:
+            response = await client.post("/api/breedings/", json=breeding_data)
             assert response.status_code == 201
             created_ids.append(response.json()["id"])
         
-        # List all litters
-        response = await client.get("/api/litters/")
+        # List all breedings
+        response = await client.get("/api/breedings/")
         
         assert response.status_code == 200
         data = response.json()
@@ -204,10 +204,10 @@ class TestLitterListing:
         assert isinstance(data, list)
         assert len(data) >= len(litters_data)
         
-        # Verify our created litters are in the list
+        # Verify our created breedings are in the list
         litter_ids = [l["id"] for l in data]
-        for litter_id in created_ids:
-            assert litter_id in litter_ids
+        for breeding_id in created_ids:
+            assert breeding_id in litter_ids
 
     @pytest.mark.asyncio
     async def test_list_litters_without_filters(
@@ -217,11 +217,11 @@ class TestLitterListing:
         test_user: User
     ):
         """
-        Test listing litters without any filters returns all non-voided litters.
+        Test listing breedings without any filters returns all non-voided breedings.
         
         Validates: Requirements 10.1, 10.2, 10.3
         """
-        from app.models.litter_pet import LitterPet
+        from app.models.breeding_pet import BreedingPet
         from app.models.location import Location
         from app.models.breed import Breed
         
@@ -245,41 +245,41 @@ class TestLitterListing:
         await async_session.commit()
         await async_session.refresh(breed)
         
-        # Create litters with different statuses
-        litter1 = Litter(
+        # Create breedings with different statuses
+        litter1 = Breeding(
             date_of_litter=date.today(),
-            description="Started litter",
+            description="Started breeding",
             status="Started"
         )
-        litter2 = Litter(
+        litter2 = Breeding(
             date_of_litter=date.today(),
-            description="InProcess litter",
+            description="InProcess breeding",
             status="InProcess"
         )
-        litter3 = Litter(
+        litter3 = Breeding(
             date_of_litter=date.today(),
-            description="Done litter",
+            description="Done breeding",
             status="Done"
         )
-        litter4 = Litter(
+        litter4 = Breeding(
             date_of_litter=date.today(),
-            description="Voided litter",
+            description="Voided breeding",
             status="Voided"
         )
         
         async_session.add_all([litter1, litter2, litter3, litter4])
         await async_session.commit()
         
-        for litter in [litter1, litter2, litter3, litter4]:
-            await async_session.refresh(litter)
+        for breeding in [litter1, litter2, litter3, litter4]:
+            await async_session.refresh(breeding)
         
-        # List litters without filters
-        response = await client.get("/api/litters/")
+        # List breedings without filters
+        response = await client.get("/api/breedings/")
         
         assert response.status_code == 200
         data = response.json()
         
-        # Verify voided litter is excluded by default
+        # Verify voided breeding is excluded by default
         litter_ids = [l["id"] for l in data]
         assert litter1.id in litter_ids
         assert litter2.id in litter_ids
@@ -294,11 +294,11 @@ class TestLitterListing:
         test_user: User
     ):
         """
-        Test filtering litters by location.
+        Test filtering breedings by location.
         
         Validates: Requirements 10.1
         """
-        from app.models.litter_pet import LitterPet
+        from app.models.breeding_pet import BreedingPet
         from app.models.location import Location
         from app.models.breed import Breed
         
@@ -328,15 +328,15 @@ class TestLitterListing:
         await async_session.refresh(location1)
         await async_session.refresh(location2)
         
-        # Create litters
-        litter1 = Litter(
+        # Create breedings
+        litter1 = Breeding(
             date_of_litter=date.today(),
-            description="Litter at location 1",
+            description="Breeding at location 1",
             status="InProcess"
         )
-        litter2 = Litter(
+        litter2 = Breeding(
             date_of_litter=date.today(),
-            description="Litter at location 2",
+            description="Breeding at location 2",
             status="InProcess"
         )
         async_session.add_all([litter1, litter2])
@@ -363,8 +363,8 @@ class TestLitterListing:
         await async_session.refresh(pet2)
         
         # Assign pets to litter1
-        litter_pet1 = LitterPet(litter_id=litter1.id, pet_id=pet1.id)
-        litter_pet2 = LitterPet(litter_id=litter1.id, pet_id=pet2.id)
+        litter_pet1 = BreedingPet(breeding_id=litter1.id, pet_id=pet1.id)
+        litter_pet2 = BreedingPet(breeding_id=litter1.id, pet_id=pet2.id)
         async_session.add_all([litter_pet1, litter_pet2])
         await async_session.commit()
         
@@ -387,13 +387,13 @@ class TestLitterListing:
         await async_session.refresh(pet4)
         
         # Assign pets to litter2
-        litter_pet3 = LitterPet(litter_id=litter2.id, pet_id=pet3.id)
-        litter_pet4 = LitterPet(litter_id=litter2.id, pet_id=pet4.id)
+        litter_pet3 = BreedingPet(breeding_id=litter2.id, pet_id=pet3.id)
+        litter_pet4 = BreedingPet(breeding_id=litter2.id, pet_id=pet4.id)
         async_session.add_all([litter_pet3, litter_pet4])
         await async_session.commit()
         
         # Filter by location1
-        response = await client.get(f"/api/litters/?location_id={location1.id}")
+        response = await client.get(f"/api/breedings/?location_id={location1.id}")
         
         assert response.status_code == 200
         data = response.json()
@@ -411,48 +411,48 @@ class TestLitterListing:
         test_user: User
     ):
         """
-        Test filtering litters by status.
+        Test filtering breedings by status.
         
         Validates: Requirements 10.2
         """
-        # Create litters with different statuses
-        litter1 = Litter(
+        # Create breedings with different statuses
+        litter1 = Breeding(
             date_of_litter=date.today(),
-            description="Started litter",
+            description="Started breeding",
             status="Started"
         )
-        litter2 = Litter(
+        litter2 = Breeding(
             date_of_litter=date.today(),
-            description="InProcess litter",
+            description="InProcess breeding",
             status="InProcess"
         )
-        litter3 = Litter(
+        litter3 = Breeding(
             date_of_litter=date.today(),
-            description="Done litter",
+            description="Done breeding",
             status="Done"
         )
         
         async_session.add_all([litter1, litter2, litter3])
         await async_session.commit()
         
-        for litter in [litter1, litter2, litter3]:
-            await async_session.refresh(litter)
+        for breeding in [litter1, litter2, litter3]:
+            await async_session.refresh(breeding)
         
         # Filter by InProcess status
-        response = await client.get("/api/litters/?status=InProcess")
+        response = await client.get("/api/breedings/?status=InProcess")
         
         assert response.status_code == 200
         data = response.json()
         
-        # Verify only InProcess litter is returned
+        # Verify only InProcess breeding is returned
         litter_ids = [l["id"] for l in data]
         assert litter2.id in litter_ids
         assert litter1.id not in litter_ids
         assert litter3.id not in litter_ids
         
-        # Verify all returned litters have InProcess status
-        for litter in data:
-            assert litter["status"] == "InProcess"
+        # Verify all returned breedings have InProcess status
+        for breeding in data:
+            assert breeding["status"] == "InProcess"
 
     @pytest.mark.asyncio
     async def test_list_litters_filter_by_breed(
@@ -462,11 +462,11 @@ class TestLitterListing:
         test_user: User
     ):
         """
-        Test filtering litters by breed.
+        Test filtering breedings by breed.
         
         Validates: Requirements 10.3
         """
-        from app.models.litter_pet import LitterPet
+        from app.models.breeding_pet import BreedingPet
         from app.models.breed import Breed
         
         # Create two breeds
@@ -477,15 +477,15 @@ class TestLitterListing:
         await async_session.refresh(breed1)
         await async_session.refresh(breed2)
         
-        # Create litters
-        litter1 = Litter(
+        # Create breedings
+        litter1 = Breeding(
             date_of_litter=date.today(),
-            description="Litter with breed 1",
+            description="Breeding with breed 1",
             status="InProcess"
         )
-        litter2 = Litter(
+        litter2 = Breeding(
             date_of_litter=date.today(),
-            description="Litter with breed 2",
+            description="Breeding with breed 2",
             status="InProcess"
         )
         async_session.add_all([litter1, litter2])
@@ -512,8 +512,8 @@ class TestLitterListing:
         await async_session.refresh(pet2)
         
         # Assign pets to litter1
-        litter_pet1 = LitterPet(litter_id=litter1.id, pet_id=pet1.id)
-        litter_pet2 = LitterPet(litter_id=litter1.id, pet_id=pet2.id)
+        litter_pet1 = BreedingPet(breeding_id=litter1.id, pet_id=pet1.id)
+        litter_pet2 = BreedingPet(breeding_id=litter1.id, pet_id=pet2.id)
         async_session.add_all([litter_pet1, litter_pet2])
         await async_session.commit()
         
@@ -536,13 +536,13 @@ class TestLitterListing:
         await async_session.refresh(pet4)
         
         # Assign pets to litter2
-        litter_pet3 = LitterPet(litter_id=litter2.id, pet_id=pet3.id)
-        litter_pet4 = LitterPet(litter_id=litter2.id, pet_id=pet4.id)
+        litter_pet3 = BreedingPet(breeding_id=litter2.id, pet_id=pet3.id)
+        litter_pet4 = BreedingPet(breeding_id=litter2.id, pet_id=pet4.id)
         async_session.add_all([litter_pet3, litter_pet4])
         await async_session.commit()
         
         # Filter by breed1
-        response = await client.get(f"/api/litters/?breed_id={breed1.id}")
+        response = await client.get(f"/api/breedings/?breed_id={breed1.id}")
         
         assert response.status_code == 200
         data = response.json()
@@ -560,11 +560,11 @@ class TestLitterListing:
         test_user: User
     ):
         """
-        Test filtering litters with multiple filter criteria combined.
+        Test filtering breedings with multiple filter criteria combined.
         
         Validates: Requirements 10.1, 10.2, 10.3
         """
-        from app.models.litter_pet import LitterPet
+        from app.models.breeding_pet import BreedingPet
         from app.models.location import Location
         from app.models.breed import Breed
         
@@ -601,21 +601,21 @@ class TestLitterListing:
         await async_session.refresh(breed1)
         await async_session.refresh(breed2)
         
-        # Create litters with different combinations
-        # Litter 1: Location1, Breed1, InProcess
-        litter1 = Litter(
+        # Create breedings with different combinations
+        # Breeding 1: Location1, Breed1, InProcess
+        litter1 = Breeding(
             date_of_litter=date.today(),
             description="L1-B1-InProcess",
             status="InProcess"
         )
-        # Litter 2: Location1, Breed1, Done
-        litter2 = Litter(
+        # Breeding 2: Location1, Breed1, Done
+        litter2 = Breeding(
             date_of_litter=date.today(),
             description="L1-B1-Done",
             status="Done"
         )
-        # Litter 3: Location2, Breed2, InProcess
-        litter3 = Litter(
+        # Breeding 3: Location2, Breed2, InProcess
+        litter3 = Breeding(
             date_of_litter=date.today(),
             description="L2-B2-InProcess",
             status="InProcess"
@@ -624,8 +624,8 @@ class TestLitterListing:
         async_session.add_all([litter1, litter2, litter3])
         await async_session.commit()
         
-        for litter in [litter1, litter2, litter3]:
-            await async_session.refresh(litter)
+        for breeding in [litter1, litter2, litter3]:
+            await async_session.refresh(breeding)
         
         # Create and assign pets for litter1
         pet1_1 = Pet(user_id=test_user.id, name="P1_1", location_id=location1.id, breed_id=breed1.id, is_puppy=False)
@@ -635,8 +635,8 @@ class TestLitterListing:
         await async_session.refresh(pet1_1)
         await async_session.refresh(pet1_2)
         
-        lp1_1 = LitterPet(litter_id=litter1.id, pet_id=pet1_1.id)
-        lp1_2 = LitterPet(litter_id=litter1.id, pet_id=pet1_2.id)
+        lp1_1 = BreedingPet(breeding_id=litter1.id, pet_id=pet1_1.id)
+        lp1_2 = BreedingPet(breeding_id=litter1.id, pet_id=pet1_2.id)
         async_session.add_all([lp1_1, lp1_2])
         await async_session.commit()
         
@@ -648,8 +648,8 @@ class TestLitterListing:
         await async_session.refresh(pet2_1)
         await async_session.refresh(pet2_2)
         
-        lp2_1 = LitterPet(litter_id=litter2.id, pet_id=pet2_1.id)
-        lp2_2 = LitterPet(litter_id=litter2.id, pet_id=pet2_2.id)
+        lp2_1 = BreedingPet(breeding_id=litter2.id, pet_id=pet2_1.id)
+        lp2_2 = BreedingPet(breeding_id=litter2.id, pet_id=pet2_2.id)
         async_session.add_all([lp2_1, lp2_2])
         await async_session.commit()
         
@@ -661,14 +661,14 @@ class TestLitterListing:
         await async_session.refresh(pet3_1)
         await async_session.refresh(pet3_2)
         
-        lp3_1 = LitterPet(litter_id=litter3.id, pet_id=pet3_1.id)
-        lp3_2 = LitterPet(litter_id=litter3.id, pet_id=pet3_2.id)
+        lp3_1 = BreedingPet(breeding_id=litter3.id, pet_id=pet3_1.id)
+        lp3_2 = BreedingPet(breeding_id=litter3.id, pet_id=pet3_2.id)
         async_session.add_all([lp3_1, lp3_2])
         await async_session.commit()
         
         # Filter by location1 + breed1 + InProcess
         response = await client.get(
-            f"/api/litters/?location_id={location1.id}&breed_id={breed1.id}&status=InProcess"
+            f"/api/breedings/?location_id={location1.id}&breed_id={breed1.id}&status=InProcess"
         )
         
         assert response.status_code == 200
@@ -683,11 +683,11 @@ class TestLitterListing:
     @pytest.mark.asyncio
     async def test_list_litters_chronological_order(self, client: AsyncClient):
         """
-        Test that litters are returned in chronological order (most recent first).
+        Test that breedings are returned in chronological order (most recent first).
         
         Validates: Requirements 7.1, 13.4
         """
-        # Create litters with different descriptions
+        # Create breedings with different descriptions
         litters_data = [
             {"description": "Oldest"},
             {"description": "Newest"},
@@ -695,17 +695,17 @@ class TestLitterListing:
         ]
         
         created_litters = []
-        for litter_data in litters_data:
-            response = await client.post("/api/litters/", json=litter_data)
+        for breeding_data in litters_data:
+            response = await client.post("/api/breedings/", json=breeding_data)
             assert response.status_code == 201
             created_litters.append(response.json())
         
-        # List litters
-        response = await client.get("/api/litters/")
+        # List breedings
+        response = await client.get("/api/breedings/")
         assert response.status_code == 200
         data = response.json()
         
-        # Find our test litters in the response
+        # Find our test breedings in the response
         test_litters = [l for l in data if l["id"] in [cl["id"] for cl in created_litters]]
         
         # Verify they're in descending chronological order (newest first)
@@ -716,32 +716,32 @@ class TestLitterListing:
     @pytest.mark.asyncio
     async def test_list_litters_active_only_filter(self, client: AsyncClient):
         """
-        Test filtering litters to show only active ones.
+        Test filtering breedings to show only active ones.
         
         Validates: Requirements 7.1, 13.4
         """
-        # Create active and inactive litters (note: is_active is no longer used in new spec)
+        # Create active and inactive breedings (note: is_active is no longer used in new spec)
         active_litter = {
-            "description": "Active litter"
+            "description": "Active breeding"
         }
         inactive_litter = {
-            "description": "Inactive litter"
+            "description": "Inactive breeding"
         }
         
-        active_response = await client.post("/api/litters/", json=active_litter)
+        active_response = await client.post("/api/breedings/", json=active_litter)
         assert active_response.status_code == 201
         active_id = active_response.json()["id"]
         
-        inactive_response = await client.post("/api/litters/", json=inactive_litter)
+        inactive_response = await client.post("/api/breedings/", json=inactive_litter)
         assert inactive_response.status_code == 201
         inactive_id = inactive_response.json()["id"]
         
-        # List only active litters
-        response = await client.get("/api/litters/?active_only=true")
+        # List only active breedings
+        response = await client.get("/api/breedings/?active_only=true")
         assert response.status_code == 200
         data = response.json()
         
-        # Verify only active litters are returned
+        # Verify only active breedings are returned
         litter_ids = [l["id"] for l in data]
         assert active_id in litter_ids
         assert inactive_id not in litter_ids
@@ -749,32 +749,32 @@ class TestLitterListing:
     @pytest.mark.asyncio
     async def test_list_litters_pagination(self, client: AsyncClient):
         """
-        Test litter listing with pagination parameters.
+        Test breeding listing with pagination parameters.
         
         Validates: Requirements 7.1, 13.4
         """
-        # Create several litters
+        # Create several breedings
         for i in range(5):
-            litter_data = {
-                "description": f"Pagination Test Litter {i}"
+            breeding_data = {
+                "description": f"Pagination Test Breeding {i}"
             }
-            await client.post("/api/litters/", json=litter_data)
+            await client.post("/api/breedings/", json=breeding_data)
         
         # Test with limit
-        response = await client.get("/api/litters/?limit=3")
+        response = await client.get("/api/breedings/?limit=3")
         assert response.status_code == 200
         data = response.json()
         assert len(data) <= 3
         
         # Test with skip
-        response = await client.get("/api/litters/?skip=2&limit=2")
+        response = await client.get("/api/breedings/?skip=2&limit=2")
         assert response.status_code == 200
         data = response.json()
         assert len(data) <= 2
 
 
 class TestLitterRetrieval:
-    """Integration tests for retrieving single litter."""
+    """Integration tests for retrieving single breeding."""
 
     @pytest.mark.asyncio
     async def test_get_litter_by_id_successful_retrieval(
@@ -784,11 +784,11 @@ class TestLitterRetrieval:
         test_user: User
     ):
         """
-        Test successful retrieval of a litter by ID with full details.
+        Test successful retrieval of a breeding by ID with full details.
         
         Validates: Requirements 7.2, 7.3, 7.4
         """
-        from app.models.litter_pet import LitterPet
+        from app.models.breeding_pet import BreedingPet
         from app.models.location import Location
         from app.models.breed import Breed
         
@@ -812,14 +812,14 @@ class TestLitterRetrieval:
         await async_session.commit()
         await async_session.refresh(breed)
         
-        # Create a litter
-        litter = Litter(
-            description="Test litter for retrieval",
+        # Create a breeding
+        breeding = Breeding(
+            description="Test breeding for retrieval",
             status="InProcess"
         )
-        async_session.add(litter)
+        async_session.add(breeding)
         await async_session.commit()
-        await async_session.refresh(litter)
+        await async_session.refresh(breeding)
         
         # Create parent pets
         parent1 = Pet(
@@ -843,20 +843,20 @@ class TestLitterRetrieval:
         await async_session.refresh(parent1)
         await async_session.refresh(parent2)
         
-        # Assign parent pets to litter
-        litter_pet1 = LitterPet(litter_id=litter.id, pet_id=parent1.id)
-        litter_pet2 = LitterPet(litter_id=litter.id, pet_id=parent2.id)
+        # Assign parent pets to breeding
+        litter_pet1 = BreedingPet(breeding_id=breeding.id, pet_id=parent1.id)
+        litter_pet2 = BreedingPet(breeding_id=breeding.id, pet_id=parent2.id)
         async_session.add_all([litter_pet1, litter_pet2])
         await async_session.commit()
         
-        # Refresh litter to load relationships
-        await async_session.refresh(litter)
+        # Refresh breeding to load relationships
+        await async_session.refresh(breeding)
         
         # Create puppies
         puppy1 = Pet(
             user_id=test_user.id,
             name="Puppy 1",
-            litter_id=litter.id,
+            breeding_id=breeding.id,
             location_id=location.id,
             breed_id=breed.id,
             gender="Male",
@@ -867,7 +867,7 @@ class TestLitterRetrieval:
         puppy2 = Pet(
             user_id=test_user.id,
             name="Puppy 2",
-            litter_id=litter.id,
+            breeding_id=breeding.id,
             location_id=location.id,
             breed_id=breed.id,
             gender="Female",
@@ -878,15 +878,15 @@ class TestLitterRetrieval:
         async_session.add_all([puppy1, puppy2])
         await async_session.commit()
         
-        # Get the litter
-        response = await client.get(f"/api/litters/{litter.id}")
+        # Get the breeding
+        response = await client.get(f"/api/breedings/{breeding.id}")
         
         assert response.status_code == 200
         data = response.json()
         
-        # Verify basic litter fields
-        assert data["id"] == litter.id
-        assert data["description"] == "Test litter for retrieval"
+        # Verify basic breeding fields
+        assert data["id"] == breeding.id
+        assert data["description"] == "Test breeding for retrieval"
         assert data["status"] == "InProcess"
         assert "created_at" in data
         assert "updated_at" in data
@@ -926,17 +926,17 @@ class TestLitterRetrieval:
     @pytest.mark.asyncio
     async def test_get_litter_by_id_not_found(self, client: AsyncClient):
         """
-        Test that getting a non-existent litter returns 404.
+        Test that getting a non-existent breeding returns 404.
         
         Validates: Requirements 7.2
         """
         # Use a very high ID that shouldn't exist
-        response = await client.get("/api/litters/999999")
+        response = await client.get("/api/breedings/999999")
         
         assert response.status_code == 404
         data = response.json()
         assert "detail" in data
-        assert data["detail"] == "Litter not found"
+        assert data["detail"] == "Breeding not found"
 
     @pytest.mark.asyncio
     async def test_get_litter_with_no_parent_pets(
@@ -945,27 +945,27 @@ class TestLitterRetrieval:
         async_session: AsyncSession
     ):
         """
-        Test retrieving a litter with no parent pets assigned.
+        Test retrieving a breeding with no parent pets assigned.
         
         Validates: Requirements 7.3, 7.5
         """
-        # Create a litter without parent pets
-        litter = Litter(
-            description="Litter with no parents",
+        # Create a breeding without parent pets
+        breeding = Breeding(
+            description="Breeding with no parents",
             status="Started"
         )
-        async_session.add(litter)
+        async_session.add(breeding)
         await async_session.commit()
-        await async_session.refresh(litter)
+        await async_session.refresh(breeding)
         
-        # Get the litter
-        response = await client.get(f"/api/litters/{litter.id}")
+        # Get the breeding
+        response = await client.get(f"/api/breedings/{breeding.id}")
         
         assert response.status_code == 200
         data = response.json()
         
-        assert data["id"] == litter.id
-        assert data["description"] == "Litter with no parents"
+        assert data["id"] == breeding.id
+        assert data["description"] == "Breeding with no parents"
         assert data["status"] == "Started"
         assert data["parent_pets"] is None  # No parent pets
         assert data["puppies"] is None  # No puppies
@@ -978,20 +978,20 @@ class TestLitterRetrieval:
         test_user: User
     ):
         """
-        Test retrieving a litter with parent pets but no puppies.
+        Test retrieving a breeding with parent pets but no puppies.
         
         Validates: Requirements 7.3, 7.4
         """
-        from app.models.litter_pet import LitterPet
+        from app.models.breeding_pet import BreedingPet
         
-        # Create a litter
-        litter = Litter(
-            description="Litter with parents but no puppies",
+        # Create a breeding
+        breeding = Breeding(
+            description="Breeding with parents but no puppies",
             status="InProcess"
         )
-        async_session.add(litter)
+        async_session.add(breeding)
         await async_session.commit()
-        await async_session.refresh(litter)
+        await async_session.refresh(breeding)
         
         # Create parent pets
         parent1 = Pet(
@@ -1011,22 +1011,22 @@ class TestLitterRetrieval:
         await async_session.refresh(parent1)
         await async_session.refresh(parent2)
         
-        # Assign parent pets to litter
-        litter_pet1 = LitterPet(litter_id=litter.id, pet_id=parent1.id)
-        litter_pet2 = LitterPet(litter_id=litter.id, pet_id=parent2.id)
+        # Assign parent pets to breeding
+        litter_pet1 = BreedingPet(breeding_id=breeding.id, pet_id=parent1.id)
+        litter_pet2 = BreedingPet(breeding_id=breeding.id, pet_id=parent2.id)
         async_session.add_all([litter_pet1, litter_pet2])
         await async_session.commit()
         
-        # Refresh litter to load relationships
-        await async_session.refresh(litter)
+        # Refresh breeding to load relationships
+        await async_session.refresh(breeding)
         
-        # Get the litter
-        response = await client.get(f"/api/litters/{litter.id}")
+        # Get the breeding
+        response = await client.get(f"/api/breedings/{breeding.id}")
         
         assert response.status_code == 200
         data = response.json()
         
-        assert data["id"] == litter.id
+        assert data["id"] == breeding.id
         assert data["status"] == "InProcess"
         
         # Verify parent_pets are included
@@ -1039,38 +1039,38 @@ class TestLitterRetrieval:
     @pytest.mark.asyncio
     async def test_get_litter_by_id(self, client: AsyncClient):
         """
-        Test getting a single litter by ID.
+        Test getting a single breeding by ID.
         
         Validates: Requirements 7.1, 13.4
         """
-        # Create a litter
-        litter_data = {
-            "description": "Test litter for retrieval"
+        # Create a breeding
+        breeding_data = {
+            "description": "Test breeding for retrieval"
         }
         
-        create_response = await client.post("/api/litters/", json=litter_data)
+        create_response = await client.post("/api/breedings/", json=breeding_data)
         assert create_response.status_code == 201
         created_litter = create_response.json()
-        litter_id = created_litter["id"]
+        breeding_id = created_litter["id"]
         
-        # Get the litter
-        response = await client.get(f"/api/litters/{litter_id}")
+        # Get the breeding
+        response = await client.get(f"/api/breedings/{breeding_id}")
         
         assert response.status_code == 200
         data = response.json()
         
-        assert data["id"] == litter_id
-        assert data["description"] == litter_data["description"]
+        assert data["id"] == breeding_id
+        assert data["description"] == breeding_data["description"]
 
     @pytest.mark.asyncio
     async def test_get_nonexistent_litter_returns_404(self, client: AsyncClient):
         """
-        Test that getting a non-existent litter returns 404.
+        Test that getting a non-existent breeding returns 404.
         
         Validates: Requirements 7.1, 13.4
         """
         # Use a very high ID that shouldn't exist
-        response = await client.get("/api/litters/999999")
+        response = await client.get("/api/breedings/999999")
         
         assert response.status_code == 404
         data = response.json()
@@ -1078,38 +1078,38 @@ class TestLitterRetrieval:
 
 
 class TestLitterUpdate:
-    """Integration tests for updating litters."""
+    """Integration tests for updating breedings."""
 
     @pytest.mark.asyncio
     async def test_update_litter_successful(self, client: AsyncClient):
         """
-        Test successful update of a litter's description.
+        Test successful update of a breeding's description.
         
         Validates: Requirements 8.1, 8.2
         """
-        # Create a litter
-        litter_data = {
+        # Create a breeding
+        breeding_data = {
             "description": "Original description"
         }
         
-        create_response = await client.post("/api/litters/", json=litter_data)
+        create_response = await client.post("/api/breedings/", json=breeding_data)
         assert create_response.status_code == 201
         created_litter = create_response.json()
-        litter_id = created_litter["id"]
+        breeding_id = created_litter["id"]
         original_created_at = created_litter["created_at"]
         
-        # Update the litter
+        # Update the breeding
         update_data = {
             "description": "Updated description"
         }
         
-        response = await client.put(f"/api/litters/{litter_id}", json=update_data)
+        response = await client.put(f"/api/breedings/{breeding_id}", json=update_data)
         
         assert response.status_code == 200
         data = response.json()
         
         # Verify response structure matches LitterResponse
-        assert data["id"] == litter_id
+        assert data["id"] == breeding_id
         assert data["description"] == update_data["description"]
         assert data["status"] == "Started"  # Status should remain unchanged
         assert "created_at" in data
@@ -1121,33 +1121,33 @@ class TestLitterUpdate:
     @pytest.mark.asyncio
     async def test_update_litter_updated_at_changes(self, client: AsyncClient):
         """
-        Test that updated_at timestamp changes when litter is updated.
+        Test that updated_at timestamp changes when breeding is updated.
         
         Validates: Requirements 8.2, 8.5
         """
         import asyncio
         from datetime import datetime
         
-        # Create a litter
-        litter_data = {
+        # Create a breeding
+        breeding_data = {
             "description": "Test timestamp update"
         }
         
-        create_response = await client.post("/api/litters/", json=litter_data)
+        create_response = await client.post("/api/breedings/", json=breeding_data)
         assert create_response.status_code == 201
         created_litter = create_response.json()
-        litter_id = created_litter["id"]
+        breeding_id = created_litter["id"]
         original_updated_at = created_litter["updated_at"]
         
         # Wait a moment to ensure timestamp difference
         await asyncio.sleep(0.1)
         
-        # Update the litter
+        # Update the breeding
         update_data = {
             "description": "Updated to test timestamp"
         }
         
-        response = await client.put(f"/api/litters/{litter_id}", json=update_data)
+        response = await client.put(f"/api/breedings/{breeding_id}", json=update_data)
         
         assert response.status_code == 200
         data = response.json()
@@ -1165,18 +1165,18 @@ class TestLitterUpdate:
     @pytest.mark.asyncio
     async def test_update_litter_not_found(self, client: AsyncClient):
         """
-        Test that updating a non-existent litter returns 404.
+        Test that updating a non-existent breeding returns 404.
         
         Validates: Requirements 8.2, 8.5
         """
         update_data = {"description": "Updated description"}
         
-        response = await client.put("/api/litters/999999", json=update_data)
+        response = await client.put("/api/breedings/999999", json=update_data)
         
         assert response.status_code == 404
         data = response.json()
         assert "detail" in data
-        assert data["detail"] == "Litter not found"
+        assert data["detail"] == "Breeding not found"
 
     @pytest.mark.asyncio
     async def test_update_litter_with_parent_pets(
@@ -1186,20 +1186,20 @@ class TestLitterUpdate:
         test_user: User
     ):
         """
-        Test updating a litter that has parent pets assigned.
+        Test updating a breeding that has parent pets assigned.
         
         Validates: Requirements 8.1, 8.2
         """
-        from app.models.litter_pet import LitterPet
+        from app.models.breeding_pet import BreedingPet
         
-        # Create a litter
-        litter = Litter(
-            description="Litter with parents",
+        # Create a breeding
+        breeding = Breeding(
+            description="Breeding with parents",
             status="InProcess"
         )
-        async_session.add(litter)
+        async_session.add(breeding)
         await async_session.commit()
-        await async_session.refresh(litter)
+        await async_session.refresh(breeding)
         
         # Create parent pets
         parent1 = Pet(
@@ -1219,24 +1219,24 @@ class TestLitterUpdate:
         await async_session.refresh(parent1)
         await async_session.refresh(parent2)
         
-        # Assign parent pets to litter
-        litter_pet1 = LitterPet(litter_id=litter.id, pet_id=parent1.id)
-        litter_pet2 = LitterPet(litter_id=litter.id, pet_id=parent2.id)
+        # Assign parent pets to breeding
+        litter_pet1 = BreedingPet(breeding_id=breeding.id, pet_id=parent1.id)
+        litter_pet2 = BreedingPet(breeding_id=breeding.id, pet_id=parent2.id)
         async_session.add_all([litter_pet1, litter_pet2])
         await async_session.commit()
         
-        # Update the litter
+        # Update the breeding
         update_data = {
-            "description": "Updated litter with parents"
+            "description": "Updated breeding with parents"
         }
         
-        response = await client.put(f"/api/litters/{litter.id}", json=update_data)
+        response = await client.put(f"/api/breedings/{breeding.id}", json=update_data)
         
         assert response.status_code == 200
         data = response.json()
         
         # Verify update was successful
-        assert data["id"] == litter.id
+        assert data["id"] == breeding.id
         assert data["description"] == update_data["description"]
         assert data["status"] == "InProcess"
         
@@ -1255,24 +1255,24 @@ class TestLitterUpdate:
         test_user: User
     ):
         """
-        Test updating a litter that has puppies.
+        Test updating a breeding that has puppies.
         
         Validates: Requirements 8.1, 8.2
         """
-        # Create a litter
-        litter = Litter(
-            description="Litter with puppies",
+        # Create a breeding
+        breeding = Breeding(
+            description="Breeding with puppies",
             status="Done"
         )
-        async_session.add(litter)
+        async_session.add(breeding)
         await async_session.commit()
-        await async_session.refresh(litter)
+        await async_session.refresh(breeding)
         
         # Create puppies
         puppy1 = Pet(
             user_id=test_user.id,
             name="Puppy 1",
-            litter_id=litter.id,
+            breeding_id=breeding.id,
             gender="Male",
             date_of_birth=date.today(),
             is_puppy=True
@@ -1280,7 +1280,7 @@ class TestLitterUpdate:
         puppy2 = Pet(
             user_id=test_user.id,
             name="Puppy 2",
-            litter_id=litter.id,
+            breeding_id=breeding.id,
             gender="Female",
             date_of_birth=date.today(),
             is_puppy=True
@@ -1288,18 +1288,18 @@ class TestLitterUpdate:
         async_session.add_all([puppy1, puppy2])
         await async_session.commit()
         
-        # Update the litter
+        # Update the breeding
         update_data = {
-            "description": "Updated litter with puppies"
+            "description": "Updated breeding with puppies"
         }
         
-        response = await client.put(f"/api/litters/{litter.id}", json=update_data)
+        response = await client.put(f"/api/breedings/{breeding.id}", json=update_data)
         
         assert response.status_code == 200
         data = response.json()
         
         # Verify update was successful
-        assert data["id"] == litter.id
+        assert data["id"] == breeding.id
         assert data["description"] == update_data["description"]
         assert data["status"] == "Done"
         
@@ -1313,101 +1313,101 @@ class TestLitterUpdate:
     @pytest.mark.asyncio
     async def test_update_litter_empty_description(self, client: AsyncClient):
         """
-        Test updating a litter with empty/null description.
+        Test updating a breeding with empty/null description.
         
         Validates: Requirements 8.1, 8.2
         """
-        # Create a litter
-        litter_data = {
+        # Create a breeding
+        breeding_data = {
             "description": "Original description"
         }
         
-        create_response = await client.post("/api/litters/", json=litter_data)
+        create_response = await client.post("/api/breedings/", json=breeding_data)
         assert create_response.status_code == 201
-        litter_id = create_response.json()["id"]
+        breeding_id = create_response.json()["id"]
         
         # Update with null description
         update_data = {
             "description": None
         }
         
-        response = await client.put(f"/api/litters/{litter_id}", json=update_data)
+        response = await client.put(f"/api/breedings/{breeding_id}", json=update_data)
         
         assert response.status_code == 200
         data = response.json()
         
-        assert data["id"] == litter_id
+        assert data["id"] == breeding_id
         assert data["description"] is None
 
     @pytest.mark.asyncio
     async def test_update_litter_all_fields(self, client: AsyncClient):
         """
-        Test updating all fields of a litter.
+        Test updating all fields of a breeding.
         
         Validates: Requirements 7.1, 13.4
         """
-        # Create a litter
-        litter_data = {
+        # Create a breeding
+        breeding_data = {
             "description": "Original description"
         }
         
-        create_response = await client.post("/api/litters/", json=litter_data)
+        create_response = await client.post("/api/breedings/", json=breeding_data)
         assert create_response.status_code == 201
-        litter_id = create_response.json()["id"]
+        breeding_id = create_response.json()["id"]
         
-        # Update the litter
+        # Update the breeding
         update_data = {
             "description": "Updated description"
         }
         
-        response = await client.put(f"/api/litters/{litter_id}", json=update_data)
+        response = await client.put(f"/api/breedings/{breeding_id}", json=update_data)
         
         assert response.status_code == 200
         data = response.json()
         
-        assert data["id"] == litter_id
+        assert data["id"] == breeding_id
         assert data["description"] == update_data["description"]
 
     @pytest.mark.asyncio
     async def test_update_litter_partial_fields(self, client: AsyncClient):
         """
-        Test updating only some fields of a litter.
+        Test updating only some fields of a breeding.
         
         Validates: Requirements 7.1, 13.4
         """
-        # Create a litter
-        litter_data = {
+        # Create a breeding
+        breeding_data = {
             "description": "Partial update test"
         }
         
-        create_response = await client.post("/api/litters/", json=litter_data)
+        create_response = await client.post("/api/breedings/", json=breeding_data)
         assert create_response.status_code == 201
         created_litter = create_response.json()
-        litter_id = created_litter["id"]
+        breeding_id = created_litter["id"]
         
         # Update only the description
         update_data = {
             "description": "Updated description only"
         }
         
-        response = await client.put(f"/api/litters/{litter_id}", json=update_data)
+        response = await client.put(f"/api/breedings/{breeding_id}", json=update_data)
         
         assert response.status_code == 200
         data = response.json()
         
-        assert data["id"] == litter_id
+        assert data["id"] == breeding_id
         assert data["description"] == update_data["description"]
 
     @pytest.mark.asyncio
     async def test_update_nonexistent_litter_returns_404(self, client: AsyncClient):
         """
-        Test that updating a non-existent litter returns 404.
+        Test that updating a non-existent breeding returns 404.
         
         Validates: Requirements 7.1, 13.4
         """
         update_data = {"description": "Updated description"}
         
-        response = await client.put("/api/litters/999999", json=update_data)
+        response = await client.put("/api/breedings/999999", json=update_data)
         
         assert response.status_code == 404
         data = response.json()
@@ -1415,7 +1415,7 @@ class TestLitterUpdate:
 
 
 class TestLitterDeletion:
-    """Integration tests for deleting litters."""
+    """Integration tests for deleting breedings."""
 
     @pytest.mark.asyncio
     async def test_void_litter_successful(
@@ -1425,11 +1425,11 @@ class TestLitterDeletion:
         test_user: User
     ):
         """
-        Test successfully voiding a litter (soft delete).
+        Test successfully voiding a breeding (soft delete).
         
         Validates: Requirements 9.1, 9.2, 9.3, 9.4
         """
-        from app.models.litter_pet import LitterPet
+        from app.models.breeding_pet import BreedingPet
         from app.models.location import Location
         from app.models.breed import Breed
         
@@ -1453,14 +1453,14 @@ class TestLitterDeletion:
         await async_session.commit()
         await async_session.refresh(breed)
         
-        # Create a litter with parent pets and puppies
-        litter = Litter(
-            description="Litter to void",
+        # Create a breeding with parent pets and puppies
+        breeding = Breeding(
+            description="Breeding to void",
             status="Done"
         )
-        async_session.add(litter)
+        async_session.add(breeding)
         await async_session.commit()
-        await async_session.refresh(litter)
+        await async_session.refresh(breeding)
         
         # Create parent pets
         parent1 = Pet(
@@ -1484,9 +1484,9 @@ class TestLitterDeletion:
         await async_session.refresh(parent1)
         await async_session.refresh(parent2)
         
-        # Assign parent pets to litter
-        litter_pet1 = LitterPet(litter_id=litter.id, pet_id=parent1.id)
-        litter_pet2 = LitterPet(litter_id=litter.id, pet_id=parent2.id)
+        # Assign parent pets to breeding
+        litter_pet1 = BreedingPet(breeding_id=breeding.id, pet_id=parent1.id)
+        litter_pet2 = BreedingPet(breeding_id=breeding.id, pet_id=parent2.id)
         async_session.add_all([litter_pet1, litter_pet2])
         await async_session.commit()
         
@@ -1494,7 +1494,7 @@ class TestLitterDeletion:
         puppy1 = Pet(
             user_id=test_user.id,
             name="Puppy 1",
-            litter_id=litter.id,
+            breeding_id=breeding.id,
             location_id=location.id,
             breed_id=breed.id,
             gender="Male",
@@ -1506,17 +1506,17 @@ class TestLitterDeletion:
         await async_session.commit()
         
         # Store original updated_at
-        original_updated_at = litter.updated_at
+        original_updated_at = breeding.updated_at
         
-        # Void the litter
-        response = await client.delete(f"/api/litters/{litter.id}")
+        # Void the breeding
+        response = await client.delete(f"/api/breedings/{breeding.id}")
         
         assert response.status_code == 200
         data = response.json()
         
         # Verify response contains all required fields
-        assert data["id"] == litter.id
-        assert data["description"] == "Litter to void"
+        assert data["id"] == breeding.id
+        assert data["description"] == "Breeding to void"
         assert data["status"] == "Voided"  # Status changed to Voided
         assert "created_at" in data
         assert "updated_at" in data
@@ -1541,21 +1541,21 @@ class TestLitterDeletion:
         async_session: AsyncSession
     ):
         """
-        Test that voiding a litter changes status to "Voided".
+        Test that voiding a breeding changes status to "Voided".
         
         Validates: Requirements 9.2
         """
-        # Create a litter
-        litter = Litter(
+        # Create a breeding
+        breeding = Breeding(
             description="Test status change",
             status="Started"
         )
-        async_session.add(litter)
+        async_session.add(breeding)
         await async_session.commit()
-        await async_session.refresh(litter)
+        await async_session.refresh(breeding)
         
-        # Void the litter
-        response = await client.delete(f"/api/litters/{litter.id}")
+        # Void the breeding
+        response = await client.delete(f"/api/breedings/{breeding.id}")
         
         assert response.status_code == 200
         data = response.json()
@@ -1563,8 +1563,8 @@ class TestLitterDeletion:
         # Verify status is Voided
         assert data["status"] == "Voided"
         
-        # Verify litter can still be retrieved by ID
-        get_response = await client.get(f"/api/litters/{litter.id}")
+        # Verify breeding can still be retrieved by ID
+        get_response = await client.get(f"/api/breedings/{breeding.id}")
         assert get_response.status_code == 200
         get_data = get_response.json()
         assert get_data["status"] == "Voided"
@@ -1576,41 +1576,41 @@ class TestLitterDeletion:
         async_session: AsyncSession
     ):
         """
-        Test that voiding a litter maintains the record (soft delete).
+        Test that voiding a breeding maintains the record (soft delete).
         
         Validates: Requirements 9.3, 9.4
         """
-        # Create a litter
-        litter = Litter(
+        # Create a breeding
+        breeding = Breeding(
             description="Test record maintenance",
             status="InProcess"
         )
-        async_session.add(litter)
+        async_session.add(breeding)
         await async_session.commit()
-        await async_session.refresh(litter)
+        await async_session.refresh(breeding)
         
-        litter_id = litter.id
-        original_description = litter.description
+        breeding_id = breeding.id
+        original_description = breeding.description
         
-        # Void the litter
-        response = await client.delete(f"/api/litters/{litter_id}")
+        # Void the breeding
+        response = await client.delete(f"/api/breedings/{breeding_id}")
         assert response.status_code == 200
         
-        # Verify litter still exists in database
+        # Verify breeding still exists in database
         from sqlalchemy import select
-        query = select(Litter).where(Litter.id == litter_id)
+        query = select(Breeding).where(Breeding.id == breeding_id)
         result = await async_session.execute(query)
         db_litter = result.scalar_one_or_none()
         
-        assert db_litter is not None, "Litter record should be maintained"
+        assert db_litter is not None, "Breeding record should be maintained"
         assert db_litter.description == original_description
         assert db_litter.status == "Voided"
         
-        # Verify litter can still be retrieved via API
-        get_response = await client.get(f"/api/litters/{litter_id}")
+        # Verify breeding can still be retrieved via API
+        get_response = await client.get(f"/api/breedings/{breeding_id}")
         assert get_response.status_code == 200
         get_data = get_response.json()
-        assert get_data["id"] == litter_id
+        assert get_data["id"] == breeding_id
         assert get_data["description"] == original_description
 
     @pytest.mark.asyncio
@@ -1620,17 +1620,17 @@ class TestLitterDeletion:
         async_session: AsyncSession
     ):
         """
-        Test that voided litters are excluded from default listings.
+        Test that voided breedings are excluded from default listings.
         
         Validates: Requirements 9.3, 10.1
         """
-        # Create active and voided litters
-        active_litter = Litter(
-            description="Active litter",
+        # Create active and voided breedings
+        active_litter = Breeding(
+            description="Active breeding",
             status="Started"
         )
-        voided_litter = Litter(
-            description="Voided litter",
+        voided_litter = Breeding(
+            description="Voided breeding",
             status="Started"
         )
         async_session.add_all([active_litter, voided_litter])
@@ -1638,26 +1638,26 @@ class TestLitterDeletion:
         await async_session.refresh(active_litter)
         await async_session.refresh(voided_litter)
         
-        # Void one litter
-        await client.delete(f"/api/litters/{voided_litter.id}")
+        # Void one breeding
+        await client.delete(f"/api/breedings/{voided_litter.id}")
         
-        # List litters without filters (should exclude voided)
-        response = await client.get("/api/litters/")
+        # List breedings without filters (should exclude voided)
+        response = await client.get("/api/breedings/")
         assert response.status_code == 200
         data = response.json()
         
         litter_ids = [l["id"] for l in data]
         assert active_litter.id in litter_ids
-        assert voided_litter.id not in litter_ids, "Voided litter should be excluded from default listing"
+        assert voided_litter.id not in litter_ids, "Voided breeding should be excluded from default listing"
 
     @pytest.mark.asyncio
     async def test_void_nonexistent_litter_returns_404(self, client: AsyncClient):
         """
-        Test that voiding a non-existent litter returns 404.
+        Test that voiding a non-existent breeding returns 404.
         
         Validates: Requirements 9.4
         """
-        response = await client.delete("/api/litters/999999")
+        response = await client.delete("/api/breedings/999999")
         
         assert response.status_code == 404
         data = response.json()
@@ -1666,7 +1666,7 @@ class TestLitterDeletion:
 
 
 class TestLitterPetAssociation:
-    """Integration tests for associating pets with litters."""
+    """Integration tests for associating pets with breedings."""
 
     @pytest.mark.asyncio
     async def test_associate_multiple_pets_with_litter(
@@ -1676,20 +1676,20 @@ class TestLitterPetAssociation:
         test_user: User
     ):
         """
-        Test associating multiple pets with a single litter.
+        Test associating multiple pets with a single breeding.
         
         Validates: Requirements 7.1, 7.3, 13.4
         """
-        # Create a litter
-        litter_data = {
-            "description": "Litter with multiple pets"
+        # Create a breeding
+        breeding_data = {
+            "description": "Breeding with multiple pets"
         }
         
-        litter_response = await client.post("/api/litters/", json=litter_data)
+        litter_response = await client.post("/api/breedings/", json=breeding_data)
         assert litter_response.status_code == 201
-        litter_id = litter_response.json()["id"]
+        breeding_id = litter_response.json()["id"]
         
-        # Create multiple pets associated with this litter
+        # Create multiple pets associated with this breeding
         pet_names = ["Puppy 1", "Puppy 2", "Puppy 3"]
         created_pet_ids = []
         
@@ -1697,121 +1697,121 @@ class TestLitterPetAssociation:
             pet = Pet(
                 user_id=test_user.id,
                 name=name,
-                litter_id=litter_id
+                breeding_id=breeding_id
             )
             async_session.add(pet)
         
         await async_session.commit()
         
-        # Query pets for this litter
+        # Query pets for this breeding
         from sqlalchemy import select
-        query = select(Pet).where(Pet.litter_id == litter_id)
+        query = select(Pet).where(Pet.breeding_id == breeding_id)
         result = await async_session.execute(query)
-        litter_pets = result.scalars().all()
+        breeding_pets = result.scalars().all()
         
-        # Verify all pets are associated with the litter
-        assert len(litter_pets) == len(pet_names)
+        # Verify all pets are associated with the breeding
+        assert len(breeding_pets) == len(pet_names)
         
-        for pet in litter_pets:
-            assert pet.litter_id == litter_id
+        for pet in breeding_pets:
+            assert pet.breeding_id == breeding_id
             assert pet.name in pet_names
 
     @pytest.mark.asyncio
     async def test_litter_with_no_pets(self, client: AsyncClient):
         """
-        Test that a litter can exist without any associated pets.
+        Test that a breeding can exist without any associated pets.
         
         Validates: Requirements 7.1, 13.4
         """
-        # Create a litter
-        litter_data = {
-            "description": "Litter with no pets"
+        # Create a breeding
+        breeding_data = {
+            "description": "Breeding with no pets"
         }
         
-        response = await client.post("/api/litters/", json=litter_data)
+        response = await client.post("/api/breedings/", json=breeding_data)
         assert response.status_code == 201
         
-        # Verify litter was created successfully
-        litter_id = response.json()["id"]
-        get_response = await client.get(f"/api/litters/{litter_id}")
+        # Verify breeding was created successfully
+        breeding_id = response.json()["id"]
+        get_response = await client.get(f"/api/breedings/{breeding_id}")
         assert get_response.status_code == 200
 
 
 class TestLitterManagementWorkflow:
-    """Integration tests for complete litter management workflow."""
+    """Integration tests for complete breeding management workflow."""
 
     @pytest.mark.asyncio
     async def test_complete_litter_lifecycle(self, client: AsyncClient):
         """
-        Test complete litter management workflow: create, read, update, delete.
+        Test complete breeding management workflow: create, read, update, delete.
         
         Validates: Requirements 7.1, 13.4
         """
-        # Step 1: Create a litter
+        # Step 1: Create a breeding
         create_data = {
-            "description": "Lifecycle test litter"
+            "description": "Lifecycle test breeding"
         }
         
-        create_response = await client.post("/api/litters/", json=create_data)
+        create_response = await client.post("/api/breedings/", json=create_data)
         assert create_response.status_code == 201
         created_litter = create_response.json()
-        litter_id = created_litter["id"]
+        breeding_id = created_litter["id"]
         
         assert created_litter["date_of_litter"] == create_data["date_of_litter"]
         assert created_litter["description"] == create_data["description"]
         assert created_litter["is_active"] == create_data["is_active"]
         
-        # Step 2: Read the litter
-        get_response = await client.get(f"/api/litters/{litter_id}")
+        # Step 2: Read the breeding
+        get_response = await client.get(f"/api/breedings/{breeding_id}")
         assert get_response.status_code == 200
         retrieved_litter = get_response.json()
         
-        assert retrieved_litter["id"] == litter_id
+        assert retrieved_litter["id"] == breeding_id
         assert retrieved_litter["description"] == create_data["description"]
         
-        # Step 3: Verify litter appears in list
-        list_response = await client.get("/api/litters/")
+        # Step 3: Verify breeding appears in list
+        list_response = await client.get("/api/breedings/")
         assert list_response.status_code == 200
         litters_list = list_response.json()
         
         litter_ids = [l["id"] for l in litters_list]
-        assert litter_id in litter_ids
+        assert breeding_id in litter_ids
         
-        # Step 4: Update the litter
+        # Step 4: Update the breeding
         update_data = {
-            "description": "Updated lifecycle litter",
+            "description": "Updated lifecycle breeding",
             "is_active": False
         }
         
-        update_response = await client.put(f"/api/litters/{litter_id}", json=update_data)
+        update_response = await client.put(f"/api/breedings/{breeding_id}", json=update_data)
         assert update_response.status_code == 200
         updated_litter = update_response.json()
         
-        assert updated_litter["id"] == litter_id
+        assert updated_litter["id"] == breeding_id
         assert updated_litter["description"] == update_data["description"]
         assert updated_litter["is_active"] == update_data["is_active"]
         assert updated_litter["date_of_litter"] == create_data["date_of_litter"]  # Unchanged
         
-        # Step 5: Delete the litter
-        delete_response = await client.delete(f"/api/litters/{litter_id}")
+        # Step 5: Delete the breeding
+        delete_response = await client.delete(f"/api/breedings/{breeding_id}")
         assert delete_response.status_code == 204
         
-        # Step 6: Verify litter is deleted
-        final_get_response = await client.get(f"/api/litters/{litter_id}")
+        # Step 6: Verify breeding is deleted
+        final_get_response = await client.get(f"/api/breedings/{breeding_id}")
         assert final_get_response.status_code == 404
         
-        # Step 7: Verify litter is not in list
-        final_list_response = await client.get("/api/litters/")
+        # Step 7: Verify breeding is not in list
+        final_list_response = await client.get("/api/breedings/")
         assert final_list_response.status_code == 200
         final_litters_list = final_list_response.json()
         
         final_litter_ids = [l["id"] for l in final_litters_list]
-        assert litter_id not in final_litter_ids
+        assert breeding_id not in final_litter_ids
 
 
 
 class TestLitterPetAssignment:
-    """Integration tests for assigning parent pets to litters."""
+    """Integration tests for assigning parent pets to breedings."""
 
     @pytest.mark.asyncio
     async def test_assign_pets_successful_assignment(
@@ -1821,7 +1821,7 @@ class TestLitterPetAssignment:
         test_user: User
     ):
         """
-        Test successful assignment of two parent pets to a litter.
+        Test successful assignment of two parent pets to a breeding.
         
         Validates: Requirements 3.1, 5.1, 5.2, 5.3
         """
@@ -1849,14 +1849,14 @@ class TestLitterPetAssignment:
         await async_session.commit()
         await async_session.refresh(breed)
         
-        # Create a litter
-        litter = Litter(
-            description="Test litter for pet assignment",
+        # Create a breeding
+        breeding = Breeding(
+            description="Test breeding for pet assignment",
             status="Started"
         )
-        async_session.add(litter)
+        async_session.add(breeding)
         await async_session.commit()
-        await async_session.refresh(litter)
+        await async_session.refresh(breeding)
         
         # Create two parent pets with the same location
         parent1 = Pet(
@@ -1880,21 +1880,21 @@ class TestLitterPetAssignment:
         await async_session.refresh(parent1)
         await async_session.refresh(parent2)
         
-        # Assign pets to litter
+        # Assign pets to breeding
         assignment_data = {
             "pet_ids": [str(parent1.id), str(parent2.id)]
         }
         
         response = await client.post(
-            f"/api/litters/{litter.id}/assign-pets",
+            f"/api/breedings/{breeding.id}/assign-pets",
             json=assignment_data
         )
         
         assert response.status_code == 200
         data = response.json()
         
-        # Verify response contains updated litter
-        assert data["id"] == litter.id
+        # Verify response contains updated breeding
+        assert data["id"] == breeding.id
         assert data["status"] == "InProcess"  # Status should change to InProcess
         assert data["parent_pets"] is not None
         assert len(data["parent_pets"]) == 2
@@ -1944,14 +1944,14 @@ class TestLitterPetAssignment:
         await async_session.refresh(location1)
         await async_session.refresh(location2)
         
-        # Create a litter
-        litter = Litter(
-            description="Test litter for location mismatch",
+        # Create a breeding
+        breeding = Breeding(
+            description="Test breeding for location mismatch",
             status="Started"
         )
-        async_session.add(litter)
+        async_session.add(breeding)
         await async_session.commit()
-        await async_session.refresh(litter)
+        await async_session.refresh(breeding)
         
         # Create two parent pets with DIFFERENT locations
         parent1 = Pet(
@@ -1979,7 +1979,7 @@ class TestLitterPetAssignment:
         }
         
         response = await client.post(
-            f"/api/litters/{litter.id}/assign-pets",
+            f"/api/breedings/{breeding.id}/assign-pets",
             json=assignment_data
         )
         
@@ -1988,9 +1988,9 @@ class TestLitterPetAssignment:
         error_data = response.json()
         assert "location" in error_data["detail"].lower()
         
-        # Verify litter status is still "Started"
-        await async_session.refresh(litter)
-        assert litter.status == "Started"
+        # Verify breeding status is still "Started"
+        await async_session.refresh(breeding)
+        assert breeding.status == "Started"
 
     @pytest.mark.asyncio
     async def test_assign_pets_invalid_pet_ids(
@@ -2006,14 +2006,14 @@ class TestLitterPetAssignment:
         """
         import uuid
         
-        # Create a litter
-        litter = Litter(
-            description="Test litter for invalid pets",
+        # Create a breeding
+        breeding = Breeding(
+            description="Test breeding for invalid pets",
             status="Started"
         )
-        async_session.add(litter)
+        async_session.add(breeding)
         await async_session.commit()
-        await async_session.refresh(litter)
+        await async_session.refresh(breeding)
         
         # Attempt to assign non-existent pets
         assignment_data = {
@@ -2021,7 +2021,7 @@ class TestLitterPetAssignment:
         }
         
         response = await client.post(
-            f"/api/litters/{litter.id}/assign-pets",
+            f"/api/breedings/{breeding.id}/assign-pets",
             json=assignment_data
         )
         
@@ -2038,7 +2038,7 @@ class TestLitterPetAssignment:
         test_user: User
     ):
         """
-        Test that litter status changes to InProcess after pet assignment.
+        Test that breeding status changes to InProcess after pet assignment.
         
         Validates: Requirements 2.2, 5.3
         """
@@ -2059,17 +2059,17 @@ class TestLitterPetAssignment:
         await async_session.commit()
         await async_session.refresh(location)
         
-        # Create a litter with status "Started"
-        litter = Litter(
-            description="Test litter for status change",
+        # Create a breeding with status "Started"
+        breeding = Breeding(
+            description="Test breeding for status change",
             status="Started"
         )
-        async_session.add(litter)
+        async_session.add(breeding)
         await async_session.commit()
-        await async_session.refresh(litter)
+        await async_session.refresh(breeding)
         
         # Verify initial status
-        assert litter.status == "Started"
+        assert breeding.status == "Started"
         
         # Create two parent pets
         parent1 = Pet(
@@ -2091,13 +2091,13 @@ class TestLitterPetAssignment:
         await async_session.refresh(parent1)
         await async_session.refresh(parent2)
         
-        # Assign pets to litter
+        # Assign pets to breeding
         assignment_data = {
             "pet_ids": [str(parent1.id), str(parent2.id)]
         }
         
         response = await client.post(
-            f"/api/litters/{litter.id}/assign-pets",
+            f"/api/breedings/{breeding.id}/assign-pets",
             json=assignment_data
         )
         
@@ -2108,8 +2108,8 @@ class TestLitterPetAssignment:
         assert data["status"] == "InProcess"
         
         # Verify in database
-        await async_session.refresh(litter)
-        assert litter.status == "InProcess"
+        await async_session.refresh(breeding)
+        assert breeding.status == "InProcess"
 
     @pytest.mark.asyncio
     async def test_assign_pets_nonexistent_litter(
@@ -2119,7 +2119,7 @@ class TestLitterPetAssignment:
         test_user: User
     ):
         """
-        Test that assigning pets to a non-existent litter returns 404.
+        Test that assigning pets to a non-existent breeding returns 404.
         
         Validates: Requirements 5.1
         """
@@ -2143,14 +2143,14 @@ class TestLitterPetAssignment:
         await async_session.refresh(parent1)
         await async_session.refresh(parent2)
         
-        # Attempt to assign pets to non-existent litter
+        # Attempt to assign pets to non-existent breeding
         non_existent_litter_id = 999999
         assignment_data = {
             "pet_ids": [str(parent1.id), str(parent2.id)]
         }
         
         response = await client.post(
-            f"/api/litters/{non_existent_litter_id}/assign-pets",
+            f"/api/breedings/{non_existent_litter_id}/assign-pets",
             json=assignment_data
         )
         
@@ -2160,7 +2160,7 @@ class TestLitterPetAssignment:
 
 
 class TestAddPuppies:
-    """Integration tests for adding puppies to litters."""
+    """Integration tests for adding puppies to breedings."""
 
     @pytest.mark.asyncio
     async def test_add_puppies_successful(
@@ -2170,11 +2170,11 @@ class TestAddPuppies:
         test_user: User
     ):
         """
-        Test successfully adding puppies to a litter.
+        Test successfully adding puppies to a breeding.
         
         Validates: Requirements 6.3, 6.4
         """
-        from app.models.litter_pet import LitterPet
+        from app.models.breeding_pet import BreedingPet
         from app.models.location import Location
         from app.models.breed import Breed
         
@@ -2198,14 +2198,14 @@ class TestAddPuppies:
         await async_session.commit()
         await async_session.refresh(breed)
         
-        # Create a litter with status "InProcess"
-        litter = Litter(
-            description="Test litter for puppies",
+        # Create a breeding with status "InProcess"
+        breeding = Breeding(
+            description="Test breeding for puppies",
             status="InProcess"
         )
-        async_session.add(litter)
+        async_session.add(breeding)
         await async_session.commit()
-        await async_session.refresh(litter)
+        await async_session.refresh(breeding)
         
         # Create and assign parent pets
         parent1 = Pet(
@@ -2229,9 +2229,9 @@ class TestAddPuppies:
         await async_session.refresh(parent1)
         await async_session.refresh(parent2)
         
-        # Assign parent pets to litter
-        litter_pet1 = LitterPet(litter_id=litter.id, pet_id=parent1.id)
-        litter_pet2 = LitterPet(litter_id=litter.id, pet_id=parent2.id)
+        # Assign parent pets to breeding
+        litter_pet1 = BreedingPet(breeding_id=breeding.id, pet_id=parent1.id)
+        litter_pet2 = BreedingPet(breeding_id=breeding.id, pet_id=parent2.id)
         async_session.add_all([litter_pet1, litter_pet2])
         await async_session.commit()
         
@@ -2259,7 +2259,7 @@ class TestAddPuppies:
         }
         
         response = await client.post(
-            f"/api/litters/{litter.id}/add-puppies",
+            f"/api/breedings/{breeding.id}/add-puppies",
             json=puppies_data
         )
         
@@ -2293,11 +2293,11 @@ class TestAddPuppies:
         test_user: User
     ):
         """
-        Test that litter status changes to Done after adding puppies.
+        Test that breeding status changes to Done after adding puppies.
         
         Validates: Requirements 6.3
         """
-        from app.models.litter_pet import LitterPet
+        from app.models.breeding_pet import BreedingPet
         from app.models.location import Location
         
         # Create test data
@@ -2315,17 +2315,17 @@ class TestAddPuppies:
         await async_session.commit()
         await async_session.refresh(location)
         
-        # Create a litter with status "InProcess"
-        litter = Litter(
-            description="Test litter for status change",
+        # Create a breeding with status "InProcess"
+        breeding = Breeding(
+            description="Test breeding for status change",
             status="InProcess"
         )
-        async_session.add(litter)
+        async_session.add(breeding)
         await async_session.commit()
-        await async_session.refresh(litter)
+        await async_session.refresh(breeding)
         
         # Verify initial status
-        assert litter.status == "InProcess"
+        assert breeding.status == "InProcess"
         
         # Create and assign parent pets
         parent1 = Pet(
@@ -2347,9 +2347,9 @@ class TestAddPuppies:
         await async_session.refresh(parent1)
         await async_session.refresh(parent2)
         
-        # Assign parent pets to litter
-        litter_pet1 = LitterPet(litter_id=litter.id, pet_id=parent1.id)
-        litter_pet2 = LitterPet(litter_id=litter.id, pet_id=parent2.id)
+        # Assign parent pets to breeding
+        litter_pet1 = BreedingPet(breeding_id=breeding.id, pet_id=parent1.id)
+        litter_pet2 = BreedingPet(breeding_id=breeding.id, pet_id=parent2.id)
         async_session.add_all([litter_pet1, litter_pet2])
         await async_session.commit()
         
@@ -2365,7 +2365,7 @@ class TestAddPuppies:
         }
         
         response = await client.post(
-            f"/api/litters/{litter.id}/add-puppies",
+            f"/api/breedings/{breeding.id}/add-puppies",
             json=puppies_data
         )
         
@@ -2376,8 +2376,8 @@ class TestAddPuppies:
         assert data["status"] == "Done"
         
         # Verify in database
-        await async_session.refresh(litter)
-        assert litter.status == "Done"
+        await async_session.refresh(breeding)
+        assert breeding.status == "Done"
 
     @pytest.mark.asyncio
     async def test_add_puppies_validation_no_parent_pets(
@@ -2387,18 +2387,18 @@ class TestAddPuppies:
         test_user: User
     ):
         """
-        Test that adding puppies fails when litter has no parent pets assigned.
+        Test that adding puppies fails when breeding has no parent pets assigned.
         
         Validates: Requirements 6.1
         """
-        # Create a litter without parent pets
-        litter = Litter(
-            description="Test litter without parents",
+        # Create a breeding without parent pets
+        breeding = Breeding(
+            description="Test breeding without parents",
             status="Started"
         )
-        async_session.add(litter)
+        async_session.add(breeding)
         await async_session.commit()
-        await async_session.refresh(litter)
+        await async_session.refresh(breeding)
         
         # Attempt to add puppies
         puppies_data = {
@@ -2412,7 +2412,7 @@ class TestAddPuppies:
         }
         
         response = await client.post(
-            f"/api/litters/{litter.id}/add-puppies",
+            f"/api/breedings/{breeding.id}/add-puppies",
             json=puppies_data
         )
         
@@ -2433,7 +2433,7 @@ class TestAddPuppies:
         
         Validates: Requirements 6.4
         """
-        from app.models.litter_pet import LitterPet
+        from app.models.breeding_pet import BreedingPet
         from app.models.location import Location
         from app.models.breed import Breed
         from sqlalchemy import select
@@ -2458,14 +2458,14 @@ class TestAddPuppies:
         await async_session.commit()
         await async_session.refresh(breed)
         
-        # Create a litter with parent pets
-        litter = Litter(
-            description="Test litter for persistence",
+        # Create a breeding with parent pets
+        breeding = Breeding(
+            description="Test breeding for persistence",
             status="InProcess"
         )
-        async_session.add(litter)
+        async_session.add(breeding)
         await async_session.commit()
-        await async_session.refresh(litter)
+        await async_session.refresh(breeding)
         
         # Create and assign parent pets
         parent1 = Pet(
@@ -2489,9 +2489,9 @@ class TestAddPuppies:
         await async_session.refresh(parent1)
         await async_session.refresh(parent2)
         
-        # Assign parent pets to litter
-        litter_pet1 = LitterPet(litter_id=litter.id, pet_id=parent1.id)
-        litter_pet2 = LitterPet(litter_id=litter.id, pet_id=parent2.id)
+        # Assign parent pets to breeding
+        litter_pet1 = BreedingPet(breeding_id=breeding.id, pet_id=parent1.id)
+        litter_pet2 = BreedingPet(breeding_id=breeding.id, pet_id=parent2.id)
         async_session.add_all([litter_pet1, litter_pet2])
         await async_session.commit()
         
@@ -2508,14 +2508,14 @@ class TestAddPuppies:
         }
         
         response = await client.post(
-            f"/api/litters/{litter.id}/add-puppies",
+            f"/api/breedings/{breeding.id}/add-puppies",
             json=puppies_data
         )
         
         assert response.status_code == 200
         
         # Query database directly to verify persistence
-        query = select(Pet).where(Pet.litter_id == litter.id)
+        query = select(Pet).where(Pet.breeding_id == breeding.id)
         result = await async_session.execute(query)
         puppies = result.scalars().all()
         
@@ -2525,7 +2525,7 @@ class TestAddPuppies:
         assert puppy.name == "Persistent Puppy"
         assert puppy.gender == "Female"
         assert puppy.microchip == "PERSIST123"
-        assert puppy.litter_id == litter.id
+        assert puppy.breeding_id == breeding.id
         assert puppy.location_id == location.id  # Derived from parent
         assert puppy.breed_id == breed.id  # Derived from parent
         assert puppy.user_id == test_user.id  # Derived from parent
@@ -2537,11 +2537,11 @@ class TestAddPuppies:
         client: AsyncClient
     ):
         """
-        Test that adding puppies to a non-existent litter returns 404.
+        Test that adding puppies to a non-existent breeding returns 404.
         
         Validates: Requirements 6.1
         """
-        # Attempt to add puppies to non-existent litter
+        # Attempt to add puppies to non-existent breeding
         non_existent_litter_id = 999999
         puppies_data = {
             "puppies": [
@@ -2554,7 +2554,7 @@ class TestAddPuppies:
         }
         
         response = await client.post(
-            f"/api/litters/{non_existent_litter_id}/add-puppies",
+            f"/api/breedings/{non_existent_litter_id}/add-puppies",
             json=puppies_data
         )
         
@@ -2573,7 +2573,7 @@ class TestAddPuppies:
         
         Validates: Requirements 6.2
         """
-        from app.models.litter_pet import LitterPet
+        from app.models.breeding_pet import BreedingPet
         from app.models.location import Location
         
         # Create test data
@@ -2591,14 +2591,14 @@ class TestAddPuppies:
         await async_session.commit()
         await async_session.refresh(location)
         
-        # Create a litter with parent pets
-        litter = Litter(
-            description="Test litter for validation",
+        # Create a breeding with parent pets
+        breeding = Breeding(
+            description="Test breeding for validation",
             status="InProcess"
         )
-        async_session.add(litter)
+        async_session.add(breeding)
         await async_session.commit()
-        await async_session.refresh(litter)
+        await async_session.refresh(breeding)
         
         # Create and assign parent pets
         parent1 = Pet(
@@ -2620,9 +2620,9 @@ class TestAddPuppies:
         await async_session.refresh(parent1)
         await async_session.refresh(parent2)
         
-        # Assign parent pets to litter
-        litter_pet1 = LitterPet(litter_id=litter.id, pet_id=parent1.id)
-        litter_pet2 = LitterPet(litter_id=litter.id, pet_id=parent2.id)
+        # Assign parent pets to breeding
+        litter_pet1 = BreedingPet(breeding_id=breeding.id, pet_id=parent1.id)
+        litter_pet2 = BreedingPet(breeding_id=breeding.id, pet_id=parent2.id)
         async_session.add_all([litter_pet1, litter_pet2])
         await async_session.commit()
         
@@ -2638,7 +2638,7 @@ class TestAddPuppies:
         }
         
         response = await client.post(
-            f"/api/litters/{litter.id}/add-puppies",
+            f"/api/breedings/{breeding.id}/add-puppies",
             json=puppies_data
         )
         
@@ -2648,7 +2648,7 @@ class TestAddPuppies:
 
 
 class TestMultiLitterPetAssignment:
-    """Integration tests for multi-litter pet assignment."""
+    """Integration tests for multi-breeding pet assignment."""
 
     @pytest.mark.asyncio
     async def test_same_pet_can_be_assigned_to_multiple_litters(
@@ -2658,15 +2658,15 @@ class TestMultiLitterPetAssignment:
         test_user: User
     ):
         """
-        Test that the same pet can be assigned to multiple litters.
+        Test that the same pet can be assigned to multiple breedings.
         
-        This verifies that the litter_pets junction table has no unique
-        constraints that would prevent multi-litter assignment.
+        This verifies that the breeding_pets junction table has no unique
+        constraints that would prevent multi-breeding assignment.
         
         Validates: Requirements 5.5, 11.1, 11.2, 11.3, 11.4
         """
         from app.models.location import Location
-        from app.models.litter_pet import LitterPet
+        from app.models.breeding_pet import BreedingPet
         from sqlalchemy import select
         
         # Create a location
@@ -2704,19 +2704,19 @@ class TestMultiLitterPetAssignment:
         await async_session.refresh(parent1)
         await async_session.refresh(parent2)
         
-        # Create three litters
-        litter1 = Litter(
-            description="Litter 1",
+        # Create three breedings
+        litter1 = Breeding(
+            description="Breeding 1",
             status="Started",
             is_active=True
         )
-        litter2 = Litter(
-            description="Litter 2",
+        litter2 = Breeding(
+            description="Breeding 2",
             status="Started",
             is_active=True
         )
-        litter3 = Litter(
-            description="Litter 3",
+        litter3 = Breeding(
+            description="Breeding 3",
             status="Started",
             is_active=True
         )
@@ -2726,69 +2726,69 @@ class TestMultiLitterPetAssignment:
         await async_session.refresh(litter2)
         await async_session.refresh(litter3)
         
-        # Assign the same two pets to all three litters
+        # Assign the same two pets to all three breedings
         response1 = await client.post(
-            f"/api/litters/{litter1.id}/assign-pets",
+            f"/api/breedings/{litter1.id}/assign-pets",
             json={"pet_ids": [str(parent1.id), str(parent2.id)]}
         )
         assert response1.status_code == 200, \
             f"First assignment failed: {response1.json()}"
         
         response2 = await client.post(
-            f"/api/litters/{litter2.id}/assign-pets",
+            f"/api/breedings/{litter2.id}/assign-pets",
             json={"pet_ids": [str(parent1.id), str(parent2.id)]}
         )
         assert response2.status_code == 200, \
             f"Second assignment failed: {response2.json()}"
         
         response3 = await client.post(
-            f"/api/litters/{litter3.id}/assign-pets",
+            f"/api/breedings/{litter3.id}/assign-pets",
             json={"pet_ids": [str(parent1.id), str(parent2.id)]}
         )
         assert response3.status_code == 200, \
             f"Third assignment failed: {response3.json()}"
         
-        # Verify all three litters have the same pets assigned
-        query = select(LitterPet).where(LitterPet.pet_id == parent1.id)
+        # Verify all three breedings have the same pets assigned
+        query = select(BreedingPet).where(BreedingPet.pet_id == parent1.id)
         result = await async_session.execute(query)
         parent1_assignments = result.scalars().all()
         
         assert len(parent1_assignments) == 3, \
-            f"Parent 1 should be assigned to 3 litters, got {len(parent1_assignments)}"
+            f"Parent 1 should be assigned to 3 breedings, got {len(parent1_assignments)}"
         
-        query = select(LitterPet).where(LitterPet.pet_id == parent2.id)
+        query = select(BreedingPet).where(BreedingPet.pet_id == parent2.id)
         result = await async_session.execute(query)
         parent2_assignments = result.scalars().all()
         
         assert len(parent2_assignments) == 3, \
-            f"Parent 2 should be assigned to 3 litters, got {len(parent2_assignments)}"
+            f"Parent 2 should be assigned to 3 breedings, got {len(parent2_assignments)}"
         
-        # Verify each litter has both pets assigned
-        for litter_id in [litter1.id, litter2.id, litter3.id]:
-            query = select(LitterPet).where(LitterPet.litter_id == litter_id)
+        # Verify each breeding has both pets assigned
+        for breeding_id in [litter1.id, litter2.id, litter3.id]:
+            query = select(BreedingPet).where(BreedingPet.breeding_id == breeding_id)
             result = await async_session.execute(query)
-            litter_pets = result.scalars().all()
+            breeding_pets = result.scalars().all()
             
-            assert len(litter_pets) == 2, \
-                f"Litter {litter_id} should have 2 pets assigned, got {len(litter_pets)}"
+            assert len(breeding_pets) == 2, \
+                f"Breeding {breeding_id} should have 2 pets assigned, got {len(breeding_pets)}"
             
-            pet_ids = {lp.pet_id for lp in litter_pets}
+            pet_ids = {lp.pet_id for lp in breeding_pets}
             assert parent1.id in pet_ids, \
-                f"Parent 1 should be assigned to litter {litter_id}"
+                f"Parent 1 should be assigned to breeding {breeding_id}"
             assert parent2.id in pet_ids, \
-                f"Parent 2 should be assigned to litter {litter_id}"
+                f"Parent 2 should be assigned to breeding {breeding_id}"
         
-        # Verify all litters have status "InProcess"
+        # Verify all breedings have status "InProcess"
         await async_session.refresh(litter1)
         await async_session.refresh(litter2)
         await async_session.refresh(litter3)
         
         assert litter1.status == "InProcess", \
-            f"Litter 1 should have status 'InProcess', got '{litter1.status}'"
+            f"Breeding 1 should have status 'InProcess', got '{litter1.status}'"
         assert litter2.status == "InProcess", \
-            f"Litter 2 should have status 'InProcess', got '{litter2.status}'"
+            f"Breeding 2 should have status 'InProcess', got '{litter2.status}'"
         assert litter3.status == "InProcess", \
-            f"Litter 3 should have status 'InProcess', got '{litter3.status}'"
+            f"Breeding 3 should have status 'InProcess', got '{litter3.status}'"
 
     @pytest.mark.asyncio
     async def test_pet_available_for_assignment_even_when_assigned_to_other_litters(
@@ -2798,7 +2798,7 @@ class TestMultiLitterPetAssignment:
         test_user: User
     ):
         """
-        Test that pets already assigned to litters remain available for assignment to new litters.
+        Test that pets already assigned to breedings remain available for assignment to new breedings.
         
         Validates: Requirements 11.2
         """
@@ -2839,9 +2839,9 @@ class TestMultiLitterPetAssignment:
         await async_session.refresh(parent1)
         await async_session.refresh(parent2)
         
-        # Create first litter and assign pets
-        litter1 = Litter(
-            description="First Litter",
+        # Create first breeding and assign pets
+        litter1 = Breeding(
+            description="First Breeding",
             status="Started",
             is_active=True
         )
@@ -2850,14 +2850,14 @@ class TestMultiLitterPetAssignment:
         await async_session.refresh(litter1)
         
         response1 = await client.post(
-            f"/api/litters/{litter1.id}/assign-pets",
+            f"/api/breedings/{litter1.id}/assign-pets",
             json={"pet_ids": [str(parent1.id), str(parent2.id)]}
         )
         assert response1.status_code == 200
         
-        # Create second litter
-        litter2 = Litter(
-            description="Second Litter",
+        # Create second breeding
+        litter2 = Breeding(
+            description="Second Breeding",
             status="Started",
             is_active=True
         )
@@ -2865,26 +2865,26 @@ class TestMultiLitterPetAssignment:
         await async_session.commit()
         await async_session.refresh(litter2)
         
-        # Attempt to assign the same pets to the second litter
-        # This should succeed because multi-litter assignment is allowed
+        # Attempt to assign the same pets to the second breeding
+        # This should succeed because multi-breeding assignment is allowed
         response2 = await client.post(
-            f"/api/litters/{litter2.id}/assign-pets",
+            f"/api/breedings/{litter2.id}/assign-pets",
             json={"pet_ids": [str(parent1.id), str(parent2.id)]}
         )
         
         assert response2.status_code == 200, \
             f"Assigning already-assigned pets should succeed, got {response2.status_code}: {response2.json()}"
         
-        # Verify both litters have the same pets assigned
+        # Verify both breedings have the same pets assigned
         data1 = response1.json()
         data2 = response2.json()
         
         assert len(data1["parent_pets"]) == 2
         assert len(data2["parent_pets"]) == 2
         
-        # Both litters should have the same parent pet IDs
+        # Both breedings should have the same parent pet IDs
         parent_ids_1 = {pet["id"] for pet in data1["parent_pets"]}
         parent_ids_2 = {pet["id"] for pet in data2["parent_pets"]}
         
         assert parent_ids_1 == parent_ids_2, \
-            "Both litters should have the same parent pets"
+            "Both breedings should have the same parent pets"

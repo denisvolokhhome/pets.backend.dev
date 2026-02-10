@@ -1,4 +1,4 @@
-"""Property-based tests for litter operations."""
+"""Property-based tests for breeding operations."""
 
 import pytest
 from datetime import date, timedelta
@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.litter import Litter
+from app.models.breeding import Breeding
 from app.models.pet import Pet
 from app.models.user import User
 
@@ -30,7 +30,7 @@ description_strategy = st.text(
     )
 ) | st.none()
 
-# Date strategy for litter dates (reasonable range)
+# Date strategy for breeding dates (reasonable range)
 date_strategy = st.dates(
     min_value=date.today() - timedelta(days=365*5),  # 5 years ago
     max_value=date.today() + timedelta(days=365)     # 1 year in future
@@ -55,37 +55,37 @@ async def test_property_litter_association(
     test_user: User,
 ):
     """
-    Property 14: Litter Association
+    Property 14: Breeding Association
     
     For any Litter_Entity, multiple Pet_Entity records should be able to
-    reference it via litter_id.
+    reference it via breeding_id.
     
-    Feature: laravel-to-fastapi-migration, Property 14: Litter Association
+    Feature: laravel-to-fastapi-migration, Property 14: Breeding Association
     Validates: Requirements 7.3
     """
     # Cache the user_id to avoid lazy loading issues in async context
     user_id = test_user.id
     
-    # Create a litter
-    litter = Litter(
+    # Create a breeding
+    breeding = Breeding(
         date_of_litter=litter_date,
         description=description,
         is_active=True,
     )
     
-    async_session.add(litter)
+    async_session.add(breeding)
     await async_session.commit()
-    await async_session.refresh(litter)
+    await async_session.refresh(breeding)
     
-    litter_id = litter.id
+    breeding_id = breeding.id
     
-    # Create multiple pets associated with this litter
+    # Create multiple pets associated with this breeding
     created_pet_ids = []
     for name in pet_names:
         pet = Pet(
             user_id=user_id,
             name=name,
-            litter_id=litter_id,
+            breeding_id=breeding_id,
         )
         async_session.add(pet)
         created_pet_ids.append(pet)
@@ -96,32 +96,32 @@ async def test_property_litter_association(
     for pet in created_pet_ids:
         await async_session.refresh(pet)
     
-    # Verify all pets reference the same litter
+    # Verify all pets reference the same breeding
     for pet in created_pet_ids:
-        assert pet.litter_id == litter_id, f"Pet {pet.id} should reference litter {litter_id}"
+        assert pet.breeding_id == breeding_id, f"Pet {pet.id} should reference breeding {breeding_id}"
     
-    # Query all pets for this litter
-    query = select(Pet).where(Pet.litter_id == litter_id)
+    # Query all pets for this breeding
+    query = select(Pet).where(Pet.breeding_id == breeding_id)
     result = await async_session.execute(query)
-    litter_pets = result.scalars().all()
+    breeding_pets = result.scalars().all()
     
     # Verify the correct number of pets are associated
-    assert len(litter_pets) == len(pet_names), \
-        f"Expected {len(pet_names)} pets for litter, got {len(litter_pets)}"
+    assert len(breeding_pets) == len(pet_names), \
+        f"Expected {len(pet_names)} pets for breeding, got {len(breeding_pets)}"
     
     # Verify all created pets are in the results
-    litter_pet_ids = {pet.id for pet in litter_pets}
+    litter_pet_ids = {pet.id for pet in breeding_pets}
     for pet in created_pet_ids:
-        assert pet.id in litter_pet_ids, f"Pet {pet.id} should be in litter pets"
+        assert pet.id in litter_pet_ids, f"Pet {pet.id} should be in breeding pets"
     
-    # Verify the relationship works from litter to pets
-    await async_session.refresh(litter)
-    assert len(litter.pets) == len(pet_names), \
-        f"Litter relationship should have {len(pet_names)} pets"
+    # Verify the relationship works from breeding to pets
+    await async_session.refresh(breeding)
+    assert len(breeding.pets) == len(pet_names), \
+        f"Breeding relationship should have {len(pet_names)} pets"
     
-    for pet in litter.pets:
-        assert pet.litter_id == litter_id, \
-            f"Pet {pet.id} in relationship should reference litter {litter_id}"
+    for pet in breeding.pets:
+        assert pet.breeding_id == breeding_id, \
+            f"Pet {pet.id} in relationship should reference breeding {breeding_id}"
 
 
 @pytest.mark.asyncio
@@ -139,12 +139,12 @@ async def test_property_pet_litter_referential_integrity(
     async_session: AsyncSession,
 ):
     """
-    Property 15: Referential Integrity - Pet to Litter
+    Property 15: Referential Integrity - Pet to Breeding
     
-    For any Pet_Entity creation or update with a litter_id, the litter_id should
+    For any Pet_Entity creation or update with a breeding_id, the breeding_id should
     reference an existing Litter_Entity, or the operation should fail.
     
-    Feature: laravel-to-fastapi-migration, Property 15: Referential Integrity - Pet to Litter
+    Feature: laravel-to-fastapi-migration, Property 15: Referential Integrity - Pet to Breeding
     Validates: Requirements 7.4
     """
     # Create a user within the test to avoid fixture lazy loading issues
@@ -163,52 +163,52 @@ async def test_property_pet_litter_referential_integrity(
     await async_session.refresh(test_user)
     user_id = test_user.id
     
-    # Test 1: Creating pet with valid litter_id should succeed
-    # Create a litter first
-    litter = Litter(
+    # Test 1: Creating pet with valid breeding_id should succeed
+    # Create a breeding first
+    breeding = Breeding(
         date_of_litter=litter_date,
-        description="Test litter",
+        description="Test breeding",
         is_active=True,
     )
     
-    async_session.add(litter)
+    async_session.add(breeding)
     await async_session.commit()
-    await async_session.refresh(litter)
+    await async_session.refresh(breeding)
     
-    valid_litter_id = litter.id
+    valid_litter_id = breeding.id
     
-    # Create pet with valid litter_id
+    # Create pet with valid breeding_id
     pet_with_litter = Pet(
         user_id=user_id,
         name=pet_name,
-        litter_id=valid_litter_id,
+        breeding_id=valid_litter_id,
     )
     
     async_session.add(pet_with_litter)
     await async_session.commit()
     await async_session.refresh(pet_with_litter)
     
-    assert pet_with_litter.litter_id == valid_litter_id, \
-        "Pet should have valid litter_id"
+    assert pet_with_litter.breeding_id == valid_litter_id, \
+        "Pet should have valid breeding_id"
     
     # Verify the foreign key constraint is working
-    query = select(Litter).where(Litter.id == pet_with_litter.litter_id)
+    query = select(Breeding).where(Breeding.id == pet_with_litter.breeding_id)
     result = await async_session.execute(query)
     referenced_litter = result.scalar_one_or_none()
     
     assert referenced_litter is not None, \
-        "Pet's litter_id should reference an existing litter"
+        "Pet's breeding_id should reference an existing breeding"
     assert referenced_litter.id == valid_litter_id, \
-        "Referenced litter should match the litter_id"
+        "Referenced breeding should match the breeding_id"
     
-    # Test 2: Creating pet with non-existent litter_id should fail
+    # Test 2: Creating pet with non-existent breeding_id should fail
     # Use a very large integer that doesn't exist
     non_existent_litter_id = 999999999
     
     pet_with_invalid_litter = Pet(
         user_id=user_id,
         name=f"{pet_name}_invalid",
-        litter_id=non_existent_litter_id,
+        breeding_id=non_existent_litter_id,
     )
     
     async_session.add(pet_with_invalid_litter)
@@ -244,37 +244,37 @@ async def test_property_status_transition_sequence(
     """
     Property 3: Status Transition Sequence
     
-    For any litter, the status should transition in the sequence Started → InProcess → Done,
+    For any breeding, the status should transition in the sequence Started → InProcess → Done,
     where Started is the initial state, InProcess occurs after pet assignment, and Done occurs
     after puppy addition.
     
-    Feature: litters-management, Property 3: Status Transition Sequence
+    Feature: breedings-management, Property 3: Status Transition Sequence
     Validates: Requirements 2.1, 2.2, 2.3
     """
-    from app.models.litter_pet import LitterPet
+    from app.models.breeding_pet import BreedingPet
     
     # Cache the user_id to avoid lazy loading issues in async context
     user_id = test_user.id
     
-    # Step 1: Create a litter - should have status "Started"
-    litter = Litter(
+    # Step 1: Create a breeding - should have status "Started"
+    breeding = Breeding(
         date_of_litter=litter_date,
         description=description,
         is_active=True,
         status="Started"
     )
     
-    async_session.add(litter)
+    async_session.add(breeding)
     await async_session.commit()
-    await async_session.refresh(litter)
+    await async_session.refresh(breeding)
     
     # Verify initial status is "Started"
-    assert litter.status == "Started", \
-        f"New litter should have status 'Started', got '{litter.status}'"
+    assert breeding.status == "Started", \
+        f"New breeding should have status 'Started', got '{breeding.status}'"
     
-    litter_id = litter.id
+    breeding_id = breeding.id
     
-    # Step 2: Create parent pets (not assigned to litter yet)
+    # Step 2: Create parent pets (not assigned to breeding yet)
     parent_pets = []
     for name in pet_names:
         pet = Pet(
@@ -291,55 +291,55 @@ async def test_property_status_transition_sequence(
     for pet in parent_pets:
         await async_session.refresh(pet)
     
-    # Step 3: Assign parent pets to litter - status should change to "InProcess"
+    # Step 3: Assign parent pets to breeding - status should change to "InProcess"
     for pet in parent_pets:
-        litter_pet = LitterPet(
-            litter_id=litter_id,
+        litter_pet = BreedingPet(
+            breeding_id=breeding_id,
             pet_id=pet.id
         )
         async_session.add(litter_pet)
     
-    # Update litter status to InProcess
-    litter.status = "InProcess"
+    # Update breeding status to InProcess
+    breeding.status = "InProcess"
     await async_session.commit()
-    await async_session.refresh(litter)
+    await async_session.refresh(breeding)
     
     # Verify status changed to "InProcess"
-    assert litter.status == "InProcess", \
-        f"Litter with assigned pets should have status 'InProcess', got '{litter.status}'"
+    assert breeding.status == "InProcess", \
+        f"Breeding with assigned pets should have status 'InProcess', got '{breeding.status}'"
     
     # Verify parent pets are assigned
-    assert len(litter.litter_pets) == 2, \
-        f"Litter should have 2 parent pets assigned, got {len(litter.litter_pets)}"
+    assert len(breeding.breeding_pets) == 2, \
+        f"Breeding should have 2 parent pets assigned, got {len(breeding.breeding_pets)}"
     
-    # Step 4: Add puppies to litter - status should change to "Done"
+    # Step 4: Add puppies to breeding - status should change to "Done"
     puppies = []
     for name in puppy_names:
         puppy = Pet(
             user_id=user_id,
             name=name,
-            litter_id=litter_id,
+            breeding_id=breeding_id,
             is_puppy=True,
         )
         async_session.add(puppy)
         puppies.append(puppy)
     
-    # Update litter status to Done
-    litter.status = "Done"
+    # Update breeding status to Done
+    breeding.status = "Done"
     await async_session.commit()
-    await async_session.refresh(litter)
+    await async_session.refresh(breeding)
     
     # Verify status changed to "Done"
-    assert litter.status == "Done", \
-        f"Litter with puppies should have status 'Done', got '{litter.status}'"
+    assert breeding.status == "Done", \
+        f"Breeding with puppies should have status 'Done', got '{breeding.status}'"
     
-    # Verify puppies are associated with litter
-    query = select(Pet).where(Pet.litter_id == litter_id)
+    # Verify puppies are associated with breeding
+    query = select(Pet).where(Pet.breeding_id == breeding_id)
     result = await async_session.execute(query)
     litter_puppies = result.scalars().all()
     
     assert len(litter_puppies) == len(puppy_names), \
-        f"Expected {len(puppy_names)} puppies for litter, got {len(litter_puppies)}"
+        f"Expected {len(puppy_names)} puppies for breeding, got {len(litter_puppies)}"
     
     # Verify the complete transition sequence
     # We've verified: Started (initial) -> InProcess (after pet assignment) -> Done (after puppy addition)
@@ -367,12 +367,12 @@ async def test_property_comprehensive_filter_application(
     Property 7: Comprehensive Filter Application
     
     For any combination of filter criteria (location, status, breed), the system should
-    return only litters that match all selected filter criteria.
+    return only breedings that match all selected filter criteria.
     
-    Feature: litters-management, Property 7: Comprehensive Filter Application
+    Feature: breedings-management, Property 7: Comprehensive Filter Application
     Validates: Requirements 10.1, 10.2, 10.3, 10.4
     """
-    from app.models.litter_pet import LitterPet
+    from app.models.breeding_pet import BreedingPet
     from app.models.location import Location
     from app.models.breed import Breed
     import uuid as uuid_module
@@ -422,30 +422,30 @@ async def test_property_comprehensive_filter_application(
     await async_session.refresh(breed1)
     await async_session.refresh(breed2)
     
-    # Create litters with different combinations of location, status, and breed
+    # Create breedings with different combinations of location, status, and breed
     litters_data = []
     statuses = ["Started", "InProcess", "Done"]
     locations = [location1, location2]
     breeds = [breed1, breed2]
     
     for i in range(num_litters):
-        # Create litter
+        # Create breeding
         status = statuses[i % len(statuses)]
-        litter = Litter(
+        breeding = Breeding(
             date_of_litter=litter_date,
-            description=f"Litter {i}",
+            description=f"Breeding {i}",
             is_active=True,
             status=status
         )
-        async_session.add(litter)
+        async_session.add(breeding)
         await async_session.commit()
-        await async_session.refresh(litter)
+        await async_session.refresh(breeding)
         
         # Assign parent pets with specific location and breed
         location = locations[i % len(locations)]
         breed = breeds[i % len(breeds)]
         
-        # Create 2 parent pets for this litter
+        # Create 2 parent pets for this breeding
         parent_pets = []
         for j in range(2):
             pet = Pet(
@@ -464,19 +464,19 @@ async def test_property_comprehensive_filter_application(
         for pet in parent_pets:
             await async_session.refresh(pet)
         
-        # Assign pets to litter
+        # Assign pets to breeding
         for pet in parent_pets:
-            litter_pet = LitterPet(
-                litter_id=litter.id,
+            litter_pet = BreedingPet(
+                breeding_id=breeding.id,
                 pet_id=pet.id
             )
             async_session.add(litter_pet)
         
         await async_session.commit()
-        await async_session.refresh(litter)
+        await async_session.refresh(breeding)
         
         litters_data.append({
-            "litter": litter,
+            "breeding": breeding,
             "location_id": location.id,
             "breed_id": breed.id,
             "status": status
@@ -484,85 +484,85 @@ async def test_property_comprehensive_filter_application(
     
     # Test 1: Filter by location only
     target_location_id = location1.id
-    query = select(Litter).options(
-        selectinload(Litter.litter_pets).selectinload(LitterPet.pet)
+    query = select(Breeding).options(
+        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet)
     )
     result = await async_session.execute(query)
     all_litters = result.scalars().all()
     
     filtered_by_location = []
-    for litter in all_litters:
+    for breeding in all_litters:
         parent_locations = set()
-        for litter_pet in litter.litter_pets:
+        for litter_pet in breeding.breeding_pets:
             if litter_pet.pet.location_id:
                 parent_locations.add(litter_pet.pet.location_id)
         if target_location_id in parent_locations:
-            filtered_by_location.append(litter)
+            filtered_by_location.append(breeding)
     
-    # Verify all filtered litters have the target location
-    for litter in filtered_by_location:
+    # Verify all filtered breedings have the target location
+    for breeding in filtered_by_location:
         has_target_location = False
-        for litter_pet in litter.litter_pets:
+        for litter_pet in breeding.breeding_pets:
             if litter_pet.pet.location_id == target_location_id:
                 has_target_location = True
                 break
         assert has_target_location, \
-            f"Litter {litter.id} should have parent pet with location {target_location_id}"
+            f"Breeding {breeding.id} should have parent pet with location {target_location_id}"
     
     # Test 2: Filter by status only
     target_status = "InProcess"
-    query = select(Litter).where(Litter.status == target_status)
+    query = select(Breeding).where(Breeding.status == target_status)
     result = await async_session.execute(query)
     filtered_by_status = result.scalars().all()
     
-    # Verify all filtered litters have the target status
-    for litter in filtered_by_status:
-        assert litter.status == target_status, \
-            f"Litter {litter.id} should have status '{target_status}', got '{litter.status}'"
+    # Verify all filtered breedings have the target status
+    for breeding in filtered_by_status:
+        assert breeding.status == target_status, \
+            f"Breeding {breeding.id} should have status '{target_status}', got '{breeding.status}'"
     
     # Test 3: Filter by breed only
     target_breed_id = breed1.id
-    query = select(Litter).options(
-        selectinload(Litter.litter_pets).selectinload(LitterPet.pet)
+    query = select(Breeding).options(
+        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet)
     )
     result = await async_session.execute(query)
     all_litters = result.scalars().all()
     
     filtered_by_breed = []
-    for litter in all_litters:
+    for breeding in all_litters:
         parent_breeds = set()
-        for litter_pet in litter.litter_pets:
+        for litter_pet in breeding.breeding_pets:
             if litter_pet.pet.breed_id:
                 parent_breeds.add(litter_pet.pet.breed_id)
         if target_breed_id in parent_breeds:
-            filtered_by_breed.append(litter)
+            filtered_by_breed.append(breeding)
     
-    # Verify all filtered litters have the target breed
-    for litter in filtered_by_breed:
+    # Verify all filtered breedings have the target breed
+    for breeding in filtered_by_breed:
         has_target_breed = False
-        for litter_pet in litter.litter_pets:
+        for litter_pet in breeding.breeding_pets:
             if litter_pet.pet.breed_id == target_breed_id:
                 has_target_breed = True
                 break
         assert has_target_breed, \
-            f"Litter {litter.id} should have parent pet with breed {target_breed_id}"
+            f"Breeding {breeding.id} should have parent pet with breed {target_breed_id}"
     
     # Test 4: Combined filters (location + status + breed)
     target_location_id = location1.id
     target_status = "InProcess"
     target_breed_id = breed1.id
     
-    query = select(Litter).options(
-        selectinload(Litter.litter_pets).selectinload(LitterPet.pet)
-    ).where(Litter.status == target_status)
+    query = select(Breeding).options(
+        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet)
+    ).where(Breeding.status == target_status)
     result = await async_session.execute(query)
     all_litters = result.scalars().all()
     
     filtered_combined = []
-    for litter in all_litters:
+    for breeding in all_litters:
         parent_locations = set()
         parent_breeds = set()
-        for litter_pet in litter.litter_pets:
+        for litter_pet in breeding.breeding_pets:
             if litter_pet.pet.location_id:
                 parent_locations.add(litter_pet.pet.location_id)
             if litter_pet.pet.breed_id:
@@ -570,37 +570,37 @@ async def test_property_comprehensive_filter_application(
         
         if (target_location_id in parent_locations and 
             target_breed_id in parent_breeds):
-            filtered_combined.append(litter)
+            filtered_combined.append(breeding)
     
-    # Verify all filtered litters match ALL criteria
-    for litter in filtered_combined:
+    # Verify all filtered breedings match ALL criteria
+    for breeding in filtered_combined:
         # Check status
-        assert litter.status == target_status, \
-            f"Litter {litter.id} should have status '{target_status}'"
+        assert breeding.status == target_status, \
+            f"Breeding {breeding.id} should have status '{target_status}'"
         
         # Check location
         has_target_location = False
-        for litter_pet in litter.litter_pets:
+        for litter_pet in breeding.breeding_pets:
             if litter_pet.pet.location_id == target_location_id:
                 has_target_location = True
                 break
         assert has_target_location, \
-            f"Litter {litter.id} should have parent pet with location {target_location_id}"
+            f"Breeding {breeding.id} should have parent pet with location {target_location_id}"
         
         # Check breed
         has_target_breed = False
-        for litter_pet in litter.litter_pets:
+        for litter_pet in breeding.breeding_pets:
             if litter_pet.pet.breed_id == target_breed_id:
                 has_target_breed = True
                 break
         assert has_target_breed, \
-            f"Litter {litter.id} should have parent pet with breed {target_breed_id}"
+            f"Breeding {breeding.id} should have parent pet with breed {target_breed_id}"
     
-    # Test 5: Verify voided litters are excluded by default
-    # Create a voided litter
-    voided_litter = Litter(
+    # Test 5: Verify voided breedings are excluded by default
+    # Create a voided breeding
+    voided_litter = Breeding(
         date_of_litter=litter_date,
-        description="Voided litter",
+        description="Voided breeding",
         is_active=True,
         status="Voided"
     )
@@ -609,22 +609,22 @@ async def test_property_comprehensive_filter_application(
     await async_session.refresh(voided_litter)
     
     # Query without status filter (should exclude voided)
-    query = select(Litter).where(Litter.status != "Voided")
+    query = select(Breeding).where(Breeding.status != "Voided")
     result = await async_session.execute(query)
     non_voided_litters = result.scalars().all()
     
-    # Verify voided litter is not in results
-    voided_ids = {litter.id for litter in non_voided_litters if litter.status == "Voided"}
+    # Verify voided breeding is not in results
+    voided_ids = {breeding.id for breeding in non_voided_litters if breeding.status == "Voided"}
     assert len(voided_ids) == 0, \
-        "Voided litters should be excluded by default"
+        "Voided breedings should be excluded by default"
     
-    # Verify voided litter can be retrieved when explicitly requested
-    query = select(Litter).where(Litter.status == "Voided")
+    # Verify voided breeding can be retrieved when explicitly requested
+    query = select(Breeding).where(Breeding.status == "Voided")
     result = await async_session.execute(query)
     voided_litters = result.scalars().all()
     
-    assert voided_litter.id in {litter.id for litter in voided_litters}, \
-        "Voided litter should be retrievable when explicitly requested"
+    assert voided_litter.id in {breeding.id for breeding in voided_litters}, \
+        "Voided breeding should be retrievable when explicitly requested"
 
 
 @pytest.mark.asyncio
@@ -649,9 +649,9 @@ async def test_property_location_validation_for_pet_assignment(
     Property 4: Location Validation for Pet Assignment
     
     For any two pets from different locations, attempting to assign them to the same
-    litter should be rejected with an error.
+    breeding should be rejected with an error.
     
-    Feature: litters-management, Property 4: Location Validation for Pet Assignment
+    Feature: breedings-management, Property 4: Location Validation for Pet Assignment
     Validates: Requirements 3.1
     """
     from app.models.location import Location
@@ -687,16 +687,16 @@ async def test_property_location_validation_for_pet_assignment(
     await async_session.refresh(location1)
     await async_session.refresh(location2)
     
-    # Create a litter
-    litter = Litter(
+    # Create a breeding
+    breeding = Breeding(
         date_of_litter=litter_date,
         description=description,
         is_active=True,
         status="Started"
     )
-    async_session.add(litter)
+    async_session.add(breeding)
     await async_session.commit()
-    await async_session.refresh(litter)
+    await async_session.refresh(breeding)
     
     # Create two pets with DIFFERENT locations
     pet1 = Pet(
@@ -728,7 +728,7 @@ async def test_property_location_validation_for_pet_assignment(
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
-            f"/api/litters/{litter.id}/assign-pets",
+            f"/api/breedings/{breeding.id}/assign-pets",
             json={
                 "pet_ids": [str(pet1.id), str(pet2.id)]
             }
@@ -743,19 +743,19 @@ async def test_property_location_validation_for_pet_assignment(
         assert "location" in error_detail.lower(), \
             f"Error message should mention location, got: {error_detail}"
     
-    # Verify litter status is still "Started" (assignment failed)
-    await async_session.refresh(litter)
-    assert litter.status == "Started", \
-        f"Litter status should remain 'Started' after failed assignment, got '{litter.status}'"
+    # Verify breeding status is still "Started" (assignment failed)
+    await async_session.refresh(breeding)
+    assert breeding.status == "Started", \
+        f"Breeding status should remain 'Started' after failed assignment, got '{breeding.status}'"
     
-    # Verify no pets were assigned to the litter
-    from app.models.litter_pet import LitterPet
-    query = select(LitterPet).where(LitterPet.litter_id == litter.id)
+    # Verify no pets were assigned to the breeding
+    from app.models.breeding_pet import BreedingPet
+    query = select(BreedingPet).where(BreedingPet.breeding_id == breeding.id)
     result = await async_session.execute(query)
-    litter_pets = result.scalars().all()
+    breeding_pets = result.scalars().all()
     
-    assert len(litter_pets) == 0, \
-        f"No pets should be assigned after failed validation, got {len(litter_pets)}"
+    assert len(breeding_pets) == 0, \
+        f"No pets should be assigned after failed validation, got {len(breeding_pets)}"
     
     # Test 2: Verify that pets from the SAME location CAN be assigned
     # Create two pets with the SAME location
@@ -781,8 +781,8 @@ async def test_property_location_validation_for_pet_assignment(
     assert pet3.location_id == pet4.location_id, \
         "Test setup: pets should have the same location"
     
-    # Create a new litter for this test
-    litter2 = Litter(
+    # Create a new breeding for this test
+    litter2 = Breeding(
         date_of_litter=litter_date,
         description=f"{description}_test2" if description else "test2",
         is_active=True,
@@ -795,7 +795,7 @@ async def test_property_location_validation_for_pet_assignment(
     # Test the API endpoint to verify it accepts the assignment
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
-            f"/api/litters/{litter2.id}/assign-pets",
+            f"/api/breedings/{litter2.id}/assign-pets",
             json={
                 "pet_ids": [str(pet3.id), str(pet4.id)]
             }
@@ -805,18 +805,18 @@ async def test_property_location_validation_for_pet_assignment(
         assert response.status_code == 200, \
             f"Assigning pets from same location should return 200, got {response.status_code}"
     
-    # Verify litter status changed to "InProcess"
+    # Verify breeding status changed to "InProcess"
     await async_session.refresh(litter2)
     assert litter2.status == "InProcess", \
-        f"Litter status should be 'InProcess' after successful assignment, got '{litter2.status}'"
+        f"Breeding status should be 'InProcess' after successful assignment, got '{litter2.status}'"
     
-    # Verify pets were assigned to the litter
-    query = select(LitterPet).where(LitterPet.litter_id == litter2.id)
+    # Verify pets were assigned to the breeding
+    query = select(BreedingPet).where(BreedingPet.breeding_id == litter2.id)
     result = await async_session.execute(query)
-    litter_pets = result.scalars().all()
+    breeding_pets = result.scalars().all()
     
-    assert len(litter_pets) == 2, \
-        f"2 pets should be assigned after successful validation, got {len(litter_pets)}"
+    assert len(breeding_pets) == 2, \
+        f"2 pets should be assigned after successful validation, got {len(breeding_pets)}"
 
 
 @pytest.mark.asyncio
@@ -827,7 +827,7 @@ async def test_property_location_validation_for_pet_assignment(
 )
 @given(
     num_litters=st.integers(min_value=2, max_value=5),
-    pet_names=st.lists(pet_name_strategy, min_size=2, max_size=2),  # Exactly 2 pets per litter
+    pet_names=st.lists(pet_name_strategy, min_size=2, max_size=2),  # Exactly 2 pets per breeding
     litter_date=date_strategy,
 )
 async def test_property_multi_litter_pet_assignment(
@@ -838,16 +838,16 @@ async def test_property_multi_litter_pet_assignment(
     test_user: User,
 ):
     """
-    Property 6: Multi-Litter Pet Assignment
+    Property 6: Multi-Breeding Pet Assignment
     
-    For any pet, the system should allow assignment to multiple litters without restriction,
-    regardless of existing litter assignments.
+    For any pet, the system should allow assignment to multiple breedings without restriction,
+    regardless of existing breeding assignments.
     
-    Feature: litters-management, Property 6: Multi-Litter Pet Assignment
+    Feature: breedings-management, Property 6: Multi-Breeding Pet Assignment
     Validates: Requirements 5.5, 11.1, 11.2, 11.3, 11.4
     """
     from app.models.location import Location
-    from app.models.litter_pet import LitterPet
+    from app.models.breeding_pet import BreedingPet
     from httpx import AsyncClient, ASGITransport
     from app.main import app
     import uuid as uuid_module
@@ -870,7 +870,7 @@ async def test_property_multi_litter_pet_assignment(
     await async_session.commit()
     await async_session.refresh(location)
     
-    # Create two pets that will be assigned to multiple litters
+    # Create two pets that will be assigned to multiple breedings
     pet1 = Pet(
         user_id=user_id,
         name=pet_names[0],
@@ -889,66 +889,66 @@ async def test_property_multi_litter_pet_assignment(
     await async_session.refresh(pet1)
     await async_session.refresh(pet2)
     
-    # Create multiple litters
-    litters = []
+    # Create multiple breedings
+    breedings = []
     for i in range(num_litters):
-        litter = Litter(
+        breeding = Breeding(
             date_of_litter=litter_date,
-            description=f"Litter {i}",
+            description=f"Breeding {i}",
             is_active=True,
             status="Started"
         )
-        async_session.add(litter)
-        litters.append(litter)
+        async_session.add(breeding)
+        breedings.append(breeding)
     
     await async_session.commit()
     
-    # Refresh all litters to get their IDs
-    for litter in litters:
-        await async_session.refresh(litter)
+    # Refresh all breedings to get their IDs
+    for breeding in breedings:
+        await async_session.refresh(breeding)
     
-    # Test 1: Assign the same two pets to all litters
+    # Test 1: Assign the same two pets to all breedings
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        for litter in litters:
+        for breeding in breedings:
             response = await client.post(
-                f"/api/litters/{litter.id}/assign-pets",
+                f"/api/breedings/{breeding.id}/assign-pets",
                 json={
                     "pet_ids": [str(pet1.id), str(pet2.id)]
                 }
             )
             
-            # Should return 200 OK - multi-litter assignment is allowed
+            # Should return 200 OK - multi-breeding assignment is allowed
             assert response.status_code == 200, \
-                f"Assigning pets to litter {litter.id} should succeed, got {response.status_code}"
+                f"Assigning pets to breeding {breeding.id} should succeed, got {response.status_code}"
     
-    # Test 2: Verify all litters have the same pets assigned
-    for litter in litters:
-        await async_session.refresh(litter)
+    # Test 2: Verify all breedings have the same pets assigned
+    for breeding in breedings:
+        await async_session.refresh(breeding)
         
-        # Verify litter status changed to "InProcess"
-        assert litter.status == "InProcess", \
-            f"Litter {litter.id} should have status 'InProcess', got '{litter.status}'"
+        # Verify breeding status changed to "InProcess"
+        assert breeding.status == "InProcess", \
+            f"Breeding {breeding.id} should have status 'InProcess', got '{breeding.status}'"
         
-        # Query litter_pets for this litter
-        query = select(LitterPet).where(LitterPet.litter_id == litter.id)
+        # Query breeding_pets for this breeding
+        query = select(BreedingPet).where(BreedingPet.breeding_id == breeding.id)
         result = await async_session.execute(query)
-        litter_pets = result.scalars().all()
+        breeding_pets = result.scalars().all()
         
         # Verify 2 pets are assigned
-        assert len(litter_pets) == 2, \
-            f"Litter {litter.id} should have 2 pets assigned, got {len(litter_pets)}"
+        assert len(breeding_pets) == 2, \
+            f"Breeding {breeding.id} should have 2 pets assigned, got {len(breeding_pets)}"
         
         # Verify the correct pets are assigned
-        assigned_pet_ids = {lp.pet_id for lp in litter_pets}
+        assigned_pet_ids = {lp.pet_id for lp in breeding_pets}
         assert pet1.id in assigned_pet_ids, \
-            f"Pet {pet1.id} should be assigned to litter {litter.id}"
+            f"Pet {pet1.id} should be assigned to breeding {breeding.id}"
         assert pet2.id in assigned_pet_ids, \
-            f"Pet {pet2.id} should be assigned to litter {litter.id}"
+            f"Pet {pet2.id} should be assigned to breeding {breeding.id}"
     
     # Test 3: Verify the total number of litter_pet records
-    query = select(LitterPet).where(
-        (LitterPet.pet_id == pet1.id) | (LitterPet.pet_id == pet2.id)
+    query = select(BreedingPet).where(
+        (BreedingPet.pet_id == pet1.id) | (BreedingPet.pet_id == pet2.id)
     )
     result = await async_session.execute(query)
     all_litter_pets = result.scalars().all()
@@ -958,50 +958,50 @@ async def test_property_multi_litter_pet_assignment(
     assert len(all_litter_pets) == expected_assignments, \
         f"Expected {expected_assignments} total assignments, got {len(all_litter_pets)}"
     
-    # Test 4: Verify each pet appears in multiple litters
-    query = select(LitterPet).where(LitterPet.pet_id == pet1.id)
+    # Test 4: Verify each pet appears in multiple breedings
+    query = select(BreedingPet).where(BreedingPet.pet_id == pet1.id)
     result = await async_session.execute(query)
     pet1_assignments = result.scalars().all()
     
     assert len(pet1_assignments) == num_litters, \
-        f"Pet {pet1.id} should be assigned to {num_litters} litters, got {len(pet1_assignments)}"
+        f"Pet {pet1.id} should be assigned to {num_litters} breedings, got {len(pet1_assignments)}"
     
-    query = select(LitterPet).where(LitterPet.pet_id == pet2.id)
+    query = select(BreedingPet).where(BreedingPet.pet_id == pet2.id)
     result = await async_session.execute(query)
     pet2_assignments = result.scalars().all()
     
     assert len(pet2_assignments) == num_litters, \
-        f"Pet {pet2.id} should be assigned to {num_litters} litters, got {len(pet2_assignments)}"
+        f"Pet {pet2.id} should be assigned to {num_litters} breedings, got {len(pet2_assignments)}"
     
     # Test 5: Verify no unique constraint violations occurred
     # (If there were unique constraints, the API calls would have failed)
     # This test passes if we got here without exceptions
     
-    # Test 6: Verify that each litter maintains separate records
-    litter_ids_for_pet1 = {lp.litter_id for lp in pet1_assignments}
+    # Test 6: Verify that each breeding maintains separate records
+    litter_ids_for_pet1 = {lp.breeding_id for lp in pet1_assignments}
     assert len(litter_ids_for_pet1) == num_litters, \
-        f"Pet {pet1.id} should be in {num_litters} different litters, got {len(litter_ids_for_pet1)}"
+        f"Pet {pet1.id} should be in {num_litters} different breedings, got {len(litter_ids_for_pet1)}"
     
-    # Verify all created litters are in the assignments
-    created_litter_ids = {litter.id for litter in litters}
+    # Verify all created breedings are in the assignments
+    created_litter_ids = {breeding.id for breeding in breedings}
     assert litter_ids_for_pet1 == created_litter_ids, \
-        f"Pet {pet1.id} should be assigned to all created litters"
+        f"Pet {pet1.id} should be assigned to all created breedings"
     
-    # Test 7: Verify that pets can be queried from multiple litters
-    for litter in litters:
-        await async_session.refresh(litter)
+    # Test 7: Verify that pets can be queried from multiple breedings
+    for breeding in breedings:
+        await async_session.refresh(breeding)
         
         # Access the relationship
-        parent_pets = [lp.pet for lp in litter.litter_pets]
+        parent_pets = [lp.pet for lp in breeding.breeding_pets]
         
         assert len(parent_pets) == 2, \
-            f"Litter {litter.id} should have 2 parent pets, got {len(parent_pets)}"
+            f"Breeding {breeding.id} should have 2 parent pets, got {len(parent_pets)}"
         
         parent_pet_ids = {pet.id for pet in parent_pets}
         assert pet1.id in parent_pet_ids, \
-            f"Pet {pet1.id} should be accessible from litter {litter.id}"
+            f"Pet {pet1.id} should be accessible from breeding {breeding.id}"
         assert pet2.id in parent_pet_ids, \
-            f"Pet {pet2.id} should be accessible from litter {litter.id}"
+            f"Pet {pet2.id} should be accessible from breeding {breeding.id}"
 
 
 @pytest.mark.asyncio
@@ -1029,13 +1029,13 @@ async def test_property_data_persistence_consistency(
     """
     Property 8: Data Persistence Consistency
     
-    For any litter creation or update operation, the data should be immediately
+    For any breeding creation or update operation, the data should be immediately
     persisted to the database and retrievable in subsequent queries.
     
-    Feature: litters-management, Property 8: Data Persistence Consistency
+    Feature: breedings-management, Property 8: Data Persistence Consistency
     Validates: Requirements 12.1, 12.3, 12.4
     """
-    from app.models.litter_pet import LitterPet
+    from app.models.breeding_pet import BreedingPet
     from app.models.location import Location
     import uuid as uuid_module
     
@@ -1057,63 +1057,63 @@ async def test_property_data_persistence_consistency(
     await async_session.commit()
     await async_session.refresh(location)
     
-    # Test 1: Create a litter and verify immediate persistence
-    litter = Litter(
+    # Test 1: Create a breeding and verify immediate persistence
+    breeding = Breeding(
         date_of_litter=litter_date,
         description=description,
         is_active=True,
         status="Started"
     )
     
-    async_session.add(litter)
+    async_session.add(breeding)
     await async_session.commit()
-    await async_session.refresh(litter)
+    await async_session.refresh(breeding)
     
-    litter_id = litter.id
-    original_created_at = litter.created_at
-    original_updated_at = litter.updated_at  # May be None on creation
+    breeding_id = breeding.id
+    original_created_at = breeding.created_at
+    original_updated_at = breeding.updated_at  # May be None on creation
     
-    # Verify litter is immediately retrievable after creation
-    query = select(Litter).where(Litter.id == litter_id)
+    # Verify breeding is immediately retrievable after creation
+    query = select(Breeding).where(Breeding.id == breeding_id)
     result = await async_session.execute(query)
     retrieved_litter = result.scalar_one_or_none()
     
     assert retrieved_litter is not None, \
-        f"Litter {litter_id} should be immediately retrievable after creation"
-    assert retrieved_litter.id == litter_id, \
-        f"Retrieved litter ID should match created litter ID"
+        f"Breeding {breeding_id} should be immediately retrievable after creation"
+    assert retrieved_litter.id == breeding_id, \
+        f"Retrieved breeding ID should match created breeding ID"
     assert retrieved_litter.description == description, \
-        f"Retrieved litter description should match created description"
+        f"Retrieved breeding description should match created description"
     assert retrieved_litter.status == "Started", \
-        f"Retrieved litter status should be 'Started'"
+        f"Retrieved breeding status should be 'Started'"
     assert retrieved_litter.date_of_litter == litter_date, \
-        f"Retrieved litter date should match created date"
+        f"Retrieved breeding date should match created date"
     assert retrieved_litter.created_at == original_created_at, \
-        f"Retrieved litter created_at should match original"
+        f"Retrieved breeding created_at should match original"
     # updated_at may be None on creation, so we just verify it matches
     assert retrieved_litter.updated_at == original_updated_at, \
-        f"Retrieved litter updated_at should match original"
+        f"Retrieved breeding updated_at should match original"
     
-    # Test 2: Update litter description and verify immediate persistence
-    litter.description = updated_description
+    # Test 2: Update breeding description and verify immediate persistence
+    breeding.description = updated_description
     await async_session.commit()
-    await async_session.refresh(litter)
+    await async_session.refresh(breeding)
     
-    updated_at_after_description = litter.updated_at
+    updated_at_after_description = breeding.updated_at
     
     # Verify update is immediately retrievable
-    query = select(Litter).where(Litter.id == litter_id)
+    query = select(Breeding).where(Breeding.id == breeding_id)
     result = await async_session.execute(query)
     retrieved_litter = result.scalar_one_or_none()
     
     assert retrieved_litter is not None, \
-        f"Litter {litter_id} should be retrievable after update"
+        f"Breeding {breeding_id} should be retrievable after update"
     assert retrieved_litter.description == updated_description, \
-        f"Retrieved litter description should match updated description"
+        f"Retrieved breeding description should match updated description"
     assert retrieved_litter.updated_at == updated_at_after_description, \
-        f"Retrieved litter updated_at should reflect the update"
+        f"Retrieved breeding updated_at should reflect the update"
     assert retrieved_litter.created_at == original_created_at, \
-        f"Retrieved litter created_at should remain unchanged after update"
+        f"Retrieved breeding created_at should remain unchanged after update"
     
     # Test 3: Assign parent pets and verify immediate persistence
     parent_pets = []
@@ -1133,23 +1133,23 @@ async def test_property_data_persistence_consistency(
     for pet in parent_pets:
         await async_session.refresh(pet)
     
-    # Assign pets to litter
+    # Assign pets to breeding
     for pet in parent_pets:
-        litter_pet = LitterPet(
-            litter_id=litter_id,
+        litter_pet = BreedingPet(
+            breeding_id=breeding_id,
             pet_id=pet.id
         )
         async_session.add(litter_pet)
     
-    # Update litter status to InProcess
-    litter.status = "InProcess"
+    # Update breeding status to InProcess
+    breeding.status = "InProcess"
     await async_session.commit()
-    await async_session.refresh(litter)
+    await async_session.refresh(breeding)
     
-    updated_at_after_pets = litter.updated_at
+    updated_at_after_pets = breeding.updated_at
     
     # Verify pet assignments are immediately retrievable
-    query = select(LitterPet).where(LitterPet.litter_id == litter_id)
+    query = select(BreedingPet).where(BreedingPet.breeding_id == breeding_id)
     result = await async_session.execute(query)
     retrieved_litter_pets = result.scalars().all()
     
@@ -1161,15 +1161,15 @@ async def test_property_data_persistence_consistency(
         assert pet.id in retrieved_pet_ids, \
             f"Pet {pet.id} should be in retrieved assignments"
     
-    # Verify litter status update is immediately retrievable
-    query = select(Litter).where(Litter.id == litter_id)
+    # Verify breeding status update is immediately retrievable
+    query = select(Breeding).where(Breeding.id == breeding_id)
     result = await async_session.execute(query)
     retrieved_litter = result.scalar_one_or_none()
     
     assert retrieved_litter.status == "InProcess", \
-        f"Retrieved litter status should be 'InProcess' after pet assignment"
+        f"Retrieved breeding status should be 'InProcess' after pet assignment"
     assert retrieved_litter.updated_at == updated_at_after_pets, \
-        f"Retrieved litter updated_at should reflect pet assignment"
+        f"Retrieved breeding updated_at should reflect pet assignment"
     
     # Test 4: Add puppies and verify immediate persistence
     puppies = []
@@ -1177,26 +1177,26 @@ async def test_property_data_persistence_consistency(
         puppy = Pet(
             user_id=user_id,
             name=name,
-            litter_id=litter_id,
+            breeding_id=breeding_id,
             location_id=location.id,
             is_puppy=True,
         )
         async_session.add(puppy)
         puppies.append(puppy)
     
-    # Update litter status to Done
-    litter.status = "Done"
+    # Update breeding status to Done
+    breeding.status = "Done"
     await async_session.commit()
-    await async_session.refresh(litter)
+    await async_session.refresh(breeding)
     
-    updated_at_after_puppies = litter.updated_at
+    updated_at_after_puppies = breeding.updated_at
     
     # Refresh all puppies to get their IDs
     for puppy in puppies:
         await async_session.refresh(puppy)
     
     # Verify puppies are immediately retrievable
-    query = select(Pet).where(Pet.litter_id == litter_id)
+    query = select(Pet).where(Pet.breeding_id == breeding_id)
     result = await async_session.execute(query)
     retrieved_puppies = result.scalars().all()
     
@@ -1207,70 +1207,70 @@ async def test_property_data_persistence_consistency(
     for puppy in puppies:
         assert puppy.id in retrieved_puppy_ids, \
             f"Puppy {puppy.id} should be in retrieved puppies"
-        assert puppy.litter_id == litter_id, \
-            f"Puppy {puppy.id} should reference litter {litter_id}"
+        assert puppy.breeding_id == breeding_id, \
+            f"Puppy {puppy.id} should reference breeding {breeding_id}"
     
-    # Verify litter status update is immediately retrievable
-    query = select(Litter).where(Litter.id == litter_id)
+    # Verify breeding status update is immediately retrievable
+    query = select(Breeding).where(Breeding.id == breeding_id)
     result = await async_session.execute(query)
     retrieved_litter = result.scalar_one_or_none()
     
     assert retrieved_litter.status == "Done", \
-        f"Retrieved litter status should be 'Done' after puppy addition"
+        f"Retrieved breeding status should be 'Done' after puppy addition"
     assert retrieved_litter.updated_at == updated_at_after_puppies, \
-        f"Retrieved litter updated_at should reflect puppy addition"
+        f"Retrieved breeding updated_at should reflect puppy addition"
     
     # Test 5: Verify data consistency across multiple queries
-    # Query the litter multiple times and verify consistency
+    # Query the breeding multiple times and verify consistency
     for _ in range(3):
-        query = select(Litter).options(
-            selectinload(Litter.litter_pets).selectinload(LitterPet.pet),
-            selectinload(Litter.pets)
-        ).where(Litter.id == litter_id)
+        query = select(Breeding).options(
+            selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet),
+            selectinload(Breeding.pets)
+        ).where(Breeding.id == breeding_id)
         result = await async_session.execute(query)
         consistent_litter = result.scalar_one_or_none()
         
         assert consistent_litter is not None, \
-            f"Litter should be consistently retrievable"
-        assert consistent_litter.id == litter_id, \
-            f"Litter ID should be consistent"
+            f"Breeding should be consistently retrievable"
+        assert consistent_litter.id == breeding_id, \
+            f"Breeding ID should be consistent"
         assert consistent_litter.description == updated_description, \
-            f"Litter description should be consistent"
+            f"Breeding description should be consistent"
         assert consistent_litter.status == "Done", \
-            f"Litter status should be consistent"
+            f"Breeding status should be consistent"
         assert consistent_litter.date_of_litter == litter_date, \
-            f"Litter date should be consistent"
-        assert len(consistent_litter.litter_pets) == 2, \
-            f"Litter should consistently have 2 parent pets"
+            f"Breeding date should be consistent"
+        assert len(consistent_litter.breeding_pets) == 2, \
+            f"Breeding should consistently have 2 parent pets"
         assert len(consistent_litter.pets) == len(puppy_names), \
-            f"Litter should consistently have {len(puppy_names)} puppies"
+            f"Breeding should consistently have {len(puppy_names)} puppies"
     
     # Test 6: Verify data persists after session expiration (simulate navigation away)
     # Expire all objects in the session to simulate a fresh session
     async_session.expire_all()
     
-    # Query the litter again (simulating returning to the litters screen)
-    query = select(Litter).options(
-        selectinload(Litter.litter_pets).selectinload(LitterPet.pet),
-        selectinload(Litter.pets)
-    ).where(Litter.id == litter_id)
+    # Query the breeding again (simulating returning to the breedings screen)
+    query = select(Breeding).options(
+        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet),
+        selectinload(Breeding.pets)
+    ).where(Breeding.id == breeding_id)
     result = await async_session.execute(query)
     persisted_litter = result.scalar_one_or_none()
     
     assert persisted_litter is not None, \
-        f"Litter should persist after session expiration"
-    assert persisted_litter.id == litter_id, \
-        f"Persisted litter ID should match"
+        f"Breeding should persist after session expiration"
+    assert persisted_litter.id == breeding_id, \
+        f"Persisted breeding ID should match"
     assert persisted_litter.description == updated_description, \
-        f"Persisted litter description should match"
+        f"Persisted breeding description should match"
     assert persisted_litter.status == "Done", \
-        f"Persisted litter status should match"
+        f"Persisted breeding status should match"
     assert persisted_litter.date_of_litter == litter_date, \
-        f"Persisted litter date should match"
-    assert len(persisted_litter.litter_pets) == 2, \
-        f"Persisted litter should have 2 parent pets"
+        f"Persisted breeding date should match"
+    assert len(persisted_litter.breeding_pets) == 2, \
+        f"Persisted breeding should have 2 parent pets"
     assert len(persisted_litter.pets) == len(puppy_names), \
-        f"Persisted litter should have {len(puppy_names)} puppies"
+        f"Persisted breeding should have {len(puppy_names)} puppies"
     
     # Test 7: Verify updated_at changes with each update (if it's set)
     # Note: updated_at may be None on initial creation, but should be set after updates

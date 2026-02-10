@@ -1,4 +1,4 @@
-"""Litter schemas for API request/response validation."""
+"""Breeding schemas for API request/response validation."""
 from datetime import datetime, date
 from typing import Optional, List
 from enum import Enum
@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class LitterStatus(str, Enum):
-    """Enum for litter status values."""
+    """Enum for breeding status values."""
     STARTED = "Started"
     IN_PROCESS = "InProcess"
     DONE = "Done"
@@ -16,22 +16,22 @@ class LitterStatus(str, Enum):
 
 
 class LitterBase(BaseModel):
-    """Base schema for litter data."""
+    """Base schema for breeding data."""
     description: Optional[str] = None
 
 
 class LitterCreate(LitterBase):
-    """Schema for creating a new litter."""
+    """Schema for creating a new breeding."""
     pass
 
 
 class LitterUpdate(LitterBase):
-    """Schema for updating a litter."""
+    """Schema for updating a breeding."""
     pass
 
 
 class PetAssignment(BaseModel):
-    """Schema for assigning parent pets to a litter."""
+    """Schema for assigning parent pets to a breeding."""
     pet_ids: List[uuid.UUID] = Field(..., min_length=2, max_length=2)
     
     @field_validator('pet_ids')
@@ -62,12 +62,12 @@ class PuppyInput(BaseModel):
 
 
 class PuppyBatch(BaseModel):
-    """Schema for batch adding puppies to a litter."""
+    """Schema for batch adding puppies to a breeding."""
     puppies: List[PuppyInput] = Field(..., min_length=1)
 
 
 class LitterResponse(LitterBase):
-    """Schema for litter response with full details."""
+    """Schema for breeding response with full details."""
     id: int
     status: LitterStatus
     created_at: datetime
@@ -80,7 +80,7 @@ class LitterResponse(LitterBase):
 
 # Keep legacy LitterRead for backward compatibility
 class LitterRead(LitterBase):
-    """Schema for reading litter data (legacy)."""
+    """Schema for reading breeding data (legacy)."""
     id: int
     status: str = "Started"
     created_at: datetime

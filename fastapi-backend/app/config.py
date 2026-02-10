@@ -64,6 +64,34 @@ class Settings(BaseSettings):
         description="Server port"
     )
 
+    # Redis Configuration
+    redis_url: str = Field(
+        default="redis://localhost:6379/0",
+        description="Redis connection URL for caching"
+    )
+
+    # Geocoding Configuration
+    nominatim_url: str = Field(
+        default="https://nominatim.openstreetmap.org",
+        description="Nominatim geocoding service URL"
+    )
+    geocoding_user_agent: str = Field(
+        default="BreedyPetSearch/1.0",
+        description="User agent for geocoding requests"
+    )
+    geocoding_rate_limit: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=10.0,
+        description="Geocoding rate limit (requests per second)"
+    )
+    geocoding_cache_ttl: int = Field(
+        default=86400,
+        ge=3600,
+        le=604800,
+        description="Geocoding cache TTL in seconds (1 hour to 7 days)"
+    )
+
     # Image Upload Configuration
     max_image_size_mb: int = Field(
         default=10,

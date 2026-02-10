@@ -18,7 +18,7 @@ class PetBase(BaseModel):
             raise ValueError('Name cannot be empty or whitespace-only')
         return v
     breed_id: Optional[int] = None
-    litter_id: Optional[int] = None
+    breeding_id: Optional[int] = None
     location_id: Optional[int] = None
     date_of_birth: Optional[date] = None
     gender: Optional[str] = Field(None, max_length=50)
@@ -58,7 +58,7 @@ class PetUpdate(BaseModel):
             raise ValueError('Name cannot be empty or whitespace-only')
         return v
     breed_id: Optional[int] = None
-    litter_id: Optional[int] = None
+    breeding_id: Optional[int] = None
     location_id: Optional[int] = None
     date_of_birth: Optional[date] = None
     gender: Optional[str] = Field(None, max_length=50)

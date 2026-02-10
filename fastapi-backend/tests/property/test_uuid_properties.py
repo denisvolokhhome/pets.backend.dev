@@ -4,7 +4,7 @@ import pytest
 from hypothesis import given, settings, strategies as st, HealthCheck
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import User, Pet, Breed, Litter, Location
+from app.models import User, Pet, Breed, Breeding, Location
 
 
 @pytest.mark.asyncio
@@ -132,9 +132,9 @@ async def test_property_litter_id_generation(
     async_session: AsyncSession
 ):
     """
-    Property 8: UUID Primary Key Generation - Litter (Integer ID)
+    Property 8: UUID Primary Key Generation - Breeding (Integer ID)
     
-    For any created Litter entity, the generated ID should be a valid integer.
+    For any created Breeding entity, the generated ID should be a valid integer.
     Note: Litters use integer IDs, not UUIDs, to match Laravel schema.
     
     Feature: laravel-to-fastapi-migration, Property 8: UUID Primary Key Generation
@@ -142,18 +142,18 @@ async def test_property_litter_id_generation(
     """
     from datetime import date
     
-    # Create litter with auto-generated integer ID
-    litter = Litter(
+    # Create breeding with auto-generated integer ID
+    breeding = Breeding(
         date_of_litter=date.today(),
         is_active=True
     )
     
-    async_session.add(litter)
+    async_session.add(breeding)
     await async_session.flush()
     
     # Verify ID is a valid integer
-    assert isinstance(litter.id, int)
-    assert litter.id > 0
+    assert isinstance(breeding.id, int)
+    assert breeding.id > 0
     
     await async_session.rollback()
 

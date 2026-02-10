@@ -40,9 +40,9 @@ class Pet(Base):
         nullable=True,
         index=True
     )
-    litter_id: Mapped[Optional[int]] = mapped_column(
+    breeding_id: Mapped[Optional[int]] = mapped_column(
         Integer,
-        ForeignKey("litters.id", ondelete="SET NULL"),
+        ForeignKey("breedings.id", ondelete="SET NULL"),
         nullable=True,
         index=True
     )
@@ -168,8 +168,8 @@ class Pet(Base):
         back_populates="pets",
         lazy="selectin"
     )
-    litter: Mapped[Optional["Litter"]] = relationship(
-        "Litter",
+    breeding: Mapped[Optional["Breeding"]] = relationship(
+        "Breeding",
         back_populates="pets",
         lazy="selectin"
     )
@@ -178,8 +178,8 @@ class Pet(Base):
         back_populates="pets",
         lazy="selectin"
     )
-    litter_assignments: Mapped[list["LitterPet"]] = relationship(
-        "LitterPet",
+    breeding_assignments: Mapped[list["BreedingPet"]] = relationship(
+        "BreedingPet",
         back_populates="pet",
         lazy="selectin"
     )

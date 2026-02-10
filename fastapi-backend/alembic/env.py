@@ -31,7 +31,7 @@ if config.config_file_name is not None:
 # add your model's MetaData object here
 # for 'autogenerate' support
 # Import all models here so Alembic can detect them
-from app.models import User, Pet, Breed, BreedColour, Litter, Location, UserContact  # noqa
+from app.models import User, Pet, Breed, BreedColour, Breeding, BreedingPet, Location, UserContact  # noqa
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,

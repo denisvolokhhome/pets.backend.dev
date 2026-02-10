@@ -13,6 +13,7 @@ os.environ['SECRET_KEY'] = 'test_secret_key_at_least_32_characters_long_for_secu
 os.environ['DEBUG'] = 'true'
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy import text
 
 from app.database import Base
 from app.models import User
@@ -68,8 +69,10 @@ async def async_session() -> AsyncGenerator[AsyncSession, None]:
         pool_pre_ping=True,
     )
     
-    # Create tables
+    # Enable PostGIS extension and create tables
     async with engine.begin() as conn:
+        # Enable PostGIS extension for geospatial support
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
         await conn.run_sync(Base.metadata.create_all)
     
     # Create session

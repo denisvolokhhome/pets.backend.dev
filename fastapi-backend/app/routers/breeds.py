@@ -5,11 +5,12 @@ This module provides CRUD operations for dog breed management including:
 - Creating and updating breed records
 - Listing all available breeds
 - Managing breed information (name, code, group)
+- Breed autocomplete search for user input
 """
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_async_session
@@ -112,6 +113,87 @@ async def list_breeds(
     ```
     """
     query = select(Breed).offset(skip).limit(limit).order_by(Breed.name)
+    
+    result = await session.execute(query)
+    breeds = result.scalars().all()
+    
+    return list(breeds)
+
+
+@router.get("/autocomplete", response_model=List[BreedRead])
+async def autocomplete_breeds(
+    search_term: str = Query(..., min_length=2, max_length=100, description="Search term for breed name (minimum 2 characters)"),
+    session: AsyncSession = Depends(get_async_session),
+) -> List[Breed]:
+    """
+    Search breeds by partial name match for autocomplete functionality.
+    
+    This endpoint is public and does not require authentication.
+    Returns up to 10 breeds that match the search term, ordered by relevance
+    (exact matches first, then partial matches).
+    
+    **Query parameters:**
+    - search_term: Partial breed name to search for (minimum 2 characters)
+    
+    **Matching logic:**
+    - Case-insensitive partial matching
+    - Matches breed name or code
+    - Results ordered by relevance (exact matches first)
+    - Limited to 10 results
+    
+    **Example request:**
+    ```
+    GET /api/breeds/autocomplete?search_term=lab
+    ```
+    
+    **Example response:**
+    ```json
+    [
+        {
+            "id": 1,
+            "name": "Labrador Retriever",
+            "code": "122",
+            "group": "Sporting",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        },
+        {
+            "id": 2,
+            "name": "Black Labrador",
+            "code": "122B",
+            "group": "Sporting",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        }
+    ]
+    ```
+    
+    **Requirements Validated:**
+    - 13.5: GET endpoint with search_term parameter validation
+    - 13.6: Returns JSON array of breed objects matching search term
+    - 13.7: Includes breed_id, breed_name, and breed_code in response
+    """
+    # Create case-insensitive search pattern
+    search_pattern = f"%{search_term}%"
+    
+    # Query breeds matching the search term in name or code
+    # Order by exact match first, then partial matches
+    query = (
+        select(Breed)
+        .where(
+            or_(
+                func.lower(Breed.name).like(func.lower(search_pattern)),
+                func.lower(Breed.code).like(func.lower(search_pattern))
+            )
+        )
+        .order_by(
+            # Exact matches first
+            func.lower(Breed.name) == func.lower(search_term),
+            # Then alphabetically
+            Breed.name
+        )
+        .limit(10)
+    )
     
     result = await session.execute(query)
     breeds = result.scalars().all()

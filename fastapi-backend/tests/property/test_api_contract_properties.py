@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import User
 from app.models.breed import Breed
 from app.models.pet import Pet
-from app.models.litter import Litter
+from app.models.breeding import Breeding
 from app.models.location import Location
 
 
@@ -25,7 +25,7 @@ from app.models.location import Location
 @given(
     endpoint_path=st.sampled_from([
         "/api/breeds/",
-        "/api/litters/",
+        "/api/breedings/",
         "/api/pets/",
         "/api/locations/",
         "/health",
@@ -149,7 +149,7 @@ async def test_property_json_response_format_error_responses(
     suppress_health_check=[HealthCheck.function_scoped_fixture]
 )
 @given(
-    resource=st.sampled_from(["pets", "breeds", "litters", "locations"])
+    resource=st.sampled_from(["pets", "breeds", "breedings", "locations"])
 )
 async def test_property_url_prefix_consistency(
     resource: str,
@@ -227,7 +227,7 @@ async def test_property_url_prefix_consistency_specific_endpoints(
     # Test various endpoints
     endpoints = [
         ("/api/breeds", False),  # (path, requires_auth)
-        ("/api/litters", False),
+        ("/api/breedings", False),
         ("/api/pets", True),
         ("/api/locations", True),
         ("/api/auth/register", False),
