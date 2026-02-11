@@ -77,7 +77,7 @@ class Location(Base):
     is_published: Mapped[bool] = mapped_column(
         sa.Boolean,
         nullable=False,
-        server_default='false',
+        server_default='true',
         comment="Whether location is published and searchable on map"
     )
     

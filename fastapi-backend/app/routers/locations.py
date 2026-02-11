@@ -5,21 +5,27 @@ This module provides CRUD operations for location management including:
 - Creating and updating location records
 - Listing locations owned by the authenticated user
 - Managing location information (address, type, etc.)
+- Automatic geocoding of addresses to coordinates
 
 All endpoints require authentication and users can only access their own locations.
 """
+import logging
 import uuid
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_async_session
-from app.dependencies import current_active_user
+from app.dependencies import current_active_user, get_redis, settings
 from app.models.location import Location
 from app.models.user import User
 from app.schemas.location import LocationCreate, LocationRead, LocationUpdate
+from app.services.geocoding_service import GeocodingService
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(
@@ -33,17 +39,92 @@ router = APIRouter(
 )
 
 
+def get_geocoding_service(
+    redis_client: Optional[Redis] = Depends(get_redis)
+) -> GeocodingService:
+    """
+    Dependency to get geocoding service instance.
+    
+    Args:
+        redis_client: Optional Redis client for caching
+        
+    Returns:
+        GeocodingService: Configured geocoding service
+    """
+    return GeocodingService(settings, redis_client)
+
+
+async def geocode_location_address(
+    location: Location,
+    geocoding_service: GeocodingService
+) -> None:
+    """
+    Automatically geocode a location's address and set coordinates.
+    
+    Builds full address from location fields and attempts to geocode it.
+    If successful, updates the location's coordinates using PostGIS geometry.
+    Logs warnings if geocoding fails but doesn't raise exceptions.
+    
+    Args:
+        location: Location object to geocode
+        geocoding_service: Geocoding service instance
+    """
+    try:
+        # Build full address string
+        address_parts = [location.address1]
+        if location.address2:
+            address_parts.append(location.address2)
+        address_parts.extend([
+            location.city,
+            location.state,
+            location.zipcode,
+            location.country
+        ])
+        full_address = ", ".join(address_parts)
+        
+        logger.info(f"Geocoding location address: {full_address}")
+        
+        # Try geocoding by ZIP code first (more reliable)
+        try:
+            coords = await geocoding_service.geocode_zip(location.zipcode)
+            location.set_coordinates(coords.latitude, coords.longitude)
+            logger.info(
+                f"Successfully geocoded location {location.id} by ZIP: "
+                f"{coords.latitude}, {coords.longitude}"
+            )
+        except Exception as zip_error:
+            logger.warning(
+                f"ZIP code geocoding failed for {location.zipcode}, "
+                f"will use default coordinates: {zip_error}"
+            )
+            # If ZIP geocoding fails, location will not have coordinates
+            # This is acceptable - location can still be created/updated
+            
+    except Exception as e:
+        logger.warning(
+            f"Failed to geocode location {location.id}: {e}. "
+            f"Location will be saved without coordinates."
+        )
+
+
 @router.post("/", response_model=LocationRead, status_code=status.HTTP_201_CREATED)
 async def create_location(
     location_data: LocationCreate,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
+    geocoding_service: GeocodingService = Depends(get_geocoding_service),
 ) -> Location:
     """
-    Create a new location record.
+    Create a new location record with automatic geocoding.
     
     The location will be associated with the authenticated user.
     Locations represent physical addresses where pets are kept.
+    
+    **Automatic Geocoding:**
+    - The system automatically converts the address to coordinates
+    - Uses ZIP code for accurate geocoding
+    - Coordinates are stored in PostGIS geometry column for spatial queries
+    - If geocoding fails, location is still created but won't appear in map searches
     
     **Required fields:**
     - name: Location name
@@ -56,6 +137,7 @@ async def create_location(
     - state: State/province
     - zipcode: Postal/ZIP code
     - location_type: Type of location (e.g., "home", "kennel")
+    - is_published: Whether location is visible on map (default: True)
     
     **Example:**
     ```json
@@ -67,11 +149,12 @@ async def create_location(
         "state": "IL",
         "country": "USA",
         "zipcode": "62701",
-        "location_type": "kennel"
+        "location_type": "kennel",
+        "is_published": true
     }
     ```
     
-    **Returns:** The created location record with generated ID
+    **Returns:** The created location record with generated ID and coordinates
     """
     # Create new location instance
     location = Location(
@@ -84,11 +167,24 @@ async def create_location(
         country=location_data.country,
         zipcode=location_data.zipcode,
         location_type=location_data.location_type,
+        is_published=location_data.is_published,
     )
     
+    # Add to session first to get an ID
     session.add(location)
+    await session.flush()
+    
+    # Automatically geocode the address
+    await geocode_location_address(location, geocoding_service)
+    
+    # Commit with coordinates
     await session.commit()
     await session.refresh(location)
+    
+    logger.info(
+        f"Created location {location.id} for user {user.id} "
+        f"with coordinates: {location.latitude}, {location.longitude}"
+    )
     
     return location
 
@@ -183,12 +279,18 @@ async def update_location(
     location_update: LocationUpdate,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
+    geocoding_service: GeocodingService = Depends(get_geocoding_service),
 ) -> Location:
     """
-    Update a location record.
+    Update a location record with automatic geocoding.
     
     The location must be owned by the authenticated user.
     Only provided fields will be updated.
+    
+    **Automatic Geocoding:**
+    - If address fields are updated, the system automatically re-geocodes
+    - Updates coordinates in PostGIS geometry column
+    - If geocoding fails, location is still updated but coordinates remain unchanged
     """
     # Fetch the location
     query = select(Location).where(
@@ -204,10 +306,23 @@ async def update_location(
             detail="Location not found"
         )
     
-    # Update fields that were provided
+    # Track if address fields changed
+    address_changed = False
     update_data = location_update.model_dump(exclude_unset=True)
+    
+    # Check if any address fields are being updated
+    address_fields = {'address1', 'address2', 'city', 'state', 'zipcode', 'country'}
+    if any(field in update_data for field in address_fields):
+        address_changed = True
+    
+    # Update fields that were provided
     for field, value in update_data.items():
         setattr(location, field, value)
+    
+    # Re-geocode if address changed
+    if address_changed:
+        logger.info(f"Address changed for location {location_id}, re-geocoding...")
+        await geocode_location_address(location, geocoding_service)
     
     await session.commit()
     await session.refresh(location)
@@ -221,12 +336,18 @@ async def patch_location(
     location_update: LocationUpdate,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
+    geocoding_service: GeocodingService = Depends(get_geocoding_service),
 ) -> Location:
     """
-    Partially update a location record (PATCH method).
+    Partially update a location record (PATCH method) with automatic geocoding.
     
     The location must be owned by the authenticated user.
     Only provided fields will be updated.
+    
+    **Automatic Geocoding:**
+    - If address fields are updated, the system automatically re-geocodes
+    - Updates coordinates in PostGIS geometry column
+    - If geocoding fails, location is still updated but coordinates remain unchanged
     """
     # Fetch the location
     query = select(Location).where(
@@ -242,10 +363,23 @@ async def patch_location(
             detail="Location not found"
         )
     
-    # Update fields that were provided
+    # Track if address fields changed
+    address_changed = False
     update_data = location_update.model_dump(exclude_unset=True)
+    
+    # Check if any address fields are being updated
+    address_fields = {'address1', 'address2', 'city', 'state', 'zipcode', 'country'}
+    if any(field in update_data for field in address_fields):
+        address_changed = True
+    
+    # Update fields that were provided
     for field, value in update_data.items():
         setattr(location, field, value)
+    
+    # Re-geocode if address changed
+    if address_changed:
+        logger.info(f"Address changed for location {location_id}, re-geocoding...")
+        await geocode_location_address(location, geocoding_service)
     
     await session.commit()
     await session.refresh(location)
