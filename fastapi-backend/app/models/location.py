@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
+import sqlalchemy as sa
 from sqlalchemy import String, Integer, Float, DateTime, ForeignKey, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -72,6 +73,12 @@ class Location(Base):
         String(50),
         nullable=False,
         comment="Type: user or pet"
+    )
+    is_published: Mapped[bool] = mapped_column(
+        sa.Boolean,
+        nullable=False,
+        server_default='false',
+        comment="Whether location is published and searchable on map"
     )
     
     # Geospatial columns

@@ -84,6 +84,7 @@ class BreederService:
             .join(Pet, Pet.location_id == Location.id)
             .where(
                 Location.location_type == 'user',  # Only breeding locations
+                Location.is_published == True,  # Only published locations visible on map
                 Location.coordinates.isnot(None),  # Must have coordinates
                 User.is_active == True,  # Only active breeders
                 Pet.is_deleted == False,  # Exclude deleted pets

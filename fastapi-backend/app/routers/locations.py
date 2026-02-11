@@ -140,6 +140,7 @@ async def list_locations(
             "country": location.country,
             "zipcode": location.zipcode,
             "location_type": location.location_type,
+            "is_published": location.is_published,
             "created_at": location.created_at,
             "updated_at": location.updated_at,
             "pets": [{"id": pet.id, "name": pet.name} for pet in pets]
@@ -185,6 +186,44 @@ async def update_location(
 ) -> Location:
     """
     Update a location record.
+    
+    The location must be owned by the authenticated user.
+    Only provided fields will be updated.
+    """
+    # Fetch the location
+    query = select(Location).where(
+        Location.id == location_id,
+        Location.user_id == user.id
+    )
+    result = await session.execute(query)
+    location = result.scalar_one_or_none()
+    
+    if location is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Location not found"
+        )
+    
+    # Update fields that were provided
+    update_data = location_update.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(location, field, value)
+    
+    await session.commit()
+    await session.refresh(location)
+    
+    return location
+
+
+@router.patch("/{location_id}", response_model=LocationRead)
+async def patch_location(
+    location_id: int,
+    location_update: LocationUpdate,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> Location:
+    """
+    Partially update a location record (PATCH method).
     
     The location must be owned by the authenticated user.
     Only provided fields will be updated.
