@@ -191,19 +191,23 @@ async def list_litters(
 async def get_litter(
     breeding_id: int,
     session: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(current_active_user),
 ) -> dict:
     """
     Get a single breeding by ID with full details.
     
-    This endpoint is public and does not require authentication.
+    Requires authentication. Users can only access their own breedings.
     Returns breeding with nested parent_pets and puppies.
     
     **Returns:** LitterResponse with parent pets and puppies
     
     **Requirements:** 7.2, 7.3, 7.4, 7.5
     """
-    # Query breeding with relationships eagerly loaded
-    query = select(Breeding).where(Breeding.id == breeding_id).options(
+    # Query breeding with relationships eagerly loaded - filter by user_id
+    query = select(Breeding).where(
+        Breeding.id == breeding_id,
+        Breeding.user_id == current_user.id
+    ).options(
         selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.breed),
         selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.location),
         selectinload(Breeding.pets).selectinload(Pet.breed),
@@ -268,18 +272,22 @@ async def update_litter(
     breeding_id: int,
     litter_update: LitterUpdate,
     session: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(current_active_user),
 ) -> dict:
     """
     Update a breeding record.
     
     Only provided fields will be updated (currently only description).
     The updated_at timestamp is automatically updated.
-    This endpoint is public and does not require authentication.
+    Requires authentication. Users can only update their own breedings.
     
     **Requirements:** 8.1, 8.2, 8.5
     """
-    # Fetch the breeding with relationships
-    query = select(Breeding).where(Breeding.id == breeding_id).options(
+    # Fetch the breeding with relationships - filter by user_id
+    query = select(Breeding).where(
+        Breeding.id == breeding_id,
+        Breeding.user_id == current_user.id
+    ).options(
         selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.breed),
         selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.location),
         selectinload(Breeding.pets).selectinload(Pet.breed),
@@ -352,13 +360,14 @@ async def assign_pets_to_litter(
     breeding_id: int,
     pet_assignment: PetAssignment,
     session: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(current_active_user),
 ) -> dict:
     """
     Assign parent pets to a breeding.
     
     This endpoint assigns exactly 2 parent pets to a breeding and updates the breeding status to "InProcess".
     Both pets must exist and must have the same location_id.
-    This endpoint is public and does not require authentication.
+    Requires authentication. Users can only assign pets to their own breedings.
     
     **Request Body:**
     ```json
@@ -377,8 +386,11 @@ async def assign_pets_to_litter(
     
     **Requirements:** 3.1, 3.4, 5.1, 5.2, 5.3, 5.4
     """
-    # Fetch the breeding
-    query = select(Breeding).where(Breeding.id == breeding_id).options(
+    # Fetch the breeding - filter by user_id
+    query = select(Breeding).where(
+        Breeding.id == breeding_id,
+        Breeding.user_id == current_user.id
+    ).options(
         selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.breed),
         selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.location),
         selectinload(Breeding.pets).selectinload(Pet.breed),
@@ -490,6 +502,7 @@ async def add_puppies_to_litter(
     breeding_id: int,
     puppy_batch: PuppyBatch,
     session: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(current_active_user),
 ) -> dict:
     """
     Add puppies to a breeding.
@@ -497,7 +510,7 @@ async def add_puppies_to_litter(
     This endpoint creates pet records for each puppy and associates them with the breeding.
     The breeding status is updated to "Done" after puppies are added.
     Location and breed are derived from the parent pets.
-    This endpoint is public and does not require authentication.
+    Requires authentication. Users can only add puppies to their own breedings.
     
     **Request Body:**
     ```json
@@ -524,8 +537,11 @@ async def add_puppies_to_litter(
     
     **Requirements:** 6.1, 6.2, 6.3, 6.4, 6.5
     """
-    # Fetch the breeding with relationships
-    query = select(Breeding).where(Breeding.id == breeding_id).options(
+    # Fetch the breeding with relationships - filter by user_id
+    query = select(Breeding).where(
+        Breeding.id == breeding_id,
+        Breeding.user_id == current_user.id
+    ).options(
         selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.breed),
         selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.location),
         selectinload(Breeding.pets).selectinload(Pet.breed),
@@ -645,6 +661,7 @@ async def add_puppies_to_litter(
 async def delete_litter(
     breeding_id: int,
     session: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(current_active_user),
 ) -> dict:
     """
     Void/cancel a breeding record (soft delete).
@@ -652,14 +669,17 @@ async def delete_litter(
     This endpoint updates the breeding status to "Voided" and maintains the breeding record
     for historical tracking. The breeding will be excluded from default listings but
     can still be retrieved by ID or by explicitly filtering for voided breedings.
-    This endpoint is public and does not require authentication.
+    Requires authentication. Users can only void their own breedings.
     
     **Returns:** LitterResponse with updated status "Voided"
     
     **Requirements:** 9.1, 9.2, 9.3, 9.4, 9.5
     """
-    # Fetch the breeding with relationships
-    query = select(Breeding).where(Breeding.id == breeding_id).options(
+    # Fetch the breeding with relationships - filter by user_id
+    query = select(Breeding).where(
+        Breeding.id == breeding_id,
+        Breeding.user_id == current_user.id
+    ).options(
         selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.breed),
         selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.location),
         selectinload(Breeding.pets).selectinload(Pet.breed),
