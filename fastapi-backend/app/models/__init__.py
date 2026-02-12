@@ -6,6 +6,7 @@ from app.models.breeding import Breeding
 from app.models.breeding_pet import BreedingPet
 from app.models.location import Location
 from app.models.user_contact import UserContact
+from app.models.message import Message
 
 __all__ = [
     "User",
@@ -16,4 +17,5 @@ __all__ = [
     "BreedingPet",
     "Location",
     "UserContact",
+    "Message",
 ]

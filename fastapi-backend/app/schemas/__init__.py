@@ -13,6 +13,16 @@ from app.schemas.breed import (
 )
 from app.schemas.breeding import LitterBase, LitterCreate, LitterUpdate, LitterRead
 from app.schemas.location import LocationBase, LocationCreate, LocationUpdate, LocationRead
+from app.schemas.message import (
+    MessageCreate,
+    MessageResponse,
+    MessageListItem,
+    MessageListResponse,
+    MessageUpdate,
+    MessageResponseCreate,
+    UnreadCountResponse,
+    MessageSendResponse,
+)
 
 __all__ = [
     # User schemas
@@ -43,4 +53,13 @@ __all__ = [
     "LocationCreate",
     "LocationUpdate",
     "LocationRead",
+    # Message schemas
+    "MessageCreate",
+    "MessageResponse",
+    "MessageListItem",
+    "MessageListResponse",
+    "MessageUpdate",
+    "MessageResponseCreate",
+    "UnreadCountResponse",
+    "MessageSendResponse",
 ]

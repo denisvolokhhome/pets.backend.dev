@@ -14,7 +14,7 @@ from sqlalchemy.exc import NoResultFound
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import Settings
-from app.routers import auth, pets, breeds, breedings, locations, users, geocoding, search
+from app.routers import auth, pets, breeds, breedings, locations, users, geocoding, search, messages
 
 # Configure logging
 logging.basicConfig(
@@ -231,6 +231,10 @@ app = FastAPI(
             "name": "search",
             "description": "Location-based search operations. Find breeders and pets near a geographic location.",
         },
+        {
+            "name": "messages",
+            "description": "Breeder-user communication. Anonymous users can contact breeders, and breeders can manage their messages.",
+        },
     ],
 )
 
@@ -279,6 +283,7 @@ app.include_router(breedings.router, tags=["breedings"])
 app.include_router(locations.router, tags=["locations"])
 app.include_router(geocoding.router, tags=["geocoding"])
 app.include_router(search.router, tags=["search"])
+app.include_router(messages.router, tags=["messages"])
 
 
 @app.get("/health")
