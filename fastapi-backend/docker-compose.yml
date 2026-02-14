@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with PostGIS
+  postgres:
+    image: postgis/postgis:13-3.1
+    container_name: pets_postgres
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: test_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: pets_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Nominatim - Geocoding service with US data only
+  nominatim:
+    image: mediagis/nominatim:4.4
+    container_name: pets_nominatim
+    ports:
+      - "8080:8080"
+    environment:
+      # Download US data only (~8GB instead of 100GB+)
+      PBF_URL: https://download.geofabrik.de/north-america/us-latest.osm.pbf
+      REPLICATION_URL: https://download.geofabrik.de/north-america/us-updates/
+      IMPORT_WIKIPEDIA: "false"
+      IMPORT_US_POSTCODES: "true"
+      IMPORT_GB_POSTCODES: "false"
+      THREADS: 4
+      NOMINATIM_PASSWORD: nominatim_password
+    volumes:
+      - nominatim_data:/var/lib/postgresql/14/main
+    shm_size: 1gb
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/search?q=test&format=json"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s  # 5 minutes for initial import
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  nominatim_data:
+
+networks:
+  default:
+    name: pets_network
+

@@ -174,10 +174,14 @@ async def create_location(
     session.add(location)
     await session.flush()
     
-    # Automatically geocode the address
-    await geocode_location_address(location, geocoding_service)
+    # Try to automatically geocode the address (non-blocking)
+    try:
+        await geocode_location_address(location, geocoding_service)
+    except Exception as e:
+        # Geocoding failed, but that's okay - location can still be created
+        logger.warning(f"Geocoding failed for location {location.id}: {e}. Location saved without coordinates.")
     
-    # Commit with coordinates
+    # Commit with or without coordinates
     await session.commit()
     await session.refresh(location)
     
@@ -322,7 +326,10 @@ async def update_location(
     # Re-geocode if address changed
     if address_changed:
         logger.info(f"Address changed for location {location_id}, re-geocoding...")
-        await geocode_location_address(location, geocoding_service)
+        try:
+            await geocode_location_address(location, geocoding_service)
+        except Exception as e:
+            logger.warning(f"Re-geocoding failed for location {location_id}: {e}. Location updated without new coordinates.")
     
     await session.commit()
     await session.refresh(location)
@@ -379,7 +386,10 @@ async def patch_location(
     # Re-geocode if address changed
     if address_changed:
         logger.info(f"Address changed for location {location_id}, re-geocoding...")
-        await geocode_location_address(location, geocoding_service)
+        try:
+            await geocode_location_address(location, geocoding_service)
+        except Exception as e:
+            logger.warning(f"Re-geocoding failed for location {location_id}: {e}. Location updated without new coordinates.")
     
     await session.commit()
     await session.refresh(location)

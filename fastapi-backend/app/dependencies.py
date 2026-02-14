@@ -17,6 +17,7 @@ from app.config import Settings
 from app.database import get_async_session
 from app.models.user import User
 from app.services.user_manager import UserManager
+from app.services.geocoding_service import GeocodingService
 
 
 # Initialize settings
