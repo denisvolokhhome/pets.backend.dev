@@ -38,6 +38,14 @@ class Message(Base):
         index=True
     )
     
+    # Optional link to pet seeker account
+    pet_seeker_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
+    
     # Sender information (anonymous user)
     sender_name: Mapped[str] = mapped_column(
         String(255),
@@ -89,7 +97,15 @@ class Message(Base):
     # Relationships
     breeder: Mapped["User"] = relationship(
         "User",
-        back_populates="messages",
+        foreign_keys=[breeder_id],
+        back_populates="messages_received",
+        lazy="selectin"
+    )
+    
+    pet_seeker: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[pet_seeker_id],
+        back_populates="messages_sent",
         lazy="selectin"
     )
     

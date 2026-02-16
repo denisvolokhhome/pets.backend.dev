@@ -170,9 +170,9 @@ class TestMessageModel:
         await async_session.refresh(test_user)
         
         # Access messages through user relationship
-        assert len(test_user.messages) == 2
-        assert any(msg.sender_name == "User 1" for msg in test_user.messages)
-        assert any(msg.sender_name == "User 2" for msg in test_user.messages)
+        assert len(test_user.messages_received) == 2
+        assert any(msg.sender_name == "User 1" for msg in test_user.messages_received)
+        assert any(msg.sender_name == "User 2" for msg in test_user.messages_received)
     
     @pytest.mark.asyncio
     async def test_message_cascade_delete(self, async_session):

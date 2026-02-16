@@ -36,6 +36,7 @@ class MessageResponse(BaseModel):
     """Schema for message response."""
     id: UUID
     breeder_id: UUID
+    pet_seeker_id: Optional[UUID] = None
     sender_name: str
     sender_email: str
     message: Optional[str]
@@ -44,6 +45,29 @@ class MessageResponse(BaseModel):
     responded_at: Optional[datetime]
     created_at: datetime
     updated_at: Optional[datetime]
+    is_linked_to_account: bool = False
+    
+    @classmethod
+    def model_validate(cls, obj, **kwargs):
+        """Override to compute is_linked_to_account field."""
+        if hasattr(obj, 'pet_seeker_id'):
+            # Create dict from object
+            data = {
+                'id': obj.id,
+                'breeder_id': obj.breeder_id,
+                'pet_seeker_id': obj.pet_seeker_id,
+                'sender_name': obj.sender_name,
+                'sender_email': obj.sender_email,
+                'message': obj.message,
+                'is_read': obj.is_read,
+                'response_text': obj.response_text,
+                'responded_at': obj.responded_at,
+                'created_at': obj.created_at,
+                'updated_at': obj.updated_at,
+                'is_linked_to_account': obj.pet_seeker_id is not None
+            }
+            return super().model_validate(data, **kwargs)
+        return super().model_validate(obj, **kwargs)
     
     class Config:
         from_attributes = True

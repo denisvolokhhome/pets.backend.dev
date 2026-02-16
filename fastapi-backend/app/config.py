@@ -122,6 +122,20 @@ class Settings(BaseSettings):
         description="Image compression quality (1-100)"
     )
 
+    # Google OAuth Configuration
+    google_oauth_client_id: str = Field(
+        default="",
+        description="Google OAuth 2.0 client ID"
+    )
+    google_oauth_client_secret: str = Field(
+        default="",
+        description="Google OAuth 2.0 client secret"
+    )
+    google_oauth_redirect_uri: str = Field(
+        default="http://localhost:8000/api/auth/google/callback",
+        description="Google OAuth redirect URI"
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env" if not os.getenv("TESTING") else None,
         env_file_encoding="utf-8",

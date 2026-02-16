@@ -1,5 +1,11 @@
 """Pydantic schemas for request/response validation."""
-from app.schemas.user import UserRead, UserCreate, UserUpdate
+from app.schemas.user import (
+    UserRead,
+    UserCreate,
+    UserUpdate,
+    PetSeekerCreate,
+    GuestToAccountCreate,
+)
 from app.schemas.pet import PetBase, PetCreate, PetUpdate, PetRead
 from app.schemas.breed import (
     BreedBase,
@@ -29,6 +35,8 @@ __all__ = [
     "UserRead",
     "UserCreate",
     "UserUpdate",
+    "PetSeekerCreate",
+    "GuestToAccountCreate",
     # Pet schemas
     "PetBase",
     "PetCreate",

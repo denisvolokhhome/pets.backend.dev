@@ -53,6 +53,25 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         nullable=False
     )
     
+    # User type classification
+    is_breeder: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,  # Backward compatibility - existing users are breeders
+        nullable=False,
+        index=True
+    )
+    
+    # OAuth fields for SSO support
+    oauth_provider: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True
+    )
+    oauth_id: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True
+    )
+    
     # Additional fields from Laravel
     name: Mapped[Optional[str]] = mapped_column(
         String(255),
@@ -118,9 +137,16 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         back_populates="user",
         lazy="selectin"
     )
-    messages: Mapped[list["Message"]] = relationship(
+    messages_received: Mapped[list["Message"]] = relationship(
         "Message",
+        foreign_keys="Message.breeder_id",
         back_populates="breeder",
+        lazy="selectin"
+    )
+    messages_sent: Mapped[list["Message"]] = relationship(
+        "Message",
+        foreign_keys="Message.pet_seeker_id",
+        back_populates="pet_seeker",
         lazy="selectin"
     )
     

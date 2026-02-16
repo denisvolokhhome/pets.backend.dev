@@ -125,3 +125,50 @@ fastapi_users = FastAPIUsers[User, uuid.UUID](
 current_active_user = fastapi_users.current_user(active=True)
 current_superuser = fastapi_users.current_user(active=True, superuser=True)
 optional_current_user = fastapi_users.current_user(optional=True)
+
+
+# Authorization dependencies for user type checking
+def require_breeder(user: User = Depends(current_active_user)) -> User:
+    """
+    Dependency that ensures the current user is a breeder.
+    
+    Args:
+        user: Current authenticated user
+        
+    Returns:
+        User: The authenticated breeder user
+        
+    Raises:
+        HTTPException: 403 Forbidden if user is not a breeder
+    """
+    from fastapi import HTTPException, status
+    
+    if not user.is_breeder:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Breeder access required"
+        )
+    return user
+
+
+def require_pet_seeker(user: User = Depends(current_active_user)) -> User:
+    """
+    Dependency that ensures the current user is a pet seeker.
+    
+    Args:
+        user: Current authenticated user
+        
+    Returns:
+        User: The authenticated pet seeker user
+        
+    Raises:
+        HTTPException: 403 Forbidden if user is a breeder
+    """
+    from fastapi import HTTPException, status
+    
+    if user.is_breeder:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Pet seeker access required"
+        )
+    return user

@@ -14,6 +14,7 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
     is_active: bool
     is_superuser: bool
     is_verified: bool
+    is_breeder: bool
     created_at: datetime
     updated_at: Optional[datetime] = None
     
@@ -28,6 +29,21 @@ class UserCreate(schemas.BaseUserCreate):
     """Schema for creating a new user."""
     email: str
     password: str
+    is_breeder: bool = True  # Default to breeder for backward compatibility
+
+
+class PetSeekerCreate(BaseModel):
+    """Simplified schema for pet seeker registration."""
+    email: str
+    password: str
+    name: Optional[str] = None
+
+
+class GuestToAccountCreate(BaseModel):
+    """Schema for converting guest message sender to account."""
+    email: str  # Pre-filled from message
+    password: str
+    name: Optional[str] = None
 
 
 class UserUpdate(schemas.BaseUserUpdate):

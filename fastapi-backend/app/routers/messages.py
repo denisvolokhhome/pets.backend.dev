@@ -115,10 +115,11 @@ async def list_messages(
     sort: str = Query("newest", description="Sort order: 'newest' or 'oldest'"),
 ) -> MessageListResponse:
     """
-    List all messages for the authenticated breeder.
+    List all messages for the authenticated user.
     
     Returns paginated list of messages with filtering and sorting options.
-    Only the authenticated breeder can see their own messages.
+    - Breeders see messages they received (filtered by breeder_id)
+    - Pet seekers see messages they sent (filtered by pet_seeker_id)
     
     **Query Parameters:**
     - status: Filter by read status ('all', 'read', 'unread')
@@ -128,8 +129,13 @@ async def list_messages(
     
     **Returns:** Paginated list of messages with total count and unread count
     """
-    # Build base query for messages belonging to this breeder
-    query = select(Message).where(Message.breeder_id == user.id)
+    # Build base query based on user type
+    if user.is_breeder:
+        # Breeders see messages they received
+        query = select(Message).where(Message.breeder_id == user.id)
+    else:
+        # Pet seekers see messages they sent
+        query = select(Message).where(Message.pet_seeker_id == user.id)
     
     # Apply status filter
     if status_filter == "read":
@@ -149,11 +155,18 @@ async def list_messages(
     total_result = await session.execute(count_query)
     total = total_result.scalar()
     
-    # Get unread count
-    unread_query = select(func.count()).where(
-        Message.breeder_id == user.id,
-        Message.is_read == False
-    )
+    # Get unread count based on user type
+    if user.is_breeder:
+        unread_query = select(func.count()).where(
+            Message.breeder_id == user.id,
+            Message.is_read == False
+        )
+    else:
+        # Pet seekers see unread messages based on whether breeder has responded
+        unread_query = select(func.count()).where(
+            Message.pet_seeker_id == user.id,
+            Message.responded_at.is_(None)
+        )
     unread_result = await session.execute(unread_query)
     unread_count = unread_result.scalar()
     

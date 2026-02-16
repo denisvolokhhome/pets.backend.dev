@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_async_session
-from app.dependencies import current_active_user, get_redis, settings
+from app.dependencies import current_active_user, get_redis, settings, require_breeder
 from app.models.location import Location
 from app.models.user import User
 from app.schemas.location import LocationCreate, LocationRead, LocationUpdate
@@ -110,7 +110,7 @@ async def geocode_location_address(
 @router.post("/", response_model=LocationRead, status_code=status.HTTP_201_CREATED)
 async def create_location(
     location_data: LocationCreate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require_breeder),
     session: AsyncSession = Depends(get_async_session),
     geocoding_service: GeocodingService = Depends(get_geocoding_service),
 ) -> Location:
@@ -281,7 +281,7 @@ async def get_location(
 async def update_location(
     location_id: int,
     location_update: LocationUpdate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require_breeder),
     session: AsyncSession = Depends(get_async_session),
     geocoding_service: GeocodingService = Depends(get_geocoding_service),
 ) -> Location:
@@ -341,7 +341,7 @@ async def update_location(
 async def patch_location(
     location_id: int,
     location_update: LocationUpdate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require_breeder),
     session: AsyncSession = Depends(get_async_session),
     geocoding_service: GeocodingService = Depends(get_geocoding_service),
 ) -> Location:
@@ -400,7 +400,7 @@ async def patch_location(
 @router.delete("/{location_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_location(
     location_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require_breeder),
     session: AsyncSession = Depends(get_async_session),
 ) -> None:
     """

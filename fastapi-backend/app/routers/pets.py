@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.database import get_async_session
-from app.dependencies import current_active_user
+from app.dependencies import current_active_user, require_breeder
 from app.models.pet import Pet
 from app.models.user import User
 from app.schemas.pet import PetCreate, PetRead, PetUpdate
@@ -43,7 +43,7 @@ def get_file_service() -> FileService:
 @router.post("/", response_model=PetRead, status_code=status.HTTP_201_CREATED)
 async def create_pet(
     pet_data: PetCreate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require_breeder),
     session: AsyncSession = Depends(get_async_session),
 ) -> Pet:
     """
@@ -267,7 +267,7 @@ async def get_pet(
 async def update_pet(
     pet_id: uuid.UUID,
     pet_update: PetUpdate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require_breeder),
     session: AsyncSession = Depends(get_async_session),
 ) -> Pet:
     """
@@ -301,7 +301,7 @@ async def update_pet(
 @router.delete("/{pet_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_pet(
     pet_id: uuid.UUID,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require_breeder),
     session: AsyncSession = Depends(get_async_session),
 ) -> None:
     """
@@ -331,7 +331,7 @@ async def delete_pet(
 async def upload_pet_image(
     pet_id: uuid.UUID,
     file: UploadFile = File(...),
-    user: User = Depends(current_active_user),
+    user: User = Depends(require_breeder),
     session: AsyncSession = Depends(get_async_session),
     file_service: FileService = Depends(get_file_service),
 ) -> Pet:

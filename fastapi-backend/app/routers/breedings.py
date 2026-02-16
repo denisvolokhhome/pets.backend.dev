@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_async_session
-from app.dependencies import current_active_user
+from app.dependencies import current_active_user, require_breeder
 from app.models.user import User
 from app.models.breeding import Breeding
 from app.models.breeding_pet import BreedingPet
@@ -38,7 +38,7 @@ router = APIRouter(
 async def create_litter(
     breeding_data: LitterCreate,
     session: AsyncSession = Depends(get_async_session),
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(require_breeder),
 ) -> dict:
     """
     Create a new breeding record.
@@ -86,7 +86,7 @@ async def create_litter(
 @router.get("/", response_model=List[LitterResponse])
 async def list_litters(
     session: AsyncSession = Depends(get_async_session),
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(require_breeder),
     location_id: Optional[int] = Query(None, description="Filter by location ID"),
     status: Optional[str] = Query(None, description="Filter by status"),
     breed_id: Optional[int] = Query(None, description="Filter by breed ID"),
@@ -191,7 +191,7 @@ async def list_litters(
 async def get_litter(
     breeding_id: int,
     session: AsyncSession = Depends(get_async_session),
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(require_breeder),
 ) -> dict:
     """
     Get a single breeding by ID with full details.
@@ -272,7 +272,7 @@ async def update_litter(
     breeding_id: int,
     litter_update: LitterUpdate,
     session: AsyncSession = Depends(get_async_session),
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(require_breeder),
 ) -> dict:
     """
     Update a breeding record.
@@ -360,7 +360,7 @@ async def assign_pets_to_litter(
     breeding_id: int,
     pet_assignment: PetAssignment,
     session: AsyncSession = Depends(get_async_session),
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(require_breeder),
 ) -> dict:
     """
     Assign parent pets to a breeding.
@@ -502,7 +502,7 @@ async def add_puppies_to_litter(
     breeding_id: int,
     puppy_batch: PuppyBatch,
     session: AsyncSession = Depends(get_async_session),
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(require_breeder),
 ) -> dict:
     """
     Add puppies to a breeding.
@@ -661,7 +661,7 @@ async def add_puppies_to_litter(
 async def delete_litter(
     breeding_id: int,
     session: AsyncSession = Depends(get_async_session),
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(require_breeder),
 ) -> dict:
     """
     Void/cancel a breeding record (soft delete).
