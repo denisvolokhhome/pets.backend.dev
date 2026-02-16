@@ -1,6 +1,6 @@
 """Authentication routes using fastapi-users."""
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from httpx_oauth.clients.google import GoogleOAuth2
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +9,7 @@ from app.database import get_async_session
 from app.dependencies import auth_backend, fastapi_users, get_user_manager
 from app.schemas.user import UserRead, UserCreate, UserUpdate, PetSeekerCreate, GuestToAccountCreate
 from app.services.user_manager import UserManager
+from app.middleware.rate_limiter import rate_limiter, get_client_ip
 
 
 # Initialize settings
@@ -196,14 +197,18 @@ async def google_callback(
 @router.post("/register/pet-seeker", tags=["auth"])
 async def register_pet_seeker(
     pet_seeker_data: PetSeekerCreate,
+    request: Request,
     session: AsyncSession = Depends(get_async_session),
     user_manager: UserManager = Depends(get_user_manager)
 ):
     """
     Register a new pet seeker account.
     
+    Rate limited to prevent abuse and email enumeration attacks.
+    
     Args:
         pet_seeker_data: Pet seeker registration data (email, password, optional name)
+        request: Request object for rate limiting
         session: Database session
         user_manager: User manager for user operations
         
@@ -211,16 +216,39 @@ async def register_pet_seeker(
         dict: Contains access_token and user data
         
     Raises:
-        HTTPException: If registration fails
+        HTTPException: If registration fails or rate limit exceeded
     """
     from app.schemas.user import UserCreate
     from app.dependencies import get_jwt_strategy
     from app.services.message_linking_service import MessageLinkingService
+    from app.models.user import User
     import logging
+    from sqlalchemy import select
+    from sqlalchemy.exc import IntegrityError
     
     logger = logging.getLogger(__name__)
     
+    # Rate limiting: 5 registration attempts per IP per 5 minutes
+    client_ip = await get_client_ip(request)
+    await rate_limiter.check_rate_limit(
+        key=f"register:{client_ip}",
+        max_requests=5,
+        window_seconds=300
+    )
+    
     try:
+        # Check if user already exists
+        stmt = select(User).where(User.email == pet_seeker_data.email)
+        result = await session.execute(stmt)
+        existing_user = result.scalar_one_or_none()
+        
+        if existing_user:
+            logger.warning(f"Attempt to register existing email: {pet_seeker_data.email}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="REGISTER_USER_ALREADY_EXISTS"
+            )
+        
         # Create UserCreate schema with is_breeder=False
         user_create = UserCreate(
             email=pet_seeker_data.email,
@@ -270,11 +298,31 @@ async def register_pet_seeker(
             "linked_messages_count": linking_result["linked_count"]
         }
         
+    except HTTPException:
+        # Re-raise HTTP exceptions (like the user already exists check)
+        raise
+    except IntegrityError as e:
+        # Database constraint violation (duplicate email)
+        logger.error(f"Pet seeker registration integrity error: {str(e)}")
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="REGISTER_USER_ALREADY_EXISTS"
+        )
     except Exception as e:
         # Log the error for debugging
-        logger = logging.getLogger(__name__)
         logger.error(f"Pet seeker registration error: {str(e)}")
         
+        # Check if it's a duplicate email error
+        error_str = str(e).lower()
+        if "already exists" in error_str or "duplicate" in error_str or "unique constraint" in error_str:
+            await session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="REGISTER_USER_ALREADY_EXISTS"
+            )
+        
+        await session.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Registration failed: {str(e)}"
@@ -284,17 +332,21 @@ async def register_pet_seeker(
 @router.post("/register/from-message", tags=["auth"])
 async def register_from_message(
     guest_data: GuestToAccountCreate,
+    request: Request,
     session: AsyncSession = Depends(get_async_session),
     user_manager: UserManager = Depends(get_user_manager)
 ):
     """
     Convert a guest message sender to a registered pet seeker account.
     
+    Rate limited to prevent abuse and email enumeration attacks.
+    
     This endpoint creates a pet seeker account and links any existing messages
     sent from the provided email address to the new account.
     
     Args:
         guest_data: Guest account data (pre-filled email, password, optional name)
+        request: Request object for rate limiting
         session: Database session
         user_manager: User manager for user operations
         
@@ -302,16 +354,39 @@ async def register_from_message(
         dict: Contains access_token, user data, and count of linked messages
         
     Raises:
-        HTTPException: If registration fails
+        HTTPException: If registration fails or rate limit exceeded
     """
     from app.schemas.user import UserCreate
     from app.dependencies import get_jwt_strategy
     from app.services.message_linking_service import MessageLinkingService
+    from app.models.user import User
     import logging
+    from sqlalchemy import select
+    from sqlalchemy.exc import IntegrityError
     
     logger = logging.getLogger(__name__)
     
+    # Rate limiting: 5 registration attempts per IP per 5 minutes
+    client_ip = await get_client_ip(request)
+    await rate_limiter.check_rate_limit(
+        key=f"register:{client_ip}",
+        max_requests=5,
+        window_seconds=300
+    )
+    
     try:
+        # Check if user already exists
+        stmt = select(User).where(User.email == guest_data.email)
+        result = await session.execute(stmt)
+        existing_user = result.scalar_one_or_none()
+        
+        if existing_user:
+            logger.warning(f"Attempt to register existing email: {guest_data.email}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="REGISTER_USER_ALREADY_EXISTS"
+            )
+        
         # Create UserCreate schema with is_breeder=False
         user_create = UserCreate(
             email=guest_data.email,
@@ -361,10 +436,31 @@ async def register_from_message(
             "linked_messages_count": linking_result["linked_count"]
         }
         
+    except HTTPException:
+        # Re-raise HTTP exceptions (like the user already exists check)
+        raise
+    except IntegrityError as e:
+        # Database constraint violation (duplicate email)
+        logger.error(f"Guest-to-account conversion integrity error: {str(e)}")
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="REGISTER_USER_ALREADY_EXISTS"
+        )
     except Exception as e:
         # Log the error for debugging
         logger.error(f"Guest-to-account conversion error: {str(e)}")
         
+        # Check if it's a duplicate email error
+        error_str = str(e).lower()
+        if "already exists" in error_str or "duplicate" in error_str or "unique constraint" in error_str:
+            await session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="REGISTER_USER_ALREADY_EXISTS"
+            )
+        
+        await session.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Account conversion failed: {str(e)}"
