@@ -132,7 +132,7 @@ class Settings(BaseSettings):
         description="Google OAuth 2.0 client secret"
     )
     google_oauth_redirect_uri: str = Field(
-        default="http://localhost:8000/api/auth/google/callback",
+        default="http://breedly.com:8000/api/auth/google/callback",
         description="Google OAuth redirect URI"
     )
 
