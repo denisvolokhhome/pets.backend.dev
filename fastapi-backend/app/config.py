@@ -135,6 +135,10 @@ class Settings(BaseSettings):
         default="http://breedly.com:8000/api/auth/google/callback",
         description="Google OAuth redirect URI"
     )
+    frontend_url: str = Field(
+        default="http://breedly.com:4200",
+        description="Frontend URL for OAuth redirects"
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env" if not os.getenv("TESTING") else None,

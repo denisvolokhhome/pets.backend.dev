@@ -19,6 +19,9 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
     updated_at: Optional[datetime] = None
     
     # Profile fields
+    name: Optional[str] = None
+    phone_number: Optional[str] = None
+    oauth_provider: Optional[str] = None
     breedery_name: Optional[str] = None
     profile_image_path: Optional[str] = None
     breedery_description: Optional[str] = None
@@ -52,6 +55,8 @@ class UserUpdate(schemas.BaseUserUpdate):
     email: Optional[str] = None
     
     # Profile fields
+    name: Optional[str] = None
+    phone_number: Optional[str] = None
     breedery_name: Optional[str] = None
     breedery_description: Optional[str] = None
     search_tags: Optional[List[str]] = None

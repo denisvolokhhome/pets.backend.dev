@@ -114,10 +114,35 @@ async def google_callback(
             redirect_uri=settings.google_oauth_redirect_uri
         )
         
-        # Get user info from Google
-        user_info = await google_oauth_client.get_id_email(token["access_token"])
-        email = user_info[1]  # email is second element in tuple
-        oauth_id = user_info[0]  # id is first element
+        # Log token for debugging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Got access token: {token.get('access_token', 'N/A')[:20]}...")
+        
+        # Get user info from Google using userinfo endpoint directly
+        # The httpx_oauth get_id_email method may have issues, so we'll call the API directly
+        try:
+            import httpx
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    "https://www.googleapis.com/oauth2/v2/userinfo",
+                    headers={"Authorization": f"Bearer {token['access_token']}"}
+                )
+                response.raise_for_status()
+                user_data = response.json()
+                
+            logger.info(f"Got user data: {user_data}")
+            
+            email = user_data.get("email")
+            oauth_id = user_data.get("id")
+            
+            if not email or not oauth_id:
+                raise ValueError(f"Missing email or id in user data: {user_data}")
+                
+        except Exception as user_info_error:
+            logger.error(f"Failed to get user info: {str(user_info_error)}")
+            logger.error(f"Token keys: {token.keys()}")
+            raise
         
         # Try to get existing user by email or oauth_id
         from sqlalchemy import select, or_
@@ -169,18 +194,10 @@ async def google_callback(
         strategy = get_jwt_strategy()
         token_str = await strategy.write_token(user)
         
-        # Return token and user data
-        return {
-            "access_token": token_str,
-            "token_type": "bearer",
-            "user": {
-                "id": str(user.id),
-                "email": user.email,
-                "is_breeder": user.is_breeder,
-                "is_active": user.is_active,
-                "is_verified": user.is_verified,
-            }
-        }
+        # Redirect to frontend with token
+        from fastapi.responses import RedirectResponse
+        frontend_redirect_url = f"{settings.frontend_url}/auth/callback?token={token_str}"
+        return RedirectResponse(url=frontend_redirect_url)
         
     except Exception as e:
         # Log the error for debugging
@@ -188,10 +205,10 @@ async def google_callback(
         logger = logging.getLogger(__name__)
         logger.error(f"OAuth callback error: {str(e)}")
         
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"OAuth authentication failed: {str(e)}"
-        )
+        # Redirect to frontend with error
+        from fastapi.responses import RedirectResponse
+        error_url = f"{settings.frontend_url}/login?error=oauth_failed"
+        return RedirectResponse(url=error_url)
 
 
 @router.post("/register/pet-seeker", tags=["auth"])

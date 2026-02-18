@@ -77,6 +77,10 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         String(255),
         nullable=True
     )
+    phone_number: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True
+    )
     email_verified_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True
