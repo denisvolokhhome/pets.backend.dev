@@ -8,6 +8,10 @@ import asyncio
 import csv
 import sys
 from pathlib import Path
+
+# Add parent directory to Python path so we can import app modules
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
