@@ -367,7 +367,7 @@ async def test_property_api_contract_consistency_pet_creation(
             "name": "Test Pet",
             "breed_id": test_breed.id,
             "date_of_birth": "2024-01-01",
-            "gender": "male",
+            "gender": "Male",
             "is_puppy": True
         },
         headers=auth_headers

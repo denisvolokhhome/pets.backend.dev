@@ -386,7 +386,7 @@ async def test_property_location_deletion_constraint(
             breed_id=test_breed.id,
             location_id=location.id,
             name=f"Pet {i}",
-            gender="male",
+            gender="Male",
             is_puppy=True,
         )
         async_session.add(pet)

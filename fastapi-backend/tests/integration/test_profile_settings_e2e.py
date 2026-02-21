@@ -423,7 +423,7 @@ class TestPetLocationAssociation:
             "name": "Test Puppy",
             "breed_id": test_breed.id,
             "location_id": location_id,
-            "gender": "male",
+            "gender": "Male",
             "is_puppy": True,
         }
         
@@ -632,7 +632,7 @@ class TestCompleteFeatureIntegration:
                 "name": f"Pet {i+1}",
                 "breed_id": test_breed.id,
                 "location_id": location["id"],
-                "gender": "male" if i % 2 == 0 else "female",
+                "gender": "Male" if i % 2 == 0 else "female",
                 "is_puppy": True,
             }
             

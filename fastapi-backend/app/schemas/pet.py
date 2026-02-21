@@ -17,11 +17,21 @@ class PetBase(BaseModel):
         if not v or not v.strip():
             raise ValueError('Name cannot be empty or whitespace-only')
         return v
+    
     breed_id: Optional[int] = None
     breeding_id: Optional[int] = None
     location_id: Optional[int] = None
     date_of_birth: Optional[date] = None
     gender: Optional[str] = Field(None, max_length=50)
+    
+    @field_validator('gender')
+    @classmethod
+    def validate_gender(cls, v: Optional[str]) -> Optional[str]:
+        """Validate gender is Male or Female."""
+        if v is not None and v not in ['Male', 'Female']:
+            raise ValueError('Gender must be Male or Female')
+        return v
+    
     weight: Optional[float] = Field(None, ge=0)
     description: Optional[str] = None
     is_puppy: Optional[bool] = None
@@ -57,11 +67,21 @@ class PetUpdate(BaseModel):
         if v is not None and (not v or not v.strip()):
             raise ValueError('Name cannot be empty or whitespace-only')
         return v
+    
     breed_id: Optional[int] = None
     breeding_id: Optional[int] = None
     location_id: Optional[int] = None
     date_of_birth: Optional[date] = None
     gender: Optional[str] = Field(None, max_length=50)
+    
+    @field_validator('gender')
+    @classmethod
+    def validate_gender(cls, v: Optional[str]) -> Optional[str]:
+        """Validate gender is Male or Female."""
+        if v is not None and v not in ['Male', 'Female']:
+            raise ValueError('Gender must be Male or Female')
+        return v
+    
     weight: Optional[float] = Field(None, ge=0)
     description: Optional[str] = None
     is_puppy: Optional[bool] = None

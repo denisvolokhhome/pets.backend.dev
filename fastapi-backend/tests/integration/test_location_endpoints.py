@@ -773,7 +773,7 @@ class TestLocationDeletion:
             breed_id=test_breed.id,
             location_id=location_id,
             name="Test Pet",
-            gender="male",
+            gender="Male",
             is_puppy=True,
         )
         async_session.add(pet)

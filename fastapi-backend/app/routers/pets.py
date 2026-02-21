@@ -75,7 +75,7 @@ async def create_pet(
         "name": "Max",
         "breed_id": 1,
         "date_of_birth": "2023-01-15",
-        "gender": "male",
+        "gender": "Male",
         "is_puppy": true,
         "microchip": "123456789012345"
     }

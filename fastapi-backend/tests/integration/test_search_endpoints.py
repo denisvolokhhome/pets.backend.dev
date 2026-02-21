@@ -103,7 +103,7 @@ async def test_breeder_with_location(async_session: AsyncSession, test_breeds):
             location_id=location.id,
             breed_id=breed.id,
             name=f"Pet {i}",
-            gender="male" if i % 2 == 0 else "female",
+            gender="Male" if i % 2 == 0 else "female",
             is_deleted=False
         )
         async_session.add(pet)
@@ -360,7 +360,7 @@ class TestBreederSearch:
                 location_id=location.id,
                 breed_id=test_breeds[0].id,
                 name=f"Pet at {name}",
-                gender="male",
+                gender="Male",
                 is_deleted=False
             )
             async_session.add(pet)
