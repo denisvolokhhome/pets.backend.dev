@@ -149,7 +149,7 @@ class BreederService:
             results.append(BreederSearchResult(
                 location_id=loc.location_id,
                 user_id=loc.user_id,
-                breeder_name=loc.breeder_name or "Unknown Breeder",
+                breeder_name=loc.breeder_name or "Breeder, who didn't named himself",
                 latitude=loc.latitude,
                 longitude=loc.longitude,
                 distance=round(loc.distance, 1),  # Round to 1 decimal place
