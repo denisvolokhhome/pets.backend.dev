@@ -14,7 +14,12 @@ import sys
 from pathlib import Path
 
 # Add parent directory to Python path so we can import app modules
-sys.path.insert(0, str(Path(__file__).parent.parent))
+ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(ROOT))
+
+# Load .env from project root before any app imports
+from dotenv import load_dotenv
+load_dotenv(ROOT / ".env")
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
@@ -34,7 +39,7 @@ async def seed_breeds():
         expire_on_commit=False,
     )
 
-    csv_path = Path(__file__).parent.parent / "breeds.csv"
+    csv_path = ROOT / "db/breeds.csv"
     if not csv_path.exists():
         print(f"Error: CSV file not found at {csv_path}")
         sys.exit(1)
@@ -62,7 +67,6 @@ async def seed_breeds():
                     skipped += 1
                     continue
 
-                # Check if breed already exists
                 result = await session.execute(
                     select(Breed).where(Breed.name == name, Breed.kind == kind)
                 )
