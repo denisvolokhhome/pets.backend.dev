@@ -1,4 +1,4 @@
-"""Breed and BreedColour models for managing dog breeds."""
+"""Breed and BreedColour models for managing dog and cat breeds."""
 from datetime import datetime
 from typing import Optional
 
@@ -10,25 +10,15 @@ from app.database import Base
 
 class Breed(Base):
     """
-    Breed model representing a dog breed.
-    
-    Includes breed classification and associated colors.
-    Uses integer primary key to match Laravel schema.
+    Breed model representing a dog or cat breed.
     """
     __tablename__ = "breeds"
-    
-    # Primary key (integer to match Laravel)
+
     id: Mapped[int] = mapped_column(
         Integer,
         primary_key=True,
         autoincrement=True,
         nullable=False
-    )
-    
-    # Breed information
-    code: Mapped[Optional[str]] = mapped_column(
-        String(255),
-        nullable=True
     )
     name: Mapped[str] = mapped_column(
         String(255),
@@ -36,11 +26,12 @@ class Breed(Base):
         unique=True,
         index=True
     )
-    group: Mapped[Optional[str]] = mapped_column(
-        Text,
-        nullable=True
-    )
-    
+    kind: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+        index=True
+    )  # "dog" or "cat"
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -52,7 +43,7 @@ class Breed(Base):
         onupdate=func.now(),
         nullable=True
     )
-    
+
     # Relationships
     pets: Mapped[list["Pet"]] = relationship(
         "Pet",
@@ -65,46 +56,36 @@ class Breed(Base):
         lazy="selectin",
         cascade="all, delete-orphan"
     )
-    
+
     def __repr__(self) -> str:
-        return f"<Breed(id={self.id}, name={self.name})>"
+        return f"<Breed(id={self.id}, name={self.name}, kind={self.kind})>"
 
 
 class BreedColour(Base):
     """
     BreedColour model representing available colors for a breed.
-    
+
     Many-to-one relationship with Breed.
-    Uses integer primary key to match Laravel schema.
     """
     __tablename__ = "breed_colours"
-    
-    # Primary key (integer to match Laravel)
+
     id: Mapped[int] = mapped_column(
         Integer,
         primary_key=True,
         autoincrement=True,
         nullable=False
     )
-    
-    # Foreign key
     breed_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("breeds.id", ondelete="CASCADE"),
         nullable=False,
         index=True
     )
-    
-    # Color information
-    code: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False
-    )
     name: Mapped[str] = mapped_column(
         String(255),
         nullable=False
     )
-    
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -116,13 +97,13 @@ class BreedColour(Base):
         onupdate=func.now(),
         nullable=True
     )
-    
+
     # Relationships
     breed: Mapped["Breed"] = relationship(
         "Breed",
         back_populates="colours",
         lazy="selectin"
     )
-    
+
     def __repr__(self) -> str:
         return f"<BreedColour(id={self.id}, name={self.name}, breed_id={self.breed_id})>"

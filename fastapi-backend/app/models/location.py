@@ -77,8 +77,7 @@ class Location(Base):
     is_published: Mapped[bool] = mapped_column(
         sa.Boolean,
         nullable=False,
-        server_default='true',
-        comment="Whether location is published and searchable on map"
+        server_default='true'
     )
     
     # Geospatial columns
@@ -92,8 +91,7 @@ class Location(Base):
     )
     coordinates: Mapped[Optional[Point]] = mapped_column(
         Geometry(geometry_type='POINT', srid=4326),
-        nullable=True,
-        comment="PostGIS geometry column for efficient spatial queries"
+        nullable=True
     )
     
     # Timestamps
