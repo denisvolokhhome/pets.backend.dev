@@ -7,7 +7,7 @@ This module provides CRUD operations for dog breed management including:
 - Managing breed information (name, code, group)
 - Breed autocomplete search for user input
 """
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, or_, func
@@ -87,36 +87,33 @@ async def list_breeds(
     session: AsyncSession = Depends(get_async_session),
     skip: int = 0,
     limit: int = 100,
+    kind: Optional[str] = Query(
+        None,
+        description="Filter breeds by pet type: 'dog', 'cat', 'cow', or 'horse'",
+        pattern="^(dog|cat|cow|horse)$",
+    ),
 ) -> List[Breed]:
     """
-    List all breeds.
-    
+    List all breeds, optionally filtered by pet type (kind).
+
     This endpoint is public and does not require authentication.
     Results are ordered alphabetically by name.
-    
+
     **Query parameters:**
     - skip: Number of records to skip (default: 0)
-    - limit: Maximum number of records to return (default: 100, max: 100)
-    
-    **Example response:**
-    ```json
-    [
-        {
-            "id": 1,
-            "name": "Labrador Retriever",
-            "code": "122",
-            "group": "Sporting",
-            "created_at": "2024-01-01T00:00:00Z",
-            "updated_at": "2024-01-01T00:00:00Z"
-        }
-    ]
-    ```
+    - limit: Maximum number of records to return (default: 100)
+    - kind: Optional filter — 'dog', 'cat', 'cow', or 'horse'
     """
-    query = select(Breed).offset(skip).limit(limit).order_by(Breed.name)
-    
+    query = select(Breed)
+
+    if kind:
+        query = query.where(Breed.kind == kind)
+
+    query = query.offset(skip).limit(limit).order_by(Breed.name)
+
     result = await session.execute(query)
     breeds = result.scalars().all()
-    
+
     return list(breeds)
 
 
