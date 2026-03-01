@@ -51,8 +51,7 @@ class BreedColourRead(BreedColourBase):
 class BreedBase(BaseModel):
     """Base schema for breed data."""
     name: str = Field(..., min_length=1, max_length=255)
-    code: Optional[str] = Field(None, max_length=255)
-    group: Optional[str] = None  # breed_group field from design, but model uses 'group'
+    kind: str = Field(..., pattern="^(dog|cat|cow|horse)$")
     
     @field_validator('name')
     @classmethod
@@ -71,8 +70,7 @@ class BreedCreate(BreedBase):
 class BreedUpdate(BaseModel):
     """Schema for updating a breed."""
     name: Optional[str] = Field(None, min_length=1, max_length=255)
-    code: Optional[str] = Field(None, max_length=255)
-    group: Optional[str] = None
+    kind: Optional[str] = Field(None, pattern="^(dog|cat|cow|horse)$")
     
     @field_validator('name')
     @classmethod
