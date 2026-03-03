@@ -12,8 +12,7 @@ async def test_create_breed_with_valid_data(async_session: AsyncSession):
     """Test creating a breed with all valid fields."""
     breed = Breed(
         name="Golden Retriever",
-        code="GR",
-        group="Sporting"
+        kind="dog"
     )
     
     async_session.add(breed)
@@ -23,15 +22,14 @@ async def test_create_breed_with_valid_data(async_session: AsyncSession):
     assert breed.id is not None
     assert isinstance(breed.id, int)
     assert breed.name == "Golden Retriever"
-    assert breed.code == "GR"
-    assert breed.group == "Sporting"
+    assert breed.kind == "dog"
     assert breed.created_at is not None
 
 
 @pytest.mark.asyncio
 async def test_create_breed_minimal_data(async_session: AsyncSession):
-    """Test creating a breed with only required fields (name)."""
-    breed = Breed(name="Poodle")
+    """Test creating a breed with only required fields (name and kind)."""
+    breed = Breed(name="Poodle", kind="dog")
     
     async_session.add(breed)
     await async_session.commit()
@@ -39,17 +37,16 @@ async def test_create_breed_minimal_data(async_session: AsyncSession):
     
     assert breed.id is not None
     assert breed.name == "Poodle"
-    assert breed.code is None
-    assert breed.group is None
+    assert breed.kind == "dog"
 
 
 @pytest.mark.asyncio
 async def test_list_breeds(async_session: AsyncSession):
     """Test listing all breeds."""
     # Create multiple breeds
-    breed1 = Breed(name="Beagle", group="Hound")
-    breed2 = Breed(name="Bulldog", group="Non-Sporting")
-    breed3 = Breed(name="Chihuahua", group="Toy")
+    breed1 = Breed(name="Beagle", kind="dog")
+    breed2 = Breed(name="Bulldog", kind="dog")
+    breed3 = Breed(name="Chihuahua", kind="dog")
     
     async_session.add_all([breed1, breed2, breed3])
     await async_session.commit()
@@ -72,8 +69,7 @@ async def test_update_breed(async_session: AsyncSession):
     # Create breed
     breed = Breed(
         name="Original Name",
-        code="ON",
-        group="Original Group"
+        kind="dog"
     )
     async_session.add(breed)
     await async_session.commit()
@@ -81,16 +77,14 @@ async def test_update_breed(async_session: AsyncSession):
     
     # Update breed
     breed.name = "Updated Name"
-    breed.code = "UN"
-    breed.group = "Updated Group"
+    breed.kind = "cat"
     
     await async_session.commit()
     await async_session.refresh(breed)
     
     # Verify updates
     assert breed.name == "Updated Name"
-    assert breed.code == "UN"
-    assert breed.group == "Updated Group"
+    assert breed.kind == "cat"
     assert breed.updated_at is not None
 
 
@@ -100,8 +94,7 @@ async def test_update_breed_partial_fields(async_session: AsyncSession):
     # Create breed with multiple fields
     breed = Breed(
         name="Original",
-        code="OR",
-        group="Original Group"
+        kind="dog"
     )
     async_session.add(breed)
     await async_session.commit()
@@ -114,15 +107,14 @@ async def test_update_breed_partial_fields(async_session: AsyncSession):
     
     # Verify only name changed
     assert breed.name == "Updated"
-    assert breed.code == "OR"
-    assert breed.group == "Original Group"
+    assert breed.kind == "dog"
 
 
 @pytest.mark.asyncio
 async def test_delete_breed(async_session: AsyncSession):
     """Test hard deletion of a breed."""
     # Create breed
-    breed = Breed(name="To Be Deleted")
+    breed = Breed(name="To Be Deleted", kind="dog")
     async_session.add(breed)
     await async_session.commit()
     await async_session.refresh(breed)
@@ -145,12 +137,12 @@ async def test_delete_breed(async_session: AsyncSession):
 async def test_breed_name_uniqueness(async_session: AsyncSession):
     """Test that breed names should be unique."""
     # Create first breed
-    breed1 = Breed(name="Unique Breed")
+    breed1 = Breed(name="Unique Breed", kind="dog")
     async_session.add(breed1)
     await async_session.commit()
     
     # Attempt to create second breed with same name
-    breed2 = Breed(name="Unique Breed")
+    breed2 = Breed(name="Unique Breed", kind="dog")
     async_session.add(breed2)
     
     # This should raise an integrity error
@@ -162,7 +154,7 @@ async def test_breed_name_uniqueness(async_session: AsyncSession):
 async def test_get_breed_by_id(async_session: AsyncSession):
     """Test retrieving a breed by ID."""
     # Create breed
-    breed = Breed(name="Test Breed", group="Test Group")
+    breed = Breed(name="Test Breed", kind="dog")
     async_session.add(breed)
     await async_session.commit()
     await async_session.refresh(breed)
@@ -177,7 +169,7 @@ async def test_get_breed_by_id(async_session: AsyncSession):
     assert retrieved_breed is not None
     assert retrieved_breed.id == breed_id
     assert retrieved_breed.name == "Test Breed"
-    assert retrieved_breed.group == "Test Group"
+    assert retrieved_breed.kind == "dog"
 
 
 @pytest.mark.asyncio
@@ -186,15 +178,15 @@ async def test_breed_with_colours_relationship(async_session: AsyncSession):
     from app.models.breed import BreedColour
     
     # Create breed
-    breed = Breed(name="Labrador Retriever", group="Sporting")
+    breed = Breed(name="Labrador Retriever", kind="dog")
     async_session.add(breed)
     await async_session.commit()
     await async_session.refresh(breed)
     
     # Add colours
-    colour1 = BreedColour(breed_id=breed.id, code="BLK", name="Black")
-    colour2 = BreedColour(breed_id=breed.id, code="YEL", name="Yellow")
-    colour3 = BreedColour(breed_id=breed.id, code="CHO", name="Chocolate")
+    colour1 = BreedColour(breed_id=breed.id, name="Black")
+    colour2 = BreedColour(breed_id=breed.id, name="Yellow")
+    colour3 = BreedColour(breed_id=breed.id, name="Chocolate")
     
     async_session.add_all([colour1, colour2, colour3])
     await async_session.commit()

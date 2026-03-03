@@ -7,10 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class BreedColourBase(BaseModel):
     """Base schema for breed colour data."""
-    code: str = Field(..., min_length=1, max_length=255)
     name: str = Field(..., min_length=1, max_length=255)
     
-    @field_validator('code', 'name')
+    @field_validator('name')
     @classmethod
     def validate_not_whitespace(cls, v: str) -> str:
         """Ensure fields are not empty or whitespace-only."""
@@ -26,10 +25,9 @@ class BreedColourCreate(BreedColourBase):
 
 class BreedColourUpdate(BaseModel):
     """Schema for updating a breed colour."""
-    code: Optional[str] = Field(None, min_length=1, max_length=255)
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     
-    @field_validator('code', 'name')
+    @field_validator('name')
     @classmethod
     def validate_not_whitespace(cls, v: Optional[str]) -> Optional[str]:
         """Ensure fields are not empty or whitespace-only."""

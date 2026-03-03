@@ -15,7 +15,7 @@ async def test_breed(async_session: AsyncSession) -> Breed:
     """Create a test breed."""
     breed = Breed(
         name="Labrador Retriever",
-        group="Sporting"
+        kind="dog"
     )
     async_session.add(breed)
     await async_session.commit()
@@ -194,7 +194,7 @@ async def test_pet_with_breed_relationship(async_session: AsyncSession, test_use
     # Access breed relationship
     assert pet.breed is not None
     assert pet.breed.name == "Labrador Retriever"
-    assert pet.breed.group == "Sporting"
+    assert pet.breed.kind == "dog"
 
 
 @pytest.mark.asyncio

@@ -114,12 +114,12 @@ class TestOAuthCallbackEndpoint:
                     side_effect=Exception("Invalid authorization code")
                 )
                 
-                response = await client.get("/api/auth/google/callback?code=invalid_code")
+                response = await client.get("/api/auth/google/callback?code=invalid_code", follow_redirects=False)
                 
-                assert response.status_code == 400, \
-                    "Should return 400 for invalid authorization code"
-                assert "failed" in response.json()["detail"].lower(), \
-                    "Error message should indicate authentication failed"
+                assert response.status_code == 307, \
+                    "Should redirect for invalid authorization code"
+                assert "error=oauth_failed" in response.headers["location"], \
+                    "Redirect should include error parameter"
     
     
     @pytest.mark.asyncio
@@ -136,12 +136,12 @@ class TestOAuthCallbackEndpoint:
                     side_effect=Exception("OAuth provider temporarily unavailable")
                 )
                 
-                response = await client.get("/api/auth/google/callback?code=test_code")
+                response = await client.get("/api/auth/google/callback?code=test_code", follow_redirects=False)
                 
-                assert response.status_code == 400, \
-                    "Should return 400 for OAuth provider errors"
-                assert "failed" in response.json()["detail"].lower(), \
-                    "Error message should indicate authentication failed"
+                assert response.status_code == 307, \
+                    "Should redirect for OAuth provider errors"
+                assert "error=oauth_failed" in response.headers["location"], \
+                    "Redirect should include error parameter"
     
     
     @pytest.mark.asyncio
@@ -158,12 +158,12 @@ class TestOAuthCallbackEndpoint:
                     side_effect=Exception("Network connection failed")
                 )
                 
-                response = await client.get("/api/auth/google/callback?code=test_code")
+                response = await client.get("/api/auth/google/callback?code=test_code", follow_redirects=False)
                 
-                assert response.status_code == 400, \
-                    "Should return 400 for network errors"
-                assert "failed" in response.json()["detail"].lower(), \
-                    "Error message should indicate authentication failed"
+                assert response.status_code == 307, \
+                    "Should redirect for network errors"
+                assert "error=oauth_failed" in response.headers["location"], \
+                    "Redirect should include error parameter"
     
     
     @pytest.mark.asyncio
@@ -183,12 +183,12 @@ class TestOAuthCallbackEndpoint:
                     side_effect=KeyError("access_token")
                 )
                 
-                response = await client.get("/api/auth/google/callback?code=test_code")
+                response = await client.get("/api/auth/google/callback?code=test_code", follow_redirects=False)
                 
-                assert response.status_code == 400, \
-                    "Should return 400 for invalid token response"
-                assert "failed" in response.json()["detail"].lower(), \
-                    "Error message should indicate authentication failed"
+                assert response.status_code == 307, \
+                    "Should redirect for invalid token response"
+                assert "error=oauth_failed" in response.headers["location"], \
+                    "Redirect should include error parameter"
     
     
     @pytest.mark.asyncio
@@ -234,14 +234,14 @@ class TestOAuthStateValidation:
                 
                 # Call with state parameter (currently ignored)
                 response = await client.get(
-                    "/api/auth/google/callback?code=test_code&state=invalid_state"
+                    "/api/auth/google/callback?code=test_code&state=invalid_state",
+                    follow_redirects=False
                 )
                 
                 # Current implementation doesn't validate state
-                # If state validation is added, this should return 400
-                # For now, we just document this behavior
-                assert response.status_code in [200, 400], \
-                    "State validation behavior depends on implementation"
+                # OAuth flow redirects to frontend regardless
+                assert response.status_code == 307, \
+                    "OAuth callback redirects to frontend"
 
 
 class TestOAuthUserCreationErrors:
@@ -271,12 +271,12 @@ class TestOAuthUserCreationErrors:
                     )
                     mock_session.return_value = mock_db
                     
-                    response = await client.get("/api/auth/google/callback?code=test_code")
+                    response = await client.get("/api/auth/google/callback?code=test_code", follow_redirects=False)
                     
-                    assert response.status_code == 400, \
-                        "Should return 400 for database errors"
-                    assert "failed" in response.json()["detail"].lower(), \
-                        "Error message should indicate authentication failed"
+                    assert response.status_code == 307, \
+                        "Should redirect for database errors"
+                    assert "error=oauth_failed" in response.headers["location"], \
+                        "Redirect should include error parameter"
     
     
     @pytest.mark.asyncio
@@ -296,13 +296,13 @@ class TestOAuthUserCreationErrors:
                     return_value=("oauth_id_123", "not_an_email")
                 )
                 
-                response = await client.get("/api/auth/google/callback?code=test_code")
+                response = await client.get("/api/auth/google/callback?code=test_code", follow_redirects=False)
                 
                 # Should fail during user creation due to email validation
-                assert response.status_code == 400, \
-                    "Should return 400 for invalid email from provider"
-                assert "failed" in response.json()["detail"].lower(), \
-                    "Error message should indicate authentication failed"
+                assert response.status_code == 307, \
+                    "Should redirect for invalid email from provider"
+                assert "error=oauth_failed" in response.headers["location"], \
+                    "Redirect should include error parameter"
 
 
 class TestOAuthSecurityScenarios:
@@ -316,11 +316,18 @@ class TestOAuthSecurityScenarios:
         Validates: Requirements 4.3
         """
         with patch('app.routers.auth.settings', mock_settings):
-            response = await client.get("/api/auth/google/callback?code=")
-            
-            # Should fail validation or OAuth exchange
-            assert response.status_code in [400, 422], \
-                "Should reject empty authorization code"
+            with patch('app.routers.auth.google_oauth_client') as mock_oauth:
+                mock_oauth.get_access_token = AsyncMock(
+                    side_effect=Exception("Invalid code")
+                )
+                
+                response = await client.get("/api/auth/google/callback?code=", follow_redirects=False)
+                
+                # Should redirect with error for empty code
+                assert response.status_code == 307, \
+                    "Should redirect for empty authorization code"
+                assert "error=oauth_failed" in response.headers["location"], \
+                    "Redirect should include error parameter"
     
     
     @pytest.mark.asyncio
@@ -337,13 +344,14 @@ class TestOAuthSecurityScenarios:
                 )
                 
                 response = await client.get(
-                    "/api/auth/google/callback?code=malformed<>code"
+                    "/api/auth/google/callback?code=malformed<>code",
+                    follow_redirects=False
                 )
                 
-                assert response.status_code == 400, \
-                    "Should return 400 for malformed code"
-                assert "failed" in response.json()["detail"].lower(), \
-                    "Error message should indicate authentication failed"
+                assert response.status_code == 307, \
+                    "Should redirect for malformed code"
+                assert "error=oauth_failed" in response.headers["location"], \
+                    "Redirect should include error parameter"
     
     
     @pytest.mark.asyncio
@@ -359,9 +367,9 @@ class TestOAuthSecurityScenarios:
                     side_effect=Exception("Authorization code expired")
                 )
                 
-                response = await client.get("/api/auth/google/callback?code=expired_code")
+                response = await client.get("/api/auth/google/callback?code=expired_code", follow_redirects=False)
                 
-                assert response.status_code == 400, \
-                    "Should return 400 for expired code"
-                assert "failed" in response.json()["detail"].lower(), \
-                    "Error message should indicate authentication failed"
+                assert response.status_code == 307, \
+                    "Should redirect for expired code"
+                assert "error=oauth_failed" in response.headers["location"], \
+                    "Redirect should include error parameter"

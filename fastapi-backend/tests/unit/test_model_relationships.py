@@ -47,8 +47,7 @@ async def test_pet_breed_relationship(async_session: AsyncSession, test_user: Us
     # Create a breed
     breed = Breed(
         name="Test Breed",
-        code="TB",
-        group="Test Group"
+        kind="dog"
     )
     async_session.add(breed)
     await async_session.commit()
@@ -89,6 +88,7 @@ async def test_pet_litter_relationship(async_session: AsyncSession, test_user: U
     
     # Create a breeding
     breeding = Breeding(
+        user_id=test_user.id,
         date_of_litter=date.today(),
         description="Test Breeding",
         is_active=True
@@ -194,6 +194,7 @@ async def test_multiple_pets_same_litter(async_session: AsyncSession, test_user:
     
     # Create a breeding
     breeding = Breeding(
+        user_id=test_user.id,
         date_of_litter=date.today(),
         description="Test Breeding",
         is_active=True
@@ -280,17 +281,16 @@ async def test_breed_colours_relationship(async_session: AsyncSession):
     # Create a breed
     breed = Breed(
         name="Test Breed",
-        code="TB",
-        group="Test Group"
+        kind="dog"
     )
     async_session.add(breed)
     await async_session.commit()
     await async_session.refresh(breed)
     
     # Create multiple colors for the breed
-    color1 = BreedColour(breed_id=breed.id, code="BLK", name="Black")
-    color2 = BreedColour(breed_id=breed.id, code="WHT", name="White")
-    color3 = BreedColour(breed_id=breed.id, code="BRN", name="Brown")
+    color1 = BreedColour(breed_id=breed.id, name="Black")
+    color2 = BreedColour(breed_id=breed.id, name="White")
+    color3 = BreedColour(breed_id=breed.id, name="Brown")
     
     async_session.add_all([color1, color2, color3])
     await async_session.commit()

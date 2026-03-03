@@ -54,6 +54,7 @@ class TestUserSchemas:
             "is_active": True,
             "is_superuser": False,
             "is_verified": True,
+            "is_breeder": True,
             "created_at": datetime.now(),
             "updated_at": None,
             "breedery_name": "Golden Paws Kennel",
@@ -75,6 +76,7 @@ class TestUserSchemas:
             "is_active": True,
             "is_superuser": False,
             "is_verified": False,
+            "is_breeder": False,
             "created_at": datetime.now(),
             "updated_at": None,
             "breedery_name": None,
@@ -96,6 +98,7 @@ class TestUserSchemas:
             "is_active": True,
             "is_superuser": False,
             "is_verified": False,
+            "is_breeder": False,
             "created_at": datetime.now()
         }
         user = UserRead(**user_data)
@@ -244,13 +247,11 @@ class TestBreedSchemas:
         """Test creating breed schema with valid data."""
         breed_data = {
             "name": "Labrador Retriever",
-            "code": "LAB",
-            "group": "Sporting"
+            "kind": "dog"
         }
         breed = BreedCreate(**breed_data)
         assert breed.name == "Labrador Retriever"
-        assert breed.code == "LAB"
-        assert breed.group == "Sporting"
+        assert breed.kind == "dog"
     
     def test_breed_create_with_empty_name(self):
         """Test that empty name raises validation error."""
@@ -261,22 +262,19 @@ class TestBreedSchemas:
         assert any(error["loc"] == ("name",) for error in errors)
     
     def test_breed_create_with_null_optional_fields(self):
-        """Test creating breed with null optional fields."""
-        breed = BreedCreate(name="Golden Retriever")
+        """Test creating breed with required kind field."""
+        breed = BreedCreate(name="Golden Retriever", kind="dog")
         assert breed.name == "Golden Retriever"
-        assert breed.code is None
-        assert breed.group is None
+        assert breed.kind == "dog"
     
     def test_breed_colour_create_with_valid_data(self):
         """Test creating breed colour schema with valid data."""
         colour_data = {
             "breed_id": 1,
-            "code": "BLK",
             "name": "Black"
         }
         colour = BreedColourCreate(**colour_data)
         assert colour.breed_id == 1
-        assert colour.code == "BLK"
         assert colour.name == "Black"
 
 
