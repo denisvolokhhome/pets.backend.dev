@@ -44,7 +44,7 @@ async def test_breed_for_integration(async_session: AsyncSession):
     """Create a test breed for integration tests."""
     breed = Breed(
         name="Integration Test Breed",
-        group="Test Group"
+        kind="dog"
     )
     async_session.add(breed)
     await async_session.commit()

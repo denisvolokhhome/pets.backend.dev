@@ -118,7 +118,7 @@ async def test_breed(async_session: AsyncSession):
     
     breed = Breed(
         name="Test Breed",
-        group="Test Group"
+        kind="dog"
     )
     async_session.add(breed)
     await async_session.commit()

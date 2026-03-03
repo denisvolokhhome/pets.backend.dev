@@ -41,7 +41,9 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --cov=app --cov-report=term-missing"
+# Run tests sequentially to avoid database deadlocks
+# Use -n auto to enable parallel execution if needed
+addopts = "-v --cov=app --cov-report=term-missing --tb=short"
 
 [tool.ruff]
 line-length = 100
