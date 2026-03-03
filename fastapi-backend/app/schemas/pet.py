@@ -1,9 +1,11 @@
 """Pet schemas for API request/response validation."""
 import uuid
 from datetime import datetime, date
-from typing import Optional
+from typing import Optional, List
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.schemas.pet_image import PetImageRead
 
 
 class PetBase(BaseModel):
@@ -107,6 +109,7 @@ class PetRead(PetBase):
     user_id: uuid.UUID
     image_path: Optional[str] = None
     image_file_name: Optional[str] = None
+    images: List[PetImageRead] = []
     is_deleted: bool
     error: Optional[str] = None
     created_at: datetime

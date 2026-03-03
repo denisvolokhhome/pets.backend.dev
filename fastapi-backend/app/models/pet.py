@@ -183,6 +183,13 @@ class Pet(Base):
         back_populates="pet",
         lazy="selectin"
     )
+    images: Mapped[list["PetImage"]] = relationship(
+        "PetImage",
+        back_populates="pet",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+        order_by="PetImage.display_order"
+    )
     
     def __repr__(self) -> str:
         return f"<Pet(id={self.id}, name={self.name}, user_id={self.user_id})>"

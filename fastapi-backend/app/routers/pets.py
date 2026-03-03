@@ -189,9 +189,11 @@ async def get_pets_by_breeder(
     
     This endpoint is public and does not require authentication.
     By default, soft-deleted pets are excluded.
-    Each pet includes the location name if assigned to a location.
+    Each pet includes the location name and all images.
     """
-    query = select(Pet).where(Pet.user_id == breeder_id)
+    from sqlalchemy.orm import selectinload
+    
+    query = select(Pet).options(selectinload(Pet.images)).where(Pet.user_id == breeder_id)
     
     if not include_deleted:
         query = query.where(Pet.is_deleted == False)
@@ -201,7 +203,7 @@ async def get_pets_by_breeder(
     result = await session.execute(query)
     pets = result.scalars().all()
     
-    # Add location name to each pet
+    # Add location name and images to each pet
     pets_with_location = []
     for pet in pets:
         pet_dict = {
@@ -228,6 +230,19 @@ async def get_pets_by_breeder(
             "has_birthcertificate": pet.has_birthcertificate,
             "image_path": pet.image_path,
             "image_file_name": pet.image_file_name,
+            "images": [
+                {
+                    "id": img.id,
+                    "pet_id": img.pet_id,
+                    "image_path": img.image_path,
+                    "image_file_name": img.image_file_name,
+                    "display_order": img.display_order,
+                    "is_primary": img.is_primary,
+                    "created_at": img.created_at,
+                    "updated_at": img.updated_at
+                }
+                for img in pet.images
+            ],
             "is_deleted": pet.is_deleted,
             "error": pet.error,
             "created_at": pet.created_at,
@@ -250,7 +265,9 @@ async def get_pet(
     
     The pet must be owned by the authenticated user.
     """
-    query = select(Pet).where(Pet.id == pet_id, Pet.user_id == user.id)
+    from sqlalchemy.orm import selectinload
+    
+    query = select(Pet).options(selectinload(Pet.images)).where(Pet.id == pet_id, Pet.user_id == user.id)
     result = await session.execute(query)
     pet = result.scalar_one_or_none()
     
@@ -340,7 +357,10 @@ async def upload_pet_image(
     
     The pet must be owned by the authenticated user.
     The image will be processed, resized if needed, and stored.
+    Supports multiple images - each upload adds a new image to the pet.
     """
+    from app.models.pet_image import PetImage
+    
     # Fetch the pet
     query = select(Pet).where(Pet.id == pet_id, Pet.user_id == user.id)
     result = await session.execute(query)
@@ -352,13 +372,12 @@ async def upload_pet_image(
             detail="Pet not found"
         )
     
-    # Delete old image if exists
-    if pet.image_path:
-        try:
-            await file_service.delete_image(pet.image_path)
-        except FileNotFoundError:
-            # Old image doesn't exist, continue
-            pass
+    # Check if pet already has 5 images (max limit)
+    if len(pet.images) >= 5:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum of 5 images per pet allowed"
+        )
     
     # Save new image
     try:
@@ -369,9 +388,97 @@ async def upload_pet_image(
             detail=str(e)
         )
     
-    # Update pet record
-    pet.image_path = image_path
-    pet.image_file_name = image_file_name
+    # Determine display order and primary status
+    is_first_image = len(pet.images) == 0
+    display_order = len(pet.images)
+    
+    # Create new pet image record
+    pet_image = PetImage(
+        pet_id=pet_id,
+        image_path=image_path,
+        image_file_name=image_file_name,
+        display_order=display_order,
+        is_primary=is_first_image
+    )
+    session.add(pet_image)
+    
+    # Update legacy fields for backward compatibility (use first/primary image)
+    if is_first_image:
+        pet.image_path = image_path
+        pet.image_file_name = image_file_name
+    
+    await session.commit()
+    await session.refresh(pet)
+    
+    return pet
+
+
+@router.delete("/{pet_id}/image/{image_id}", response_model=PetRead)
+async def delete_pet_image(
+    pet_id: uuid.UUID,
+    image_id: int,
+    user: User = Depends(require_breeder),
+    session: AsyncSession = Depends(get_async_session),
+    file_service: FileService = Depends(get_file_service),
+) -> Pet:
+    """
+    Delete a specific image from a pet.
+    
+    The pet must be owned by the authenticated user.
+    If the deleted image was primary, the first remaining image becomes primary.
+    """
+    from app.models.pet_image import PetImage
+    
+    # Fetch the pet
+    query = select(Pet).where(Pet.id == pet_id, Pet.user_id == user.id)
+    result = await session.execute(query)
+    pet = result.scalar_one_or_none()
+    
+    if pet is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pet not found"
+        )
+    
+    # Fetch the image
+    image_query = select(PetImage).where(
+        PetImage.id == image_id,
+        PetImage.pet_id == pet_id
+    )
+    image_result = await session.execute(image_query)
+    pet_image = image_result.scalar_one_or_none()
+    
+    if pet_image is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Image not found"
+        )
+    
+    was_primary = pet_image.is_primary
+    
+    # Delete the image file
+    try:
+        await file_service.delete_image(pet_image.image_path)
+    except FileNotFoundError:
+        # Image file doesn't exist, continue with database deletion
+        pass
+    
+    # Delete the database record
+    await session.delete(pet_image)
+    await session.flush()
+    
+    # If this was the primary image, make the first remaining image primary
+    if was_primary and len(pet.images) > 1:
+        remaining_images = [img for img in pet.images if img.id != image_id]
+        if remaining_images:
+            first_image = remaining_images[0]
+            first_image.is_primary = True
+            pet.image_path = first_image.image_path
+            pet.image_file_name = first_image.image_file_name
+    elif len(pet.images) == 1:
+        # This was the last image
+        pet.image_path = None
+        pet.image_file_name = None
     
     await session.commit()
     await session.refresh(pet)
