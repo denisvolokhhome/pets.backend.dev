@@ -180,3 +180,94 @@ async def auth_headers(test_user: User):
     # But we'll provide headers for consistency
     return {"Authorization": f"Bearer test_token_{test_user.id}"}
 
+
+
+
+@pytest.fixture
+async def test_breeder(async_session: AsyncSession) -> User:
+    """Create a test breeder user."""
+    import bcrypt
+    
+    # Hash password using bcrypt directly
+    hashed_password = bcrypt.hashpw(b"testpass123", bcrypt.gensalt()).decode('utf-8')
+    
+    user = User(
+        email="breeder@example.com",
+        hashed_password=hashed_password,
+        name="Test Breeder",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+        is_breeder=True
+    )
+    async_session.add(user)
+    await async_session.commit()
+    await async_session.refresh(user)
+    return user
+
+
+@pytest.fixture
+async def test_pet_seeker(async_session: AsyncSession) -> User:
+    """Create a test pet seeker user."""
+    import bcrypt
+    
+    # Hash password using bcrypt directly
+    hashed_password = bcrypt.hashpw(b"testpass123", bcrypt.gensalt()).decode('utf-8')
+    
+    user = User(
+        email="petseeker@example.com",
+        hashed_password=hashed_password,
+        name="Test Seeker",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+        is_breeder=False
+    )
+    async_session.add(user)
+    await async_session.commit()
+    await async_session.refresh(user)
+    return user
+
+
+@pytest.fixture
+async def test_breeding(async_session: AsyncSession, test_breeder: User, test_breed) -> "Breeding":
+    """Create a test breeding."""
+    from app.models.breeding import Breeding
+    from datetime import date
+    
+    breeding = Breeding(
+        user_id=test_breeder.id,
+        date_of_litter=date(2024, 3, 1),
+        description="Test breeding",
+        is_active=True,
+        status="Started"
+    )
+    async_session.add(breeding)
+    await async_session.commit()
+    await async_session.refresh(breeding)
+    return breeding
+
+
+@pytest.fixture
+async def test_offspring(async_session: AsyncSession, test_breeder: User, test_breed, test_breeding) -> "Offspring":
+    """Create a test offspring."""
+    from app.models.offspring import Offspring
+    from datetime import date
+    from decimal import Decimal
+    
+    offspring = Offspring(
+        breeding_id=test_breeding.id,
+        user_id=test_breeder.id,
+        breed_id=test_breed.id,
+        name="Test Puppy",
+        gender="Male",
+        date_of_birth=date(2024, 3, 1),
+        status="Available",
+        price=Decimal("1000.00"),
+        description="A lovely test puppy",
+        color_markings="Brown and white"
+    )
+    async_session.add(offspring)
+    await async_session.commit()
+    await async_session.refresh(offspring)
+    return offspring

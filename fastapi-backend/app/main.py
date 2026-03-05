@@ -14,7 +14,7 @@ from sqlalchemy.exc import NoResultFound
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import Settings
-from app.routers import auth, pets, breeds, breedings, locations, users, geocoding, search, messages
+from app.routers import auth, pets, breeds, breedings, locations, users, geocoding, search, messages, offsprings, favorites, notifications
 
 # Configure logging
 logging.basicConfig(
@@ -235,6 +235,18 @@ app = FastAPI(
             "name": "messages",
             "description": "Breeder-user communication. Anonymous users can contact breeders, and breeders can manage their messages.",
         },
+        {
+            "name": "offsprings",
+            "description": "Offspring management. Breeders can manage individual animals from litters, and pet seekers can browse available offsprings.",
+        },
+        {
+            "name": "favorites",
+            "description": "Favorites management. Pet seekers can save offsprings to their favorites list for easy access.",
+        },
+        {
+            "name": "notifications",
+            "description": "Notification management. Breeders receive notifications for favorites and messages about their offsprings.",
+        },
     ],
 )
 
@@ -284,6 +296,9 @@ app.include_router(locations.router, tags=["locations"])
 app.include_router(geocoding.router, tags=["geocoding"])
 app.include_router(search.router, tags=["search"])
 app.include_router(messages.router, tags=["messages"])
+app.include_router(offsprings.router, tags=["offsprings"])
+app.include_router(favorites.router, tags=["favorites"])
+app.include_router(notifications.router, tags=["notifications"])
 
 
 @app.get("/health")

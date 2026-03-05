@@ -11,6 +11,7 @@ from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.user import User
+    from app.models.offspring import Offspring
 
 
 class Message(Base):
@@ -42,6 +43,21 @@ class Message(Base):
     pet_seeker_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
+    
+    # Optional link to offspring (for offspring-specific conversations)
+    offspring_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("offsprings.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
+    
+    # Thread ID for grouping related messages
+    thread_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
         nullable=True,
         index=True
     )
@@ -106,6 +122,12 @@ class Message(Base):
         "User",
         foreign_keys=[pet_seeker_id],
         back_populates="messages_sent",
+        lazy="selectin"
+    )
+    
+    offspring: Mapped[Optional["Offspring"]] = relationship(
+        "Offspring",
+        back_populates="messages",
         lazy="selectin"
     )
     

@@ -5,6 +5,7 @@ This module provides endpoints for anonymous users to contact breeders
 and for breeders to manage their messages.
 """
 import logging
+import uuid
 from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
@@ -17,6 +18,9 @@ from app.database import get_async_session
 from app.dependencies import current_active_user
 from app.models.message import Message
 from app.models.user import User
+from app.models.offspring import Offspring
+from app.schemas.notification import NotificationCreate
+from app.services.notification_service import notification_service
 from app.schemas.message import (
     MessageCreate,
     MessageResponse,
@@ -26,6 +30,9 @@ from app.schemas.message import (
     MessageResponseCreate,
     UnreadCountResponse,
     MessageSendResponse,
+    OffspringMessageCreate,
+    ThreadMessageResponse,
+    ThreadResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -354,3 +361,207 @@ async def respond_to_message(
     # This would require an email service integration
     
     return message
+
+
+
+@router.post("/offspring/{offspring_id}", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
+async def send_offspring_message(
+    offspring_id: UUID,
+    message_data: OffspringMessageCreate,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> Message:
+    """
+    Send a message to a breeder about a specific offspring (authenticated users only).
+    
+    This endpoint creates a threaded conversation between a pet seeker and breeder
+    about a specific offspring. If this is the first message about this offspring
+    from this user, a new thread is created. Otherwise, the message is added to
+    the existing thread.
+    
+    **Authentication Required:** Yes (logged-in users only)
+    
+    **Request Body:**
+    ```json
+    {
+        "message": "I'm interested in this puppy. Is it still available?"
+    }
+    ```
+    
+    **Behavior:**
+    - Auto-generates thread_id for new conversations
+    - Links message to offspring and thread
+    - Creates notification for breeder
+    - Associates message with authenticated user (pet_seeker_id)
+    
+    **Returns:** Created message with thread_id
+    """
+    # Verify offspring exists
+    offspring_query = select(Offspring).where(Offspring.id == offspring_id)
+    offspring_result = await session.execute(offspring_query)
+    offspring = offspring_result.scalar_one_or_none()
+    
+    if offspring is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Offspring not found"
+        )
+    
+    # Check if there's an existing thread between this user and breeder for this offspring
+    existing_thread_query = select(Message).where(
+        Message.offspring_id == offspring_id,
+        Message.pet_seeker_id == user.id,
+        Message.breeder_id == offspring.user_id,
+        Message.thread_id.isnot(None)
+    ).limit(1)
+    existing_thread_result = await session.execute(existing_thread_query)
+    existing_message = existing_thread_result.scalar_one_or_none()
+    
+    # Use existing thread_id or generate new one
+    thread_id = existing_message.thread_id if existing_message else uuid.uuid4()
+    
+    # Create new message
+    message = Message(
+        breeder_id=offspring.user_id,
+        pet_seeker_id=user.id,
+        offspring_id=offspring_id,
+        thread_id=thread_id,
+        sender_name=user.name if user.name else user.email,
+        sender_email=user.email,
+        message=message_data.message,
+        is_read=False,
+    )
+    
+    session.add(message)
+    await session.commit()
+    await session.refresh(message)
+    
+    # Create notification for breeder
+    notification_data = NotificationCreate(
+        user_id=offspring.user_id,
+        type="message_received",
+        title="New message about offspring",
+        message=f"{message.sender_name} sent you a message about {offspring.name or 'an offspring'}",
+        related_id=message.id,
+        related_type="message"
+    )
+    await notification_service.create_notification(session, notification_data)
+    
+    logger.info(
+        f"New offspring message created: {message.id} from user {user.id} "
+        f"to breeder {offspring.user_id} about offspring {offspring_id} in thread {thread_id}"
+    )
+    
+    return message
+
+
+@router.get("/threads/{thread_id}", response_model=ThreadResponse)
+async def get_thread_messages(
+    thread_id: UUID,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> ThreadResponse:
+    """
+    Get all messages in a thread (authenticated users only).
+    
+    Returns all messages in a conversation thread between a pet seeker and breeder
+    about a specific offspring. Only participants in the thread can access it.
+    
+    **Authentication Required:** Yes (logged-in users only)
+    
+    **Authorization:**
+    - User must be either the breeder or pet seeker in the thread
+    - Returns 404 if thread not found or user is not a participant
+    
+    **Returns:** Thread details with all messages and offspring context
+    """
+    # Get all messages in the thread
+    messages_query = select(Message).where(
+        Message.thread_id == thread_id
+    ).order_by(Message.created_at.asc())
+    messages_result = await session.execute(messages_query)
+    messages = messages_result.scalars().all()
+    
+    if not messages:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thread not found"
+        )
+    
+    # Get first message to determine participants and offspring
+    first_message = messages[0]
+    breeder_id = first_message.breeder_id
+    pet_seeker_id = first_message.pet_seeker_id
+    offspring_id = first_message.offspring_id
+    
+    # Verify user is a participant in the thread
+    if user.id != breeder_id and user.id != pet_seeker_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thread not found or access denied"
+        )
+    
+    # Mark messages as read if user is the breeder
+    if user.id == breeder_id:
+        for msg in messages:
+            if not msg.is_read:
+                msg.is_read = True
+        await session.commit()
+    
+    # Get offspring details for context
+    offspring_query = select(Offspring).where(Offspring.id == offspring_id)
+    offspring_result = await session.execute(offspring_query)
+    offspring = offspring_result.scalar_one_or_none()
+    
+    # Build thread message responses
+    thread_messages = []
+    for msg in messages:
+        # Determine sender info
+        sender_is_breeder = msg.breeder_id == msg.pet_seeker_id if msg.pet_seeker_id else False
+        if msg.pet_seeker_id:
+            # Message from authenticated user
+            sender_query = select(User).where(User.id == msg.pet_seeker_id)
+            sender_result = await session.execute(sender_query)
+            sender = sender_result.scalar_one_or_none()
+            sender_id = msg.pet_seeker_id
+            sender_name = msg.sender_name
+            sender_is_breeder = sender.is_breeder if sender else False
+        else:
+            # Anonymous message (shouldn't happen in threads, but handle it)
+            sender_id = msg.breeder_id
+            sender_name = msg.sender_name
+            sender_is_breeder = False
+        
+        thread_messages.append(ThreadMessageResponse(
+            id=msg.id,
+            sender_id=sender_id,
+            sender_name=sender_name,
+            sender_is_breeder=sender_is_breeder,
+            message=msg.message or "",
+            created_at=msg.created_at,
+            is_read=msg.is_read
+        ))
+    
+    # Build offspring context
+    offspring_context = None
+    if offspring:
+        offspring_context = {
+            "id": str(offspring.id),
+            "name": offspring.name,
+            "gender": offspring.gender,
+            "age": offspring.age,
+            "status": offspring.status,
+            "price": float(offspring.price) if offspring.price else None,
+            "primary_image_url": offspring.primary_image.image_url if offspring.primary_image else None
+        }
+    
+    logger.info(f"Thread {thread_id} accessed by user {user.id}")
+    
+    return ThreadResponse(
+        thread_id=thread_id,
+        offspring_id=offspring_id,
+        breeder_id=breeder_id,
+        pet_seeker_id=pet_seeker_id,
+        messages=thread_messages,
+        offspring=offspring_context
+    )

@@ -8,6 +8,10 @@ from app.models.breeding_pet import BreedingPet
 from app.models.location import Location
 from app.models.user_contact import UserContact
 from app.models.message import Message
+from app.models.offspring import Offspring
+from app.models.offspring_image import OffspringImage
+from app.models.offspring_favorite import OffspringFavorite
+from app.models.notification import Notification
 
 __all__ = [
     "User",
@@ -20,4 +24,8 @@ __all__ = [
     "Location",
     "UserContact",
     "Message",
+    "Offspring",
+    "OffspringImage",
+    "OffspringFavorite",
+    "Notification",
 ]

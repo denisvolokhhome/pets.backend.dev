@@ -56,6 +56,11 @@ class Breed(Base):
         lazy="selectin",
         cascade="all, delete-orphan"
     )
+    offsprings: Mapped[list["Offspring"]] = relationship(
+        "Offspring",
+        back_populates="breed",
+        lazy="selectin"
+    )
 
     def __repr__(self) -> str:
         return f"<Breed(id={self.id}, name={self.name}, kind={self.kind})>"

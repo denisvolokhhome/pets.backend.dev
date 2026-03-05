@@ -29,6 +29,13 @@ from app.schemas.message import (
     UnreadCountResponse,
     MessageSendResponse,
 )
+from app.schemas.offspring import OffspringBase, OffspringCreate, OffspringUpdate, OffspringRead
+from app.schemas.offspring_image import OffspringImageRead
+from app.schemas.offspring_favorite import OffspringFavoriteRead
+from app.schemas.notification import NotificationRead
+
+# Rebuild models to resolve forward references
+OffspringRead.model_rebuild()
 
 __all__ = [
     # User schemas
@@ -70,4 +77,15 @@ __all__ = [
     "MessageResponseCreate",
     "UnreadCountResponse",
     "MessageSendResponse",
+    # Offspring schemas
+    "OffspringBase",
+    "OffspringCreate",
+    "OffspringUpdate",
+    "OffspringRead",
+    # Offspring image schemas
+    "OffspringImageRead",
+    # Offspring favorite schemas
+    "OffspringFavoriteRead",
+    # Notification schemas
+    "NotificationRead",
 ]

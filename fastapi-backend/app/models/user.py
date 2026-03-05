@@ -153,6 +153,21 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         back_populates="pet_seeker",
         lazy="selectin"
     )
+    offsprings: Mapped[list["Offspring"]] = relationship(
+        "Offspring",
+        back_populates="user",
+        lazy="selectin"
+    )
+    offspring_favorites: Mapped[list["OffspringFavorite"]] = relationship(
+        "OffspringFavorite",
+        back_populates="user",
+        lazy="selectin"
+    )
+    notifications: Mapped[list["Notification"]] = relationship(
+        "Notification",
+        back_populates="user",
+        lazy="selectin"
+    )
     
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email})>"

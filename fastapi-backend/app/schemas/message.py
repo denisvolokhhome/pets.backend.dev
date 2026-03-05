@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
 
 
 class MessageCreate(BaseModel):
@@ -12,6 +12,7 @@ class MessageCreate(BaseModel):
     sender_name: str = Field(..., min_length=2, max_length=255, description="Full name of the sender")
     sender_email: EmailStr = Field(..., description="Email address of the sender")
     message: Optional[str] = Field(None, max_length=2000, description="Optional message content")
+    offspring_id: Optional[UUID] = Field(None, description="Optional offspring ID for offspring-specific messages")
     
     @field_validator('sender_name')
     @classmethod
@@ -37,6 +38,8 @@ class MessageResponse(BaseModel):
     id: UUID
     breeder_id: UUID
     pet_seeker_id: Optional[UUID] = None
+    offspring_id: Optional[UUID] = None
+    thread_id: Optional[UUID] = None
     sender_name: str
     sender_email: str
     message: Optional[str]
@@ -47,6 +50,8 @@ class MessageResponse(BaseModel):
     updated_at: Optional[datetime]
     is_linked_to_account: bool = False
     
+    model_config = ConfigDict(from_attributes=True)
+    
     @classmethod
     def model_validate(cls, obj, **kwargs):
         """Override to compute is_linked_to_account field."""
@@ -56,6 +61,8 @@ class MessageResponse(BaseModel):
                 'id': obj.id,
                 'breeder_id': obj.breeder_id,
                 'pet_seeker_id': obj.pet_seeker_id,
+                'offspring_id': getattr(obj, 'offspring_id', None),
+                'thread_id': getattr(obj, 'thread_id', None),
                 'sender_name': obj.sender_name,
                 'sender_email': obj.sender_email,
                 'message': obj.message,
@@ -68,9 +75,6 @@ class MessageResponse(BaseModel):
             }
             return super().model_validate(data, **kwargs)
         return super().model_validate(obj, **kwargs)
-    
-    class Config:
-        from_attributes = True
 
 
 class MessageListItem(BaseModel):
@@ -83,8 +87,7 @@ class MessageListItem(BaseModel):
     responded_at: Optional[datetime]
     created_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MessageListResponse(BaseModel):
@@ -123,3 +126,41 @@ class MessageSendResponse(BaseModel):
     """Schema for successful message send response."""
     success: bool = True
     message: str = "Your message has been sent to the breeder"
+
+
+class OffspringMessageCreate(BaseModel):
+    """Schema for creating a message about a specific offspring (authenticated users)."""
+    message: str = Field(..., min_length=1, max_length=2000, description="Message content")
+    
+    @field_validator('message')
+    @classmethod
+    def validate_message(cls, v: str) -> str:
+        """Validate and clean message content."""
+        if not v or not v.strip():
+            raise ValueError("Message cannot be empty")
+        return v.strip()
+
+
+class ThreadMessageResponse(BaseModel):
+    """Schema for messages in a thread."""
+    id: UUID
+    sender_id: UUID
+    sender_name: str
+    sender_is_breeder: bool
+    message: str
+    created_at: datetime
+    is_read: bool
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ThreadResponse(BaseModel):
+    """Schema for thread response with offspring context."""
+    thread_id: UUID
+    offspring_id: UUID
+    breeder_id: UUID
+    pet_seeker_id: UUID
+    messages: list[ThreadMessageResponse]
+    offspring: Optional[dict] = None  # Offspring details for context
+    
+    model_config = ConfigDict(from_attributes=True)
