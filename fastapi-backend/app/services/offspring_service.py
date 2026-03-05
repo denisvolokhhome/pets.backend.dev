@@ -83,19 +83,29 @@ class OffspringService:
         from app.models.breeding_pet import BreedingPet
         breeding_pets_query = select(BreedingPet).where(
             BreedingPet.breeding_id == offspring_data.breeding_id
-        ).limit(1)
+        )
         result = await db.execute(breeding_pets_query)
-        breeding_pet = result.scalar_one_or_none()
+        breeding_pets = result.scalars().all()
         
         breed_id = None
-        if breeding_pet:
-            # Get the pet to find breed_id
+        father_id = None
+        mother_id = None
+        
+        if breeding_pets:
+            # Get the pets to find breed_id and parent IDs
             from app.models.pet import Pet
-            pet_query = select(Pet).where(Pet.id == breeding_pet.pet_id)
-            pet_result = await db.execute(pet_query)
-            pet = pet_result.scalar_one_or_none()
-            if pet:
-                breed_id = pet.breed_id
+            for breeding_pet in breeding_pets:
+                pet_query = select(Pet).where(Pet.id == breeding_pet.pet_id)
+                pet_result = await db.execute(pet_query)
+                pet = pet_result.scalar_one_or_none()
+                if pet:
+                    if breed_id is None:
+                        breed_id = pet.breed_id
+                    # Assign father and mother based on gender
+                    if pet.gender == "Male" and father_id is None:
+                        father_id = pet.id
+                    elif pet.gender == "Female" and mother_id is None:
+                        mother_id = pet.id
         
         # Generate temporary name if not provided
         name = offspring_data.name
@@ -107,6 +117,8 @@ class OffspringService:
             breeding_id=offspring_data.breeding_id,
             user_id=user_id,
             breed_id=breed_id,
+            father_id=father_id,
+            mother_id=mother_id,
             name=name,
             gender=offspring_data.gender,
             date_of_birth=offspring_data.date_of_birth,

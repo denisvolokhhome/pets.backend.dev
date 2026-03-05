@@ -36,7 +36,6 @@ class PetBase(BaseModel):
     
     weight: Optional[float] = Field(None, ge=0)
     description: Optional[str] = None
-    is_puppy: Optional[bool] = None
     
     # Health records
     microchip: Optional[str] = Field(None, max_length=255)
@@ -86,7 +85,6 @@ class PetUpdate(BaseModel):
     
     weight: Optional[float] = Field(None, ge=0)
     description: Optional[str] = None
-    is_puppy: Optional[bool] = None
     
     # Health records
     microchip: Optional[str] = Field(None, max_length=255)

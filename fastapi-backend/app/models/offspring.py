@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from app.models.breeding import Breeding
     from app.models.user import User
     from app.models.breed import Breed
+    from app.models.pet import Pet
     from app.models.offspring_image import OffspringImage
     from app.models.offspring_favorite import OffspringFavorite
     from app.models.message import Message
@@ -57,6 +58,21 @@ class Offspring(Base):
     breed_id: Mapped[Optional[int]] = mapped_column(
         Integer,
         ForeignKey("breeds.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
+    
+    # Foreign keys to parent pets (optional, for direct tracking)
+    father_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("pets.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
+    
+    mother_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("pets.id", ondelete="SET NULL"),
         nullable=True,
         index=True
     )
@@ -128,6 +144,18 @@ class Offspring(Base):
         lazy="selectin"
     )
     
+    father: Mapped[Optional["Pet"]] = relationship(
+        "Pet",
+        foreign_keys=[father_id],
+        lazy="selectin"
+    )
+    
+    mother: Mapped[Optional["Pet"]] = relationship(
+        "Pet",
+        foreign_keys=[mother_id],
+        lazy="selectin"
+    )
+    
     images: Mapped[list["OffspringImage"]] = relationship(
         "OffspringImage",
         back_populates="offspring",
@@ -179,24 +207,6 @@ class Offspring(Base):
     def messages_count(self) -> int:
         """Count of messages associated with this offspring."""
         return len(self.messages)
-    
-    @property
-    def father(self):
-        """Get father pet from breeding relationship."""
-        if self.breeding and self.breeding.breeding_pets:
-            for breeding_pet in self.breeding.breeding_pets:
-                if breeding_pet.role == "father":
-                    return breeding_pet.pet
-        return None
-    
-    @property
-    def mother(self):
-        """Get mother pet from breeding relationship."""
-        if self.breeding and self.breeding.breeding_pets:
-            for breeding_pet in self.breeding.breeding_pets:
-                if breeding_pet.role == "mother":
-                    return breeding_pet.pet
-        return None
     
     @property
     def primary_image(self):

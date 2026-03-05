@@ -62,7 +62,6 @@ async def create_pet(
     - gender: Pet's gender
     - weight: Pet's weight
     - description: Additional description
-    - is_puppy: Whether the pet is a puppy
     - microchip: Microchip number
     - vaccination: Vaccination records
     - health_certificate: Health certificate information
@@ -76,7 +75,6 @@ async def create_pet(
         "breed_id": 1,
         "date_of_birth": "2023-01-15",
         "gender": "Male",
-        "is_puppy": true,
         "microchip": "123456789012345"
     }
     ```
@@ -94,7 +92,6 @@ async def create_pet(
         gender=pet_data.gender,
         weight=pet_data.weight,
         description=pet_data.description,
-        is_puppy=pet_data.is_puppy,
         microchip=pet_data.microchip,
         vaccination=pet_data.vaccination,
         health_certificate=pet_data.health_certificate,
@@ -152,7 +149,6 @@ async def list_pets(
             "gender": pet.gender,
             "weight": pet.weight,
             "description": pet.description,
-            "is_puppy": pet.is_puppy,
             "microchip": pet.microchip,
             "vaccination": pet.vaccination,
             "health_certificate": pet.health_certificate,
@@ -217,7 +213,6 @@ async def get_pets_by_breeder(
             "gender": pet.gender,
             "weight": pet.weight,
             "description": pet.description,
-            "is_puppy": pet.is_puppy,
             "microchip": pet.microchip,
             "vaccination": pet.vaccination,
             "health_certificate": pet.health_certificate,

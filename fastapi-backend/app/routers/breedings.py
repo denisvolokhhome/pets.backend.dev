@@ -606,8 +606,7 @@ async def add_puppies_to_litter(
             breeding_id=breeding.id,
             location_id=location_id,
             breed_id=breed_id,
-            user_id=user_id,
-            is_puppy=True
+            user_id=user_id
         )
         session.add(puppy)
         created_puppies.append(puppy)

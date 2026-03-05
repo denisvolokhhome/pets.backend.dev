@@ -74,10 +74,6 @@ class Pet(Base):
         Text,
         nullable=True
     )
-    is_puppy: Mapped[Optional[bool]] = mapped_column(
-        Boolean,
-        nullable=True
-    )
     
     # Health records (changed from boolean to text to match design doc)
     microchip: Mapped[Optional[str]] = mapped_column(
