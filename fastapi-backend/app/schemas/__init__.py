@@ -29,7 +29,7 @@ from app.schemas.message import (
     UnreadCountResponse,
     MessageSendResponse,
 )
-from app.schemas.offspring import OffspringBase, OffspringCreate, OffspringUpdate, OffspringRead
+from app.schemas.offspring import OffspringBase, OffspringCreate, OffspringUpdate, OffspringRead, OffspringListResponse
 from app.schemas.offspring_image import OffspringImageRead
 from app.schemas.offspring_favorite import OffspringFavoriteRead
 from app.schemas.notification import NotificationRead
@@ -82,6 +82,7 @@ __all__ = [
     "OffspringCreate",
     "OffspringUpdate",
     "OffspringRead",
+    "OffspringListResponse",
     # Offspring image schemas
     "OffspringImageRead",
     # Offspring favorite schemas

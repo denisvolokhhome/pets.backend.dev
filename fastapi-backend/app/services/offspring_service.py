@@ -78,8 +78,24 @@ class OffspringService:
                 detail="Breeding not found or does not belong to you"
             )
         
-        # Auto-populate breed_id from breeding
-        breed_id = breeding.breed_id
+        # Get breed_id from parent pets in the breeding
+        # Query breeding_pets to find the parents
+        from app.models.breeding_pet import BreedingPet
+        breeding_pets_query = select(BreedingPet).where(
+            BreedingPet.breeding_id == offspring_data.breeding_id
+        ).limit(1)
+        result = await db.execute(breeding_pets_query)
+        breeding_pet = result.scalar_one_or_none()
+        
+        breed_id = None
+        if breeding_pet:
+            # Get the pet to find breed_id
+            from app.models.pet import Pet
+            pet_query = select(Pet).where(Pet.id == breeding_pet.pet_id)
+            pet_result = await db.execute(pet_query)
+            pet = pet_result.scalar_one_or_none()
+            if pet:
+                breed_id = pet.breed_id
         
         # Generate temporary name if not provided
         name = offspring_data.name
@@ -192,6 +208,40 @@ class OffspringService:
         
         return list(offsprings)
     
+    async def count_offsprings(
+        self,
+        db: AsyncSession,
+        user_id: uuid.UUID,
+        status_filter: Optional[str] = None,
+        breed_id: Optional[int] = None
+    ) -> int:
+        """
+        Count total offsprings for a breeder with filtering.
+        
+        Args:
+            db: Database session
+            user_id: ID of the breeder
+            status_filter: Optional status filter
+            breed_id: Optional breed filter
+            
+        Returns:
+            Total count of offsprings matching filters
+        """
+        from sqlalchemy import func
+        
+        query = select(func.count(Offspring.id)).where(Offspring.user_id == user_id)
+        
+        if status_filter:
+            query = query.where(Offspring.status == status_filter)
+        
+        if breed_id:
+            query = query.where(Offspring.breed_id == breed_id)
+        
+        result = await db.execute(query)
+        count = result.scalar_one()
+        
+        return count
+    
     async def update_offspring(
         self,
         db: AsyncSession,
@@ -302,6 +352,48 @@ class OffspringService:
         offsprings = result.scalars().all()
         
         return list(offsprings)
+    
+    async def count_public_offsprings(
+        self,
+        db: AsyncSession,
+        breeder_id: uuid.UUID,
+        breed_id: Optional[int] = None,
+        gender: Optional[str] = None,
+        status_filter: Optional[str] = None
+    ) -> int:
+        """
+        Count total public offsprings for a breeder (excludes Archived).
+        
+        Args:
+            db: Database session
+            breeder_id: ID of the breeder
+            breed_id: Optional breed filter
+            gender: Optional gender filter
+            status_filter: Optional status filter
+            
+        Returns:
+            Total count of public offsprings matching filters
+        """
+        from sqlalchemy import func
+        
+        query = select(func.count(Offspring.id)).where(
+            Offspring.user_id == breeder_id,
+            Offspring.status != "Archived"  # Exclude archived offsprings
+        )
+        
+        if breed_id:
+            query = query.where(Offspring.breed_id == breed_id)
+        
+        if gender:
+            query = query.where(Offspring.gender == gender)
+        
+        if status_filter:
+            query = query.where(Offspring.status == status_filter)
+        
+        result = await db.execute(query)
+        count = result.scalar_one()
+        
+        return count
     
     async def get_public_offspring(
         self,

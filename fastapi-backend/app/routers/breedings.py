@@ -112,9 +112,7 @@ async def list_litters(
     # Start with base query - filter by current user
     query = select(Breeding).where(Breeding.user_id == current_user.id).options(
         selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.breed),
-        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.location),
-        selectinload(Breeding.pets).selectinload(Pet.breed),
-        selectinload(Breeding.pets).selectinload(Pet.location)
+        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet).selectinload(Pet.location)
     )
     
     # Apply status filter if provided
@@ -127,6 +125,25 @@ async def list_litters(
     # Execute query to get breedings
     result = await session.execute(query)
     breedings = result.scalars().all()
+    
+    # Get all breeding IDs for offspring query
+    breeding_ids = [breeding.id for breeding in breedings]
+    
+    # Fetch all offsprings for these breedings in one query
+    from app.models.offspring import Offspring
+    if breeding_ids:
+        offspring_query = select(Offspring).where(Offspring.breeding_id.in_(breeding_ids))
+        offspring_result = await session.execute(offspring_query)
+        all_offsprings = offspring_result.scalars().all()
+        
+        # Group offsprings by breeding_id
+        offsprings_by_breeding = {}
+        for offspring in all_offsprings:
+            if offspring.breeding_id not in offsprings_by_breeding:
+                offsprings_by_breeding[offspring.breeding_id] = []
+            offsprings_by_breeding[offspring.breeding_id].append(offspring)
+    else:
+        offsprings_by_breeding = {}
     
     # Build response with parent pets and puppies
     response_litters = []
@@ -160,15 +177,17 @@ async def list_litters(
         if breed_id and breed_id not in parent_pet_breeds:
             continue
         
-        # Get puppies (pets with this breeding_id)
+        # Get offsprings for this breeding from the pre-fetched map
+        offspring_list = offsprings_by_breeding.get(breeding.id, [])
+        
         puppies = []
-        for pet in breeding.pets:
+        for offspring in offspring_list:
             puppies.append({
-                "id": str(pet.id),
-                "name": pet.name,
-                "gender": pet.gender,
-                "birth_date": pet.date_of_birth.isoformat() if pet.date_of_birth else None,
-                "microchip": pet.microchip
+                "id": str(offspring.id),
+                "name": offspring.name,
+                "gender": offspring.gender,
+                "birth_date": offspring.date_of_birth.isoformat() if offspring.date_of_birth else None,
+                "microchip": None  # Offsprings don't have microchip field
             })
         
         response_litters.append({
@@ -236,23 +255,23 @@ async def get_litter(
             "gender": pet.gender
         })
     
-    # Build puppies list from pets with this breeding_id
-    # Query puppies directly to ensure we get them
-    puppy_query = select(Pet).where(Pet.breeding_id == breeding.id).options(
-        selectinload(Pet.breed),
-        selectinload(Pet.location)
+    # Build puppies list from offsprings table with this breeding_id
+    # Query offsprings directly to ensure we get them
+    from app.models.offspring import Offspring
+    offspring_query = select(Offspring).where(Offspring.breeding_id == breeding.id).options(
+        selectinload(Offspring.breed)
     )
-    puppy_result = await session.execute(puppy_query)
-    puppy_pets = puppy_result.scalars().all()
+    offspring_result = await session.execute(offspring_query)
+    offspring_list = offspring_result.scalars().all()
     
     puppies = []
-    for pet in puppy_pets:
+    for offspring in offspring_list:
         puppies.append({
-            "id": str(pet.id),
-            "name": pet.name,
-            "gender": pet.gender,
-            "birth_date": pet.date_of_birth.isoformat() if pet.date_of_birth else None,
-            "microchip": pet.microchip
+            "id": str(offspring.id),
+            "name": offspring.name,
+            "gender": offspring.gender,
+            "birth_date": offspring.date_of_birth.isoformat() if offspring.date_of_birth else None,
+            "microchip": None  # Offsprings don't have microchip field
         })
     
     # Return LitterResponse format

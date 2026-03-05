@@ -96,3 +96,13 @@ class OffspringRead(OffspringBase):
     mother: Optional["PetRead"] = None
     
     model_config = ConfigDict(from_attributes=True)
+
+
+class OffspringListResponse(BaseModel):
+    """Schema for paginated offspring list response."""
+    offsprings: List[OffspringRead]
+    total: int
+    limit: int
+    offset: int
+    
+    model_config = ConfigDict(from_attributes=True)

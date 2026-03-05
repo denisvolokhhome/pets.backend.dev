@@ -17,7 +17,7 @@ from app.config import Settings
 from app.database import get_async_session
 from app.dependencies import current_active_user, require_breeder, optional_current_user
 from app.models.user import User
-from app.schemas.offspring import OffspringCreate, OffspringRead, OffspringUpdate
+from app.schemas.offspring import OffspringCreate, OffspringRead, OffspringUpdate, OffspringListResponse
 from app.schemas.offspring_image import OffspringImageRead
 from app.services.offspring_service import offspring_service
 from app.services.offspring_image_service import OffspringImageService
@@ -87,7 +87,7 @@ async def create_offspring(
     return await _build_offspring_response(session, offspring, user_id=None)
 
 
-@router.get("/", response_model=List[OffspringRead])
+@router.get("/", response_model=OffspringListResponse)
 async def list_offsprings(
     user: User = Depends(require_breeder),
     session: AsyncSession = Depends(get_async_session),
@@ -95,7 +95,7 @@ async def list_offsprings(
     breed_id: Optional[int] = Query(None, description="Filter by breed ID"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
-) -> List[dict]:
+) -> dict:
     """
     List all offsprings owned by the authenticated breeder.
     
@@ -107,7 +107,7 @@ async def list_offsprings(
     - limit: Maximum number of records to return (1-100)
     - offset: Number of records to skip (pagination)
     
-    **Returns:** List of offsprings with computed fields
+    **Returns:** Paginated list of offsprings with computed fields
     
     **Requirements:** 1.1, 1.2, 10.1
     """
@@ -120,13 +120,26 @@ async def list_offsprings(
         offset=offset
     )
     
+    # Get total count
+    total = await offspring_service.count_offsprings(
+        db=session,
+        user_id=user.id,
+        status_filter=status_filter,
+        breed_id=breed_id
+    )
+    
     # Build responses with computed fields
     responses = []
     for offspring in offsprings:
         response = await _build_offspring_response(session, offspring, user_id=None)
         responses.append(response)
     
-    return responses
+    return {
+        "offsprings": responses,
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }
 
 
 @router.get("/{offspring_id}", response_model=OffspringRead)
@@ -214,7 +227,7 @@ async def delete_offspring(
 
 # Public endpoints for pet seekers
 
-@router.get("/public/breeder/{breeder_id}", response_model=List[OffspringRead])
+@router.get("/public/breeder/{breeder_id}", response_model=OffspringListResponse)
 async def list_public_offsprings(
     breeder_id: uuid.UUID,
     session: AsyncSession = Depends(get_async_session),
@@ -224,7 +237,7 @@ async def list_public_offsprings(
     status_filter: Optional[str] = Query(None, description="Filter by status"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
-) -> List[dict]:
+) -> dict:
     """
     List public offsprings for a breeder (excludes Archived).
     
@@ -238,7 +251,7 @@ async def list_public_offsprings(
     - limit: Maximum number of records to return (1-100)
     - offset: Number of records to skip (pagination)
     
-    **Returns:** List of public offsprings with favorite status if authenticated
+    **Returns:** Paginated list of public offsprings with favorite status if authenticated
     
     **Requirements:** 2.3, 4.1, 4.2, 4.3, 4.4, 10.3, 10.7, 13.1, 13.2, 13.3, 13.4, 13.5
     """
@@ -252,6 +265,15 @@ async def list_public_offsprings(
         offset=offset
     )
     
+    # Get total count
+    total = await offspring_service.count_public_offsprings(
+        db=session,
+        breeder_id=breeder_id,
+        breed_id=breed_id,
+        gender=gender,
+        status_filter=status_filter
+    )
+    
     # Build responses with computed fields and favorite status
     responses = []
     for offspring in offsprings:
@@ -262,7 +284,12 @@ async def list_public_offsprings(
         )
         responses.append(response)
     
-    return responses
+    return {
+        "offsprings": responses,
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }
 
 
 @router.get("/public/{offspring_id}", response_model=OffspringRead)
@@ -523,7 +550,9 @@ async def _build_offspring_response(
         "breed": {
             "id": breed.id,
             "name": breed.name,
-            "kind": breed.kind
+            "kind": breed.kind,
+            "created_at": breed.created_at,
+            "updated_at": breed.updated_at
         } if breed else None,
         "images": [
             {
@@ -548,17 +577,65 @@ async def _build_offspring_response(
         } if primary_image else None,
         "father": {
             "id": father.id,
+            "user_id": father.user_id,
             "name": father.name,
             "breed_id": father.breed_id,
+            "breeding_id": father.breeding_id,
+            "location_id": father.location_id,
+            "date_of_birth": father.date_of_birth,
             "gender": father.gender,
-            "date_of_birth": father.date_of_birth
+            "weight": father.weight,
+            "description": father.description,
+            "is_puppy": father.is_puppy,
+            "microchip": father.microchip,
+            "vaccination": father.vaccination,
+            "health_certificate": father.health_certificate,
+            "deworming": father.deworming,
+            "birth_certificate": father.birth_certificate,
+            "has_microchip": father.has_microchip,
+            "has_vaccination": father.has_vaccination,
+            "has_healthcertificate": father.has_healthcertificate,
+            "has_dewormed": father.has_dewormed,
+            "has_birthcertificate": father.has_birthcertificate,
+            "image_path": father.image_path,
+            "image_file_name": father.image_file_name,
+            "images": [],
+            "is_deleted": father.is_deleted,
+            "error": None,
+            "created_at": father.created_at,
+            "updated_at": father.updated_at,
+            "location_name": None
         } if father else None,
         "mother": {
             "id": mother.id,
+            "user_id": mother.user_id,
             "name": mother.name,
             "breed_id": mother.breed_id,
+            "breeding_id": mother.breeding_id,
+            "location_id": mother.location_id,
+            "date_of_birth": mother.date_of_birth,
             "gender": mother.gender,
-            "date_of_birth": mother.date_of_birth
+            "weight": mother.weight,
+            "description": mother.description,
+            "is_puppy": mother.is_puppy,
+            "microchip": mother.microchip,
+            "vaccination": mother.vaccination,
+            "health_certificate": mother.health_certificate,
+            "deworming": mother.deworming,
+            "birth_certificate": mother.birth_certificate,
+            "has_microchip": mother.has_microchip,
+            "has_vaccination": mother.has_vaccination,
+            "has_healthcertificate": mother.has_healthcertificate,
+            "has_dewormed": mother.has_dewormed,
+            "has_birthcertificate": mother.has_birthcertificate,
+            "image_path": mother.image_path,
+            "image_file_name": mother.image_file_name,
+            "images": [],
+            "is_deleted": mother.is_deleted,
+            "error": None,
+            "created_at": mother.created_at,
+            "updated_at": mother.updated_at,
+            "location_name": None
         } if mother else None,
     }
     
