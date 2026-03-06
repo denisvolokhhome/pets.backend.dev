@@ -199,9 +199,23 @@ class OffspringService:
             offset: Number of results to skip
             
         Returns:
-            List of offspring instances
+            List of offspring instances with eager-loaded relationships
         """
-        query = select(Offspring).where(Offspring.user_id == user_id)
+        from sqlalchemy.orm import selectinload
+        from app.models.breed import Breed
+        from app.models.pet import Pet
+        from app.models.breeding import Breeding
+        from app.models.offspring_image import OffspringImage
+        
+        query = select(Offspring).where(Offspring.user_id == user_id).options(
+            selectinload(Offspring.breed),
+            selectinload(Offspring.father),
+            selectinload(Offspring.mother),
+            selectinload(Offspring.breeding),
+            selectinload(Offspring.images),
+            selectinload(Offspring.favorites),
+            selectinload(Offspring.messages)
+        )
         
         if status_filter:
             query = query.where(Offspring.status == status_filter)

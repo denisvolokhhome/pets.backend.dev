@@ -450,77 +450,27 @@ async def _build_offspring_response(
     Returns:
         Dictionary with offspring data and computed fields
     """
-    from sqlalchemy import select, func
-    from sqlalchemy.orm import selectinload
-    from app.models.offspring_image import OffspringImage
-    from app.models.offspring_favorite import OffspringFavorite
-    from app.models.message import Message
-    from app.models.breeding import Breeding
-    from app.models.breeding_pet import BreedingPet
-    from app.models.pet import Pet
-    from app.models.breed import Breed
-    
     # Calculate age
     age = offspring_service.calculate_age(offspring.date_of_birth)
     
-    # Get favorites count
-    favorites_count_query = select(func.count(OffspringFavorite.id)).where(
-        OffspringFavorite.offspring_id == offspring.id
-    )
-    favorites_count_result = await session.execute(favorites_count_query)
-    favorites_count = favorites_count_result.scalar() or 0
-    
-    # Get messages count
-    messages_count_query = select(func.count(Message.id)).where(
-        Message.offspring_id == offspring.id
-    )
-    messages_count_result = await session.execute(messages_count_query)
-    messages_count = messages_count_result.scalar() or 0
-    
-    # Get images
-    images_query = select(OffspringImage).where(
-        OffspringImage.offspring_id == offspring.id
-    ).order_by(OffspringImage.display_order)
-    images_result = await session.execute(images_query)
-    images = images_result.scalars().all()
+    # Use already-loaded relationships instead of making new queries
+    favorites_count = len(offspring.favorites) if offspring.favorites else 0
+    messages_count = len(offspring.messages) if offspring.messages else 0
+    images = offspring.images if offspring.images else []
     
     # Get primary image
     primary_image = next((img for img in images if img.is_primary), images[0] if images else None)
     
-    # Get breeding with relationships
-    breeding_query = select(Breeding).where(
-        Breeding.id == offspring.breeding_id
-    ).options(
-        selectinload(Breeding.breeding_pets).selectinload(BreedingPet.pet)
-    )
-    breeding_result = await session.execute(breeding_query)
-    breeding = breeding_result.scalar_one_or_none()
-    
-    # Get father and mother from breeding
-    father = None
-    mother = None
-    if breeding and breeding.breeding_pets:
-        for bp in breeding.breeding_pets:
-            if bp.pet.gender == "Male":
-                father = bp.pet
-            elif bp.pet.gender == "Female":
-                mother = bp.pet
-    
-    # Get breed
-    breed = None
-    if offspring.breed_id:
-        breed_query = select(Breed).where(Breed.id == offspring.breed_id)
-        breed_result = await session.execute(breed_query)
-        breed = breed_result.scalar_one_or_none()
+    # Use already-loaded relationships
+    breeding = offspring.breeding
+    breed = offspring.breed
+    father = offspring.father
+    mother = offspring.mother
     
     # Check favorite status if user is authenticated
     is_favorited = False
-    if user_id:
-        is_favorited = await favorite_service.check_favorite_status(
-            db=session,
-            offspring_id=offspring.id,
-            user_id=user_id
-        )
+    if user_id and offspring.favorites:
+        is_favorited = any(fav.user_id == user_id for fav in offspring.favorites)
     
     # Build response
     response = {
