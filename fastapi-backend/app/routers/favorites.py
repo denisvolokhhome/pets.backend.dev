@@ -50,10 +50,34 @@ async def add_favorite(
         notification_service=notification_service
     )
     
-    # Refresh to load offspring relationship
-    await db.refresh(favorite, ["offspring"])
+    # Reload the favorite with all relationships using selectinload
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from app.models.offspring_favorite import OffspringFavorite
+    from app.models.offspring import Offspring
+    from app.models.breed import Breed
+    from app.models.offspring_image import OffspringImage
+    from app.models.breeding import Breeding
+    from app.models.pet import Pet
     
-    return favorite
+    query = (
+        select(OffspringFavorite)
+        .where(OffspringFavorite.id == favorite.id)
+        .options(
+            selectinload(OffspringFavorite.offspring).selectinload(Offspring.breed),
+            selectinload(OffspringFavorite.offspring).selectinload(Offspring.images),
+            selectinload(OffspringFavorite.offspring).selectinload(Offspring.breeding),
+            selectinload(OffspringFavorite.offspring).selectinload(Offspring.father),
+            selectinload(OffspringFavorite.offspring).selectinload(Offspring.mother),
+            selectinload(OffspringFavorite.offspring).selectinload(Offspring.favorites),
+            selectinload(OffspringFavorite.offspring).selectinload(Offspring.messages),
+        )
+    )
+    
+    result = await db.execute(query)
+    favorite_with_relations = result.scalar_one()
+    
+    return favorite_with_relations
 
 
 @router.delete(

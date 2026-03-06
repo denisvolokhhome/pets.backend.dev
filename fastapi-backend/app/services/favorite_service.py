@@ -53,6 +53,10 @@ class FavoriteService:
                 detail="Offspring not found or not available"
             )
         
+        # Store offspring data before commit (to avoid detached instance errors)
+        offspring_user_id = offspring.user_id
+        offspring_name = offspring.name
+        
         # Create favorite
         favorite = OffspringFavorite(
             offspring_id=offspring_id,
@@ -74,10 +78,10 @@ class FavoriteService:
         # Create notification for breeder
         if notification_service:
             notification_data = NotificationCreate(
-                user_id=offspring.user_id,
+                user_id=offspring_user_id,
                 type="favorite_added",
                 title="New Favorite",
-                message=f"Someone favorited your offspring: {offspring.name or 'Unnamed'}",
+                message=f"Someone favorited your offspring: {offspring_name or 'Unnamed'}",
                 related_id=offspring_id,
                 related_type="offspring"
             )
@@ -164,9 +168,12 @@ class FavoriteService:
         Returns:
             List of OffspringFavorite instances with offspring data
         """
+        from sqlalchemy.orm import selectinload
+        
         query = (
             select(OffspringFavorite)
             .where(OffspringFavorite.user_id == user_id)
+            .options(selectinload(OffspringFavorite.offspring))
             .order_by(OffspringFavorite.created_at.desc())
             .limit(limit)
             .offset(offset)

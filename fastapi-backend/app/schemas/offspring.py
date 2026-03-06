@@ -86,6 +86,7 @@ class OffspringRead(OffspringBase):
     age: str
     favorites_count: int
     messages_count: int
+    is_favorited: bool = False  # Whether current user has favorited this offspring
     
     # Relationships (will be populated by service layer)
     breeding: Optional["LitterRead"] = None

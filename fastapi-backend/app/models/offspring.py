@@ -220,4 +220,12 @@ class Offspring(Base):
         return None
     
     def __repr__(self) -> str:
-        return f"<Offspring(id={self.id}, name={self.name}, status={self.status})>"
+        try:
+            # Use object.__getattribute__ to avoid triggering lazy loading
+            id_val = object.__getattribute__(self, 'id')
+            name_val = object.__getattribute__(self, 'name')
+            status_val = object.__getattribute__(self, 'status')
+            return f"<Offspring(id={id_val}, name={name_val}, status={status_val})>"
+        except AttributeError:
+            # Fallback if attributes aren't loaded
+            return f"<Offspring(detached)>"

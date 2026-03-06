@@ -80,6 +80,12 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             # Calculate duration
             duration = time.time() - start_time
             
+            # Safely get error message without triggering lazy loading
+            try:
+                error_message = str(exc)
+            except Exception:
+                error_message = f"{type(exc).__name__} (error message unavailable)"
+            
             # Log error
             logger.error(
                 f"Request failed",
@@ -91,7 +97,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                     "user_id": user_id,
                     "duration_ms": round(duration * 1000, 2),
                     "error_type": type(exc).__name__,
-                    "error_message": str(exc)
+                    "error_message": error_message
                 }
             )
             
@@ -361,6 +367,12 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Handle all unhandled exceptions."""
+    # Safely get error message without triggering lazy loading
+    try:
+        error_message = str(exc)
+    except Exception:
+        error_message = "Error message unavailable"
+    
     # Log the full exception with stack trace
     logger.error(
         f"Unhandled exception: {request.url.path}",
@@ -380,7 +392,7 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
                 "detail": "Internal server error",
                 "error_code": "INTERNAL_ERROR",
                 "error_type": type(exc).__name__,
-                "error_message": str(exc)
+                "error_message": error_message
             }
         )
     else:

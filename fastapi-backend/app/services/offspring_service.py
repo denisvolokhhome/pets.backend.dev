@@ -354,9 +354,23 @@ class OffspringService:
         Returns:
             List of offspring instances
         """
+        from sqlalchemy.orm import selectinload
+        from app.models.breed import Breed
+        from app.models.pet import Pet
+        from app.models.breeding import Breeding
+        from app.models.offspring_image import OffspringImage
+        
         query = select(Offspring).where(
             Offspring.user_id == breeder_id,
             Offspring.status != "Archived"  # Exclude archived offsprings
+        ).options(
+            selectinload(Offspring.breed),
+            selectinload(Offspring.father),
+            selectinload(Offspring.mother),
+            selectinload(Offspring.breeding),
+            selectinload(Offspring.images),
+            selectinload(Offspring.favorites),
+            selectinload(Offspring.messages)
         )
         
         if breed_id:
@@ -439,9 +453,23 @@ class OffspringService:
         Raises:
             HTTPException: If offspring not found or is archived
         """
+        from sqlalchemy.orm import selectinload
+        from app.models.breed import Breed
+        from app.models.pet import Pet
+        from app.models.breeding import Breeding
+        from app.models.offspring_image import OffspringImage
+        
         query = select(Offspring).where(
             Offspring.id == offspring_id,
             Offspring.status != "Archived"
+        ).options(
+            selectinload(Offspring.breed),
+            selectinload(Offspring.father),
+            selectinload(Offspring.mother),
+            selectinload(Offspring.breeding),
+            selectinload(Offspring.images),
+            selectinload(Offspring.favorites),
+            selectinload(Offspring.messages)
         )
         
         result = await db.execute(query)

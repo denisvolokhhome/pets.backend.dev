@@ -36,6 +36,7 @@ from app.schemas.notification import NotificationRead
 
 # Rebuild models to resolve forward references
 OffspringRead.model_rebuild()
+OffspringFavoriteRead.model_rebuild()
 
 __all__ = [
     # User schemas

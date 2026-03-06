@@ -84,7 +84,7 @@ async def create_offspring(
     )
     
     # Build response with computed fields
-    return await _build_offspring_response(session, offspring, user_id=None)
+    return await _build_offspring_response(session, offspring, user_id=user.id)
 
 
 @router.get("/", response_model=OffspringListResponse)
@@ -131,7 +131,7 @@ async def list_offsprings(
     # Build responses with computed fields
     responses = []
     for offspring in offsprings:
-        response = await _build_offspring_response(session, offspring, user_id=None)
+        response = await _build_offspring_response(session, offspring, user_id=user.id)
         responses.append(response)
     
     return {
@@ -164,7 +164,7 @@ async def get_offspring(
         check_owner=True
     )
     
-    return await _build_offspring_response(session, offspring, user_id=None)
+    return await _build_offspring_response(session, offspring, user_id=user.id)
 
 
 @router.put("/{offspring_id}", response_model=OffspringRead)
@@ -199,7 +199,7 @@ async def update_offspring(
         user_id=user.id
     )
     
-    return await _build_offspring_response(session, offspring, user_id=None)
+    return await _build_offspring_response(session, offspring, user_id=user.id)
 
 
 @router.delete("/{offspring_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -585,10 +585,7 @@ async def _build_offspring_response(
             "updated_at": mother.updated_at,
             "location_name": None
         } if mother else None,
+        "is_favorited": is_favorited  # Always include, defaults to False for guests
     }
-    
-    # Add favorite status if user is authenticated
-    if user_id:
-        response["is_favorited"] = is_favorited
     
     return response
