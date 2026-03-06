@@ -169,11 +169,20 @@ class FavoriteService:
             List of OffspringFavorite instances with offspring data
         """
         from sqlalchemy.orm import selectinload
+        from app.models.offspring import Offspring
         
         query = (
             select(OffspringFavorite)
             .where(OffspringFavorite.user_id == user_id)
-            .options(selectinload(OffspringFavorite.offspring))
+            .options(
+                selectinload(OffspringFavorite.offspring).selectinload(Offspring.breed),
+                selectinload(OffspringFavorite.offspring).selectinload(Offspring.images),
+                selectinload(OffspringFavorite.offspring).selectinload(Offspring.breeding),
+                selectinload(OffspringFavorite.offspring).selectinload(Offspring.father),
+                selectinload(OffspringFavorite.offspring).selectinload(Offspring.mother),
+                selectinload(OffspringFavorite.offspring).selectinload(Offspring.favorites),
+                selectinload(OffspringFavorite.offspring).selectinload(Offspring.messages),
+            )
             .order_by(OffspringFavorite.created_at.desc())
             .limit(limit)
             .offset(offset)
