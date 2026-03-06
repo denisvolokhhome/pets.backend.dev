@@ -774,7 +774,6 @@ class TestLocationDeletion:
             location_id=location_id,
             name="Test Pet",
             gender="Male",
-            is_puppy=True,
         )
         async_session.add(pet)
         await async_session.commit()

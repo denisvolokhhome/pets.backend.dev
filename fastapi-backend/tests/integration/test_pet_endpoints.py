@@ -79,7 +79,6 @@ class TestPetCreationWorkflow:
             "gender": "Male",
             "weight": 25.5,
             "description": "A friendly test dog",
-            "is_puppy": False,
         }
 
         # Note: This test assumes the pets router is properly integrated

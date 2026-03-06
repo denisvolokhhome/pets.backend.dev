@@ -217,7 +217,6 @@ class TestPetSchemas:
             "gender": None,
             "weight": None,
             "description": None,
-            "is_puppy": None,
             "microchip": "123456789",
             "vaccination": None,
             "health_certificate": None,

@@ -424,7 +424,6 @@ class TestPetLocationAssociation:
             "breed_id": test_breed.id,
             "location_id": location_id,
             "gender": "Male",
-            "is_puppy": True,
         }
         
         pet_response = await authenticated_client.post("/api/pets/", json=pet_data)
@@ -635,7 +634,6 @@ class TestCompleteFeatureIntegration:
                 "breed_id": test_breed.id,
                 "location_id": location["id"],
                 "gender": "Male" if i % 2 == 0 else "Female",
-                "is_puppy": True,
             }
             
             pet_response = await authenticated_client.post("/api/pets/", json=pet_data)
