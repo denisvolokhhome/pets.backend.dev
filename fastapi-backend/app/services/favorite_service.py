@@ -10,6 +10,7 @@ from fastapi import HTTPException, status
 from app.models.offspring_favorite import OffspringFavorite
 from app.models.offspring import Offspring
 from app.schemas.notification import NotificationCreate
+from app.services.notification_preference_service import notification_preference_service
 
 
 class FavoriteService:
@@ -75,17 +76,24 @@ class FavoriteService:
                 detail="Offspring already in favorites"
             )
         
-        # Create notification for breeder
+        # Create notification for breeder (only if they have it enabled)
         if notification_service:
-            notification_data = NotificationCreate(
+            should_notify = await notification_preference_service.should_send_notification(
+                db=db,
                 user_id=offspring_user_id,
-                type="favorite_added",
-                title="New Favorite",
-                message=f"Someone favorited your offspring: {offspring_name or 'Unnamed'}",
-                related_id=offspring_id,
-                related_type="offspring"
+                notification_type="favorite_added"
             )
-            await notification_service.create_notification(db, notification_data)
+            
+            if should_notify:
+                notification_data = NotificationCreate(
+                    user_id=offspring_user_id,
+                    type="favorite_added",
+                    title="New Favorite",
+                    message=f"Someone favorited your offspring: {offspring_name or 'Unnamed'}",
+                    related_id=offspring_id,
+                    related_type="offspring"
+                )
+                await notification_service.create_notification(db, notification_data)
         
         return favorite
     

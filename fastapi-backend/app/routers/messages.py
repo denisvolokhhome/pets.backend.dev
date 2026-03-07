@@ -21,6 +21,7 @@ from app.models.user import User
 from app.models.offspring import Offspring
 from app.schemas.notification import NotificationCreate
 from app.services.notification_service import notification_service
+from app.services.notification_preference_service import notification_preference_service
 from app.schemas.message import (
     MessageCreate,
     MessageResponse,
@@ -196,6 +197,10 @@ async def list_messages(
         
         message_items.append(MessageListItem(
             id=msg.id,
+            breeder_id=msg.breeder_id,
+            pet_seeker_id=msg.pet_seeker_id,
+            offspring_id=msg.offspring_id,
+            thread_id=msg.thread_id,
             sender_name=msg.sender_name,
             sender_email=msg.sender_email,
             message_preview=message_preview,
@@ -245,15 +250,16 @@ async def get_message(
     """
     Get a single message by ID.
     
-    The message must belong to the authenticated breeder.
+    The message must belong to the authenticated user (either as breeder or pet seeker).
     This endpoint does NOT automatically mark the message as read.
     Use the PATCH /messages/{message_id}/read endpoint to mark as read.
     
     **Returns:** Full message details including response if exists
     """
+    # Allow access if user is the breeder OR the pet seeker who sent the message
     query = select(Message).where(
         Message.id == message_id,
-        Message.breeder_id == user.id
+        (Message.breeder_id == user.id) | (Message.pet_seeker_id == user.id)
     )
     result = await session.execute(query)
     message = result.scalar_one_or_none()
@@ -276,14 +282,15 @@ async def mark_message_as_read(
     """
     Mark a message as read.
     
-    The message must belong to the authenticated breeder.
+    The message must belong to the authenticated user (either as breeder or pet seeker).
     This endpoint is idempotent - marking an already-read message as read has no effect.
     
     **Returns:** Updated message with is_read=True
     """
+    # Allow access if user is the breeder OR the pet seeker who sent the message
     query = select(Message).where(
         Message.id == message_id,
-        Message.breeder_id == user.id
+        (Message.breeder_id == user.id) | (Message.pet_seeker_id == user.id)
     )
     result = await session.execute(query)
     message = result.scalar_one_or_none()
@@ -300,7 +307,7 @@ async def mark_message_as_read(
     await session.commit()
     await session.refresh(message)
     
-    logger.info(f"Message {message_id} marked as read by breeder {user.id}")
+    logger.info(f"Message {message_id} marked as read by user {user.id}")
     
     return message
 
@@ -436,16 +443,23 @@ async def send_offspring_message(
     await session.commit()
     await session.refresh(message)
     
-    # Create notification for breeder
-    notification_data = NotificationCreate(
+    # Create notification for breeder (only if they have it enabled)
+    should_notify = await notification_preference_service.should_send_notification(
+        db=session,
         user_id=offspring.user_id,
-        type="message_received",
-        title="New message about offspring",
-        message=f"{message.sender_name} sent you a message about {offspring.name or 'an offspring'}",
-        related_id=message.id,
-        related_type="message"
+        notification_type="message_received"
     )
-    await notification_service.create_notification(session, notification_data)
+    
+    if should_notify:
+        notification_data = NotificationCreate(
+            user_id=offspring.user_id,
+            type="message_received",
+            title="New message about offspring",
+            message=f"{message.sender_name} sent you a message about {offspring.name or 'an offspring'}",
+            related_id=message.id,
+            related_type="message"
+        )
+        await notification_service.create_notification(session, notification_data)
     
     logger.info(
         f"New offspring message created: {message.id} from user {user.id} "
@@ -516,31 +530,49 @@ async def get_thread_messages(
     # Build thread message responses
     thread_messages = []
     for msg in messages:
-        # Determine sender info
-        sender_is_breeder = msg.breeder_id == msg.pet_seeker_id if msg.pet_seeker_id else False
+        # Each message in the thread is a separate record
+        # Determine sender based on pet_seeker_id
         if msg.pet_seeker_id:
-            # Message from authenticated user
+            # Message from authenticated pet seeker
             sender_query = select(User).where(User.id == msg.pet_seeker_id)
             sender_result = await session.execute(sender_query)
-            sender = sender_result.scalar_one_or_none()
+            sender_user = sender_result.scalar_one_or_none()
             sender_id = msg.pet_seeker_id
             sender_name = msg.sender_name
-            sender_is_breeder = sender.is_breeder if sender else False
+            sender_is_breeder = sender_user.is_breeder if sender_user else False
+            message_text = msg.message or ""
         else:
-            # Anonymous message (shouldn't happen in threads, but handle it)
+            # Anonymous message (shouldn't happen in threads)
             sender_id = msg.breeder_id
             sender_name = msg.sender_name
             sender_is_breeder = False
+            message_text = msg.message or ""
         
         thread_messages.append(ThreadMessageResponse(
             id=msg.id,
             sender_id=sender_id,
             sender_name=sender_name,
             sender_is_breeder=sender_is_breeder,
-            message=msg.message or "",
+            message=message_text,
             created_at=msg.created_at,
             is_read=msg.is_read
         ))
+        
+        # If there's a response_text, add it as a separate message from the breeder
+        if msg.response_text and msg.responded_at:
+            breeder_query = select(User).where(User.id == msg.breeder_id)
+            breeder_result = await session.execute(breeder_query)
+            breeder_user = breeder_result.scalar_one_or_none()
+            
+            thread_messages.append(ThreadMessageResponse(
+                id=msg.id,  # Same ID but different message
+                sender_id=msg.breeder_id,
+                sender_name=breeder_user.name if breeder_user and breeder_user.name else "Breeder",
+                sender_is_breeder=True,
+                message=msg.response_text,
+                created_at=msg.responded_at,
+                is_read=True  # Breeder's own message is always "read"
+            ))
     
     # Build offspring context
     offspring_context = None

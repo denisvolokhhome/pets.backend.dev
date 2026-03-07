@@ -168,6 +168,12 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         back_populates="user",
         lazy="selectin"
     )
+    notification_preferences: Mapped[Optional["NotificationPreference"]] = relationship(
+        "NotificationPreference",
+        back_populates="user",
+        uselist=False,
+        lazy="selectin"
+    )
     
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email})>"

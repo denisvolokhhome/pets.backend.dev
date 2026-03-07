@@ -80,6 +80,10 @@ class MessageResponse(BaseModel):
 class MessageListItem(BaseModel):
     """Schema for message list item (summary view)."""
     id: UUID
+    breeder_id: UUID
+    pet_seeker_id: Optional[UUID] = None
+    offspring_id: Optional[UUID] = None
+    thread_id: Optional[UUID] = None
     sender_name: str
     sender_email: str
     message_preview: Optional[str]  # First 100 characters
