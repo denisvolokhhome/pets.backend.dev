@@ -95,9 +95,9 @@ def get_geocoding_service(
 async def geocode_zip(
     zip: str = Query(
         ...,
-        regex=r"^\d{5}$",
+        pattern=r"^\d{5}$",
         description="5-digit US ZIP code",
-        example="10001"
+        examples=["10001"]
     ),
     geocoding_service: GeocodingService = Depends(get_geocoding_service)
 ) -> Coordinates:
@@ -167,14 +167,14 @@ async def reverse_geocode(
         ge=-90,
         le=90,
         description="Latitude in decimal degrees",
-        example=40.7128
+        examples=[40.7128]
     ),
     lon: float = Query(
         ...,
         ge=-180,
         le=180,
         description="Longitude in decimal degrees",
-        example=-74.0060
+        examples=[-74.0060]
     ),
     geocoding_service: GeocodingService = Depends(get_geocoding_service)
 ) -> Address:

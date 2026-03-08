@@ -48,65 +48,21 @@ router = APIRouter(
 )
 
 
-@router.post("/send", response_model=MessageSendResponse, status_code=status.HTTP_201_CREATED)
-async def send_message(
-    message_data: MessageCreate,
-    session: AsyncSession = Depends(get_async_session),
-) -> MessageSendResponse:
-    """
-    Send a message to a breeder (public endpoint - no authentication required).
-    
-    This endpoint allows anonymous users to contact breeders by providing
-    their name, email, and an optional message.
-    
-    **Request Body:**
-    ```json
-    {
-        "breeder_id": "uuid",
-        "sender_name": "John Doe",
-        "sender_email": "john@example.com",
-        "message": "I'm interested in your puppies..."
-    }
-    ```
-    
-    **Validation:**
-    - breeder_id must be a valid UUID of an existing user
-    - sender_name must be at least 2 characters
-    - sender_email must be a valid email address
-    - message is optional but limited to 2000 characters
-    
-    **Returns:** Success confirmation message
-    """
-    # Verify breeder exists
-    breeder_query = select(User).where(User.id == message_data.breeder_id)
-    breeder_result = await session.execute(breeder_query)
-    breeder = breeder_result.scalar_one_or_none()
-    
-    if breeder is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Breeder not found"
-        )
-    
-    # Create new message
-    message = Message(
-        breeder_id=message_data.breeder_id,
-        sender_name=message_data.sender_name,
-        sender_email=message_data.sender_email,
-        message=message_data.message,
-        is_read=False,
-    )
-    
-    session.add(message)
-    await session.commit()
-    await session.refresh(message)
-    
-    logger.info(
-        f"New message created: {message.id} from {message.sender_email} "
-        f"to breeder {message.breeder_id}"
-    )
-    
-    return MessageSendResponse()
+# DEPRECATED: This endpoint is for anonymous messaging which is not supported in the new Message model
+# The new model requires authenticated users (sender_id must be a valid user UUID)
+# If anonymous messaging is needed, consider creating a separate AnonymousMessage model
+# or using a system user account for anonymous messages
+
+# @router.post("/send", response_model=MessageSendResponse, status_code=status.HTTP_201_CREATED)
+# async def send_message(
+#     message_data: MessageCreate,
+#     session: AsyncSession = Depends(get_async_session),
+# ) -> MessageSendResponse:
+#     """
+#     Send a message to a breeder (public endpoint - no authentication required).
+#     DEPRECATED - Use /offspring/{offspring_id} endpoint with authentication instead.
+#     """
+#     pass
 
 
 @router.get("/", response_model=MessageListResponse)
@@ -126,8 +82,7 @@ async def list_messages(
     List all messages for the authenticated user.
     
     Returns paginated list of messages with filtering and sorting options.
-    - Breeders see messages they received (filtered by breeder_id)
-    - Pet seekers see messages they sent (filtered by pet_seeker_id)
+    - Shows messages where user is either sender or receiver
     
     **Query Parameters:**
     - status: Filter by read status ('all', 'read', 'unread')
@@ -137,13 +92,10 @@ async def list_messages(
     
     **Returns:** Paginated list of messages with total count and unread count
     """
-    # Build base query based on user type
-    if user.is_breeder:
-        # Breeders see messages they received
-        query = select(Message).where(Message.breeder_id == user.id)
-    else:
-        # Pet seekers see messages they sent
-        query = select(Message).where(Message.pet_seeker_id == user.id)
+    # Build base query - user sees messages they sent or received
+    query = select(Message).where(
+        (Message.sender_id == user.id) | (Message.receiver_id == user.id)
+    )
     
     # Apply status filter
     if status_filter == "read":
@@ -163,18 +115,11 @@ async def list_messages(
     total_result = await session.execute(count_query)
     total = total_result.scalar()
     
-    # Get unread count based on user type
-    if user.is_breeder:
-        unread_query = select(func.count()).where(
-            Message.breeder_id == user.id,
-            Message.is_read == False
-        )
-    else:
-        # Pet seekers see unread messages based on whether breeder has responded
-        unread_query = select(func.count()).where(
-            Message.pet_seeker_id == user.id,
-            Message.responded_at.is_(None)
-        )
+    # Get unread count - messages received by user that are unread
+    unread_query = select(func.count()).where(
+        Message.receiver_id == user.id,
+        Message.is_read == False
+    )
     unread_result = await session.execute(unread_query)
     unread_count = unread_result.scalar()
     
@@ -189,24 +134,24 @@ async def list_messages(
     message_items = []
     for msg in messages:
         # Create preview (first 100 characters)
-        message_preview = None
-        if msg.message:
-            message_preview = msg.message[:100]
-            if len(msg.message) > 100:
-                message_preview += "..."
+        content_preview = msg.content[:100] if msg.content else ""
+        if msg.content and len(msg.content) > 100:
+            content_preview += "..."
+        
+        # Get sender info
+        sender_name = msg.sender.name if msg.sender and msg.sender.name else msg.sender.email if msg.sender else "Unknown"
         
         message_items.append(MessageListItem(
             id=msg.id,
-            breeder_id=msg.breeder_id,
-            pet_seeker_id=msg.pet_seeker_id,
-            offspring_id=msg.offspring_id,
+            sender_id=msg.sender_id,
+            receiver_id=msg.receiver_id,
             thread_id=msg.thread_id,
-            sender_name=msg.sender_name,
-            sender_email=msg.sender_email,
-            message_preview=message_preview,
+            content_preview=content_preview,
+            context_type=msg.context_type,
+            context_id=msg.context_id,
             is_read=msg.is_read,
-            responded_at=msg.responded_at,
             created_at=msg.created_at,
+            sender_name=sender_name,
         ))
     
     return MessageListResponse(
@@ -224,15 +169,15 @@ async def get_unread_count(
     session: AsyncSession = Depends(get_async_session),
 ) -> UnreadCountResponse:
     """
-    Get count of unread messages for the authenticated breeder.
+    Get count of unread messages for the authenticated user.
     
     This endpoint is useful for displaying notification badges in the UI.
     Can be polled periodically to update the notification count.
     
-    **Returns:** Count of unread messages
+    **Returns:** Count of unread messages where user is the receiver
     """
     query = select(func.count()).where(
-        Message.breeder_id == user.id,
+        Message.receiver_id == user.id,
         Message.is_read == False
     )
     result = await session.execute(query)
@@ -250,16 +195,16 @@ async def get_message(
     """
     Get a single message by ID.
     
-    The message must belong to the authenticated user (either as breeder or pet seeker).
+    The message must belong to the authenticated user (either as sender or receiver).
     This endpoint does NOT automatically mark the message as read.
     Use the PATCH /messages/{message_id}/read endpoint to mark as read.
     
-    **Returns:** Full message details including response if exists
+    **Returns:** Full message details
     """
-    # Allow access if user is the breeder OR the pet seeker who sent the message
+    # Allow access if user is the sender OR the receiver
     query = select(Message).where(
         Message.id == message_id,
-        (Message.breeder_id == user.id) | (Message.pet_seeker_id == user.id)
+        (Message.sender_id == user.id) | (Message.receiver_id == user.id)
     )
     result = await session.execute(query)
     message = result.scalar_one_or_none()
@@ -282,15 +227,15 @@ async def mark_message_as_read(
     """
     Mark a message as read.
     
-    The message must belong to the authenticated user (either as breeder or pet seeker).
+    The message must belong to the authenticated user (either as sender or receiver).
     This endpoint is idempotent - marking an already-read message as read has no effect.
     
     **Returns:** Updated message with is_read=True
     """
-    # Allow access if user is the breeder OR the pet seeker who sent the message
+    # Allow access if user is the sender OR the receiver
     query = select(Message).where(
         Message.id == message_id,
-        (Message.breeder_id == user.id) | (Message.pet_seeker_id == user.id)
+        (Message.sender_id == user.id) | (Message.receiver_id == user.id)
     )
     result = await session.execute(query)
     message = result.scalar_one_or_none()
@@ -301,8 +246,8 @@ async def mark_message_as_read(
             detail="Message not found"
         )
     
-    # Mark as read
-    message.is_read = True
+    # Mark as read using the model method
+    message.mark_as_read()
     
     await session.commit()
     await session.refresh(message)
@@ -312,7 +257,7 @@ async def mark_message_as_read(
     return message
 
 
-@router.post("/{message_id}/respond", response_model=MessageResponse)
+@router.post("/{message_id}/respond", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
 async def respond_to_message(
     message_id: UUID,
     response_data: MessageResponseCreate,
@@ -320,11 +265,10 @@ async def respond_to_message(
     session: AsyncSession = Depends(get_async_session),
 ) -> Message:
     """
-    Respond to a message.
+    Respond to a message by creating a new message in the same thread.
     
-    The message must belong to the authenticated breeder.
-    This endpoint saves the response text and timestamp.
-    The message is automatically marked as read when responded to.
+    The original message must have been received by the authenticated user.
+    This creates a new message record as a response in the same thread.
     
     **Request Body:**
     ```json
@@ -333,41 +277,48 @@ async def respond_to_message(
     }
     ```
     
-    **Note:** This endpoint only saves the response in the database.
-    Actual email sending to the user should be implemented separately.
-    
-    **Returns:** Updated message with response_text and responded_at timestamp
+    **Returns:** Newly created response message
     """
+    # Get the original message
     query = select(Message).where(
         Message.id == message_id,
-        Message.breeder_id == user.id
+        Message.receiver_id == user.id  # User must be the receiver of original message
     )
     result = await session.execute(query)
-    message = result.scalar_one_or_none()
+    original_message = result.scalar_one_or_none()
     
-    if message is None:
+    if original_message is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Message not found"
+            detail="Message not found or you are not the receiver"
         )
     
-    # Save response
-    message.response_text = response_data.response_text
-    message.responded_at = datetime.utcnow()
-    message.is_read = True  # Automatically mark as read when responding
+    # Mark original message as read
+    original_message.mark_as_read()
     
-    await session.commit()
-    await session.refresh(message)
-    
-    logger.info(
-        f"Breeder {user.id} responded to message {message_id} "
-        f"from {message.sender_email}"
+    # Create response message in same thread
+    response_message = Message(
+        sender_id=user.id,  # Current user is now the sender
+        receiver_id=original_message.sender_id,  # Original sender is now the receiver
+        thread_id=original_message.thread_id,
+        content=response_data.response_text,
+        context_type=original_message.context_type,
+        context_id=original_message.context_id,
+        is_read=False,
     )
     
-    # TODO: Send email notification to sender
-    # This would require an email service integration
+    session.add(response_message)
+    await session.commit()
+    await session.refresh(response_message)
     
-    return message
+    logger.info(
+        f"User {user.id} responded to message {message_id} "
+        f"with new message {response_message.id} in thread {original_message.thread_id}"
+    )
+    
+    # TODO: Send notification to original sender
+    
+    return response_message
 
 
 
@@ -397,9 +348,9 @@ async def send_offspring_message(
     
     **Behavior:**
     - Auto-generates thread_id for new conversations
-    - Links message to offspring and thread
+    - Links message to offspring via context fields
     - Creates notification for breeder
-    - Associates message with authenticated user (pet_seeker_id)
+    - Associates message with authenticated user as sender
     
     **Returns:** Created message with thread_id
     """
@@ -416,10 +367,10 @@ async def send_offspring_message(
     
     # Check if there's an existing thread between this user and breeder for this offspring
     existing_thread_query = select(Message).where(
-        Message.offspring_id == offspring_id,
-        Message.pet_seeker_id == user.id,
-        Message.breeder_id == offspring.user_id,
-        Message.thread_id.isnot(None)
+        Message.context_type == "offspring",
+        Message.context_id == offspring_id,
+        ((Message.sender_id == user.id) & (Message.receiver_id == offspring.user_id)) |
+        ((Message.sender_id == offspring.user_id) & (Message.receiver_id == user.id))
     ).limit(1)
     existing_thread_result = await session.execute(existing_thread_query)
     existing_message = existing_thread_result.scalar_one_or_none()
@@ -429,13 +380,12 @@ async def send_offspring_message(
     
     # Create new message
     message = Message(
-        breeder_id=offspring.user_id,
-        pet_seeker_id=user.id,
-        offspring_id=offspring_id,
+        sender_id=user.id,
+        receiver_id=offspring.user_id,
         thread_id=thread_id,
-        sender_name=user.name if user.name else user.email,
-        sender_email=user.email,
-        message=message_data.message,
+        content=message_data.message,
+        context_type="offspring",
+        context_id=offspring_id,
         is_read=False,
     )
     
@@ -451,11 +401,12 @@ async def send_offspring_message(
     )
     
     if should_notify:
+        sender_name = user.name if user.name else user.email
         notification_data = NotificationCreate(
             user_id=offspring.user_id,
             type="message_received",
             title="New message about offspring",
-            message=f"{message.sender_name} sent you a message about {offspring.name or 'an offspring'}",
+            message=f"{sender_name} sent you a message about {offspring.name or 'an offspring'}",
             related_id=message.id,
             related_type="message"
         )
@@ -478,16 +429,15 @@ async def get_thread_messages(
     """
     Get all messages in a thread (authenticated users only).
     
-    Returns all messages in a conversation thread between a pet seeker and breeder
-    about a specific offspring. Only participants in the thread can access it.
+    Returns all messages in a conversation thread. Only participants can access it.
     
     **Authentication Required:** Yes (logged-in users only)
     
     **Authorization:**
-    - User must be either the breeder or pet seeker in the thread
+    - User must be either sender or receiver of messages in the thread
     - Returns 404 if thread not found or user is not a participant
     
-    **Returns:** Thread details with all messages and offspring context
+    **Returns:** Thread details with all messages and context
     """
     # Get all messages in the thread
     messages_query = select(Message).where(
@@ -502,98 +452,98 @@ async def get_thread_messages(
             detail="Thread not found"
         )
     
-    # Get first message to determine participants and offspring
-    first_message = messages[0]
-    breeder_id = first_message.breeder_id
-    pet_seeker_id = first_message.pet_seeker_id
-    offspring_id = first_message.offspring_id
-    
     # Verify user is a participant in the thread
-    if user.id != breeder_id and user.id != pet_seeker_id:
+    user_is_participant = any(
+        msg.sender_id == user.id or msg.receiver_id == user.id
+        for msg in messages
+    )
+    
+    if not user_is_participant:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Thread not found or access denied"
         )
     
-    # Mark messages as read if user is the breeder
-    if user.id == breeder_id:
-        for msg in messages:
-            if not msg.is_read:
-                msg.is_read = True
-        await session.commit()
+    # Mark messages as read if user is the receiver
+    for msg in messages:
+        if msg.receiver_id == user.id and not msg.is_read:
+            msg.mark_as_read()
+    await session.commit()
     
-    # Get offspring details for context
-    offspring_query = select(Offspring).where(Offspring.id == offspring_id)
-    offspring_result = await session.execute(offspring_query)
-    offspring = offspring_result.scalar_one_or_none()
+    # Get context (offspring) details if available
+    first_message = messages[0]
+    offspring_context = None
+    offspring_id = None
+    
+    if first_message.context_type == "offspring" and first_message.context_id:
+        offspring_id = first_message.context_id
+        offspring_query = select(Offspring).where(Offspring.id == offspring_id)
+        offspring_result = await session.execute(offspring_query)
+        offspring = offspring_result.scalar_one_or_none()
+        
+        if offspring:
+            offspring_context = {
+                "id": str(offspring.id),
+                "name": offspring.name,
+                "gender": offspring.gender,
+                "age": offspring.age,
+                "status": offspring.status,
+                "price": float(offspring.price) if offspring.price else None,
+                "primary_image_url": offspring.primary_image.image_url if offspring.primary_image else None
+            }
+    
+    # Determine the other participant (breeder/pet_seeker)
+    # For backward compatibility with frontend
+    other_participant_ids = set()
+    for msg in messages:
+        if msg.sender_id != user.id:
+            other_participant_ids.add(msg.sender_id)
+        if msg.receiver_id != user.id:
+            other_participant_ids.add(msg.receiver_id)
+    
+    # Get breeder and pet_seeker IDs for backward compatibility
+    breeder_id = None
+    pet_seeker_id = None
+    
+    for participant_id in other_participant_ids:
+        participant_query = select(User).where(User.id == participant_id)
+        participant_result = await session.execute(participant_query)
+        participant = participant_result.scalar_one_or_none()
+        if participant:
+            if participant.is_breeder:
+                breeder_id = participant.id
+            else:
+                pet_seeker_id = participant.id
+    
+    # If current user is breeder/pet_seeker, set their ID
+    if user.is_breeder and not breeder_id:
+        breeder_id = user.id
+    elif not user.is_breeder and not pet_seeker_id:
+        pet_seeker_id = user.id
     
     # Build thread message responses
     thread_messages = []
     for msg in messages:
-        # Each message in the thread is a separate record
-        # Determine sender based on pet_seeker_id
-        if msg.pet_seeker_id:
-            # Message from authenticated pet seeker
-            sender_query = select(User).where(User.id == msg.pet_seeker_id)
-            sender_result = await session.execute(sender_query)
-            sender_user = sender_result.scalar_one_or_none()
-            sender_id = msg.pet_seeker_id
-            sender_name = msg.sender_name
-            sender_is_breeder = sender_user.is_breeder if sender_user else False
-            message_text = msg.message or ""
-        else:
-            # Anonymous message (shouldn't happen in threads)
-            sender_id = msg.breeder_id
-            sender_name = msg.sender_name
-            sender_is_breeder = False
-            message_text = msg.message or ""
+        sender_name = msg.sender.name if msg.sender and msg.sender.name else msg.sender.email if msg.sender else "Unknown"
+        sender_is_breeder = msg.sender.is_breeder if msg.sender else False
         
         thread_messages.append(ThreadMessageResponse(
             id=msg.id,
-            sender_id=sender_id,
+            sender_id=msg.sender_id,
             sender_name=sender_name,
             sender_is_breeder=sender_is_breeder,
-            message=message_text,
+            message=msg.content,
             created_at=msg.created_at,
             is_read=msg.is_read
         ))
-        
-        # If there's a response_text, add it as a separate message from the breeder
-        if msg.response_text and msg.responded_at:
-            breeder_query = select(User).where(User.id == msg.breeder_id)
-            breeder_result = await session.execute(breeder_query)
-            breeder_user = breeder_result.scalar_one_or_none()
-            
-            thread_messages.append(ThreadMessageResponse(
-                id=msg.id,  # Same ID but different message
-                sender_id=msg.breeder_id,
-                sender_name=breeder_user.name if breeder_user and breeder_user.name else "Breeder",
-                sender_is_breeder=True,
-                message=msg.response_text,
-                created_at=msg.responded_at,
-                is_read=True  # Breeder's own message is always "read"
-            ))
-    
-    # Build offspring context
-    offspring_context = None
-    if offspring:
-        offspring_context = {
-            "id": str(offspring.id),
-            "name": offspring.name,
-            "gender": offspring.gender,
-            "age": offspring.age,
-            "status": offspring.status,
-            "price": float(offspring.price) if offspring.price else None,
-            "primary_image_url": offspring.primary_image.image_url if offspring.primary_image else None
-        }
     
     logger.info(f"Thread {thread_id} accessed by user {user.id}")
     
     return ThreadResponse(
         thread_id=thread_id,
-        offspring_id=offspring_id,
-        breeder_id=breeder_id,
-        pet_seeker_id=pet_seeker_id,
+        offspring_id=offspring_id or uuid.uuid4(),  # Fallback for non-offspring threads
+        breeder_id=breeder_id or uuid.uuid4(),  # Fallback
+        pet_seeker_id=pet_seeker_id or uuid.uuid4(),  # Fallback
         messages=thread_messages,
         offspring=offspring_context
     )

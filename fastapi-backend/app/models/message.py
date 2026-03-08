@@ -1,9 +1,9 @@
-"""Message model for breeder-user communication."""
+"""Message model for user-to-user communication."""
 from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 import uuid
 
-from sqlalchemy import String, Text, Boolean, DateTime, ForeignKey, func
+from sqlalchemy import String, Text, Boolean, DateTime, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -11,15 +11,14 @@ from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.user import User
-    from app.models.offspring import Offspring
 
 
 class Message(Base):
     """
-    Message model for anonymous users to contact breeders.
+    Message model for user-to-user communication.
     
-    Allows anonymous/unauthorized users to send messages to breeders.
-    Breeders can view, mark as read, and respond to messages.
+    Microservice-ready design with clean sender/receiver pattern.
+    Supports threaded conversations and contextual messaging.
     """
     __tablename__ = "messages"
     
@@ -27,55 +26,46 @@ class Message(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
-        default=uuid.uuid4,
+        server_default="gen_random_uuid()",
         nullable=False
     )
     
-    # Foreign key to user (breeder receiving the message)
-    breeder_id: Mapped[uuid.UUID] = mapped_column(
+    # Participants (sender and receiver)
+    sender_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True
     )
     
-    # Optional link to pet seeker account
-    pet_seeker_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    receiver_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="SET NULL"),
-        nullable=True,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
         index=True
     )
     
-    # Optional link to offspring (for offspring-specific conversations)
-    offspring_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    # Thread/Conversation grouping
+    thread_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("offsprings.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True
-    )
-    
-    # Thread ID for grouping related messages
-    thread_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True),
-        nullable=True,
-        index=True
-    )
-    
-    # Sender information (anonymous user)
-    sender_name: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False
-    )
-    sender_email: Mapped[str] = mapped_column(
-        String(255),
         nullable=False,
         index=True
     )
     
     # Message content
-    message: Mapped[Optional[str]] = mapped_column(
+    content: Mapped[str] = mapped_column(
         Text,
+        nullable=False
+    )
+    
+    # Context (optional - links to other domains/entities)
+    context_type: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True
+    )
+    
+    context_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
         nullable=True
     )
     
@@ -84,15 +74,16 @@ class Message(Base):
         Boolean,
         nullable=False,
         default=False,
-        index=True
+        server_default="false"
     )
     
-    # Response from breeder
-    response_text: Mapped[Optional[str]] = mapped_column(
-        Text,
+    read_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
         nullable=True
     )
-    responded_at: Mapped[Optional[datetime]] = mapped_column(
+    
+    # Soft delete (for GDPR compliance)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True
     )
@@ -100,36 +91,52 @@ class Message(Base):
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-        index=True
+        server_default="now()",
+        nullable=False
     )
+    
     updated_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
-        onupdate=func.now(),
         nullable=True
     )
     
     # Relationships
-    breeder: Mapped["User"] = relationship(
+    sender: Mapped["User"] = relationship(
         "User",
-        foreign_keys=[breeder_id],
-        back_populates="messages_received",
-        lazy="selectin"
-    )
-    
-    pet_seeker: Mapped[Optional["User"]] = relationship(
-        "User",
-        foreign_keys=[pet_seeker_id],
+        foreign_keys=[sender_id],
         back_populates="messages_sent",
         lazy="selectin"
     )
     
-    offspring: Mapped[Optional["Offspring"]] = relationship(
-        "Offspring",
-        back_populates="messages",
+    receiver: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[receiver_id],
+        back_populates="messages_received",
         lazy="selectin"
     )
     
+    # Composite indexes
+    __table_args__ = (
+        Index('idx_messages_conversation', 'thread_id', 'created_at'),
+        Index('idx_messages_unread', 'receiver_id', 'is_read', postgresql_where="is_read = false"),
+        Index('idx_messages_context', 'context_type', 'context_id'),
+    )
+    
     def __repr__(self) -> str:
-        return f"<Message(id={self.id}, breeder_id={self.breeder_id}, sender_email={self.sender_email}, is_read={self.is_read})>"
+        return f"<Message(id={self.id}, sender_id={self.sender_id}, receiver_id={self.receiver_id}, thread_id={self.thread_id})>"
+    
+    def mark_as_read(self) -> None:
+        """Mark message as read."""
+        if not self.is_read:
+            self.is_read = True
+            self.read_at = datetime.utcnow()
+    
+    def soft_delete(self) -> None:
+        """Soft delete message."""
+        self.deleted_at = datetime.utcnow()
+    
+    @property
+    def is_deleted(self) -> bool:
+        """Check if message is deleted."""
+        return self.deleted_at is not None
+

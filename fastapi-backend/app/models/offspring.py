@@ -171,11 +171,8 @@ class Offspring(Base):
         cascade="all, delete-orphan"
     )
     
-    messages: Mapped[list["Message"]] = relationship(
-        "Message",
-        back_populates="offspring",
-        lazy="selectin"
-    )
+    # Note: Messages are now linked via context_type='offspring' and context_id
+    # No direct relationship needed as messages use generic context pattern
     
     @property
     def age(self) -> str:
@@ -202,11 +199,6 @@ class Offspring(Base):
     def favorites_count(self) -> int:
         """Count of pet seekers who have favorited this offspring."""
         return len(self.favorites)
-    
-    @property
-    def messages_count(self) -> int:
-        """Count of messages associated with this offspring."""
-        return len(self.messages)
     
     @property
     def primary_image(self):

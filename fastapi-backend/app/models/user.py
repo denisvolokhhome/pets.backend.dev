@@ -141,16 +141,16 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         back_populates="user",
         lazy="selectin"
     )
-    messages_received: Mapped[list["Message"]] = relationship(
-        "Message",
-        foreign_keys="Message.breeder_id",
-        back_populates="breeder",
-        lazy="selectin"
-    )
     messages_sent: Mapped[list["Message"]] = relationship(
         "Message",
-        foreign_keys="Message.pet_seeker_id",
-        back_populates="pet_seeker",
+        foreign_keys="Message.sender_id",
+        back_populates="sender",
+        lazy="selectin"
+    )
+    messages_received: Mapped[list["Message"]] = relationship(
+        "Message",
+        foreign_keys="Message.receiver_id",
+        back_populates="receiver",
         lazy="selectin"
     )
     offsprings: Mapped[list["Offspring"]] = relationship(

@@ -3,122 +3,99 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 class MessageCreate(BaseModel):
-    """Schema for creating a new message (anonymous user contact form)."""
-    breeder_id: UUID = Field(..., description="UUID of the breeder to contact")
-    sender_name: str = Field(..., min_length=2, max_length=255, description="Full name of the sender")
-    sender_email: EmailStr = Field(..., description="Email address of the sender")
-    message: Optional[str] = Field(None, max_length=2000, description="Optional message content")
-    offspring_id: Optional[UUID] = Field(None, description="Optional offspring ID for offspring-specific messages")
+    """Schema for creating a new message."""
+    receiver_id: UUID = Field(..., description="UUID of the message receiver")
+    content: str = Field(..., min_length=1, max_length=5000, description="Message content")
+    thread_id: Optional[UUID] = Field(None, description="Thread ID for conversation grouping")
+    context_type: Optional[str] = Field(None, max_length=50, description="Context type (e.g., 'offspring')")
+    context_id: Optional[UUID] = Field(None, description="Context entity ID")
     
-    @field_validator('sender_name')
+    @field_validator('content')
     @classmethod
-    def validate_sender_name(cls, v: str) -> str:
-        """Validate sender name is not empty or just whitespace."""
-        if not v or not v.strip():
-            raise ValueError("Sender name cannot be empty")
-        return v.strip()
-    
-    @field_validator('message')
-    @classmethod
-    def validate_message(cls, v: Optional[str]) -> Optional[str]:
+    def validate_content(cls, v: str) -> str:
         """Validate and clean message content."""
-        if v:
-            v = v.strip()
-            if len(v) == 0:
-                return None
-        return v
+        if not v or not v.strip():
+            raise ValueError("Message content cannot be empty")
+        return v.strip()
 
 
 class MessageResponse(BaseModel):
     """Schema for message response."""
     id: UUID
-    breeder_id: UUID
-    pet_seeker_id: Optional[UUID] = None
-    offspring_id: Optional[UUID] = None
-    thread_id: Optional[UUID] = None
-    sender_name: str
-    sender_email: str
-    message: Optional[str]
+    sender_id: UUID
+    receiver_id: UUID
+    thread_id: UUID
+    content: str
+    context_type: Optional[str] = None
+    context_id: Optional[UUID] = None
     is_read: bool
-    response_text: Optional[str]
-    responded_at: Optional[datetime]
+    read_at: Optional[datetime] = None
     created_at: datetime
-    updated_at: Optional[datetime]
-    is_linked_to_account: bool = False
+    updated_at: Optional[datetime] = None
+    
+    # Sender information (joined from User)
+    sender_name: Optional[str] = None
+    sender_email: Optional[str] = None
     
     model_config = ConfigDict(from_attributes=True)
-    
-    @classmethod
-    def model_validate(cls, obj, **kwargs):
-        """Override to compute is_linked_to_account field."""
-        if hasattr(obj, 'pet_seeker_id'):
-            # Create dict from object
-            data = {
-                'id': obj.id,
-                'breeder_id': obj.breeder_id,
-                'pet_seeker_id': obj.pet_seeker_id,
-                'offspring_id': getattr(obj, 'offspring_id', None),
-                'thread_id': getattr(obj, 'thread_id', None),
-                'sender_name': obj.sender_name,
-                'sender_email': obj.sender_email,
-                'message': obj.message,
-                'is_read': obj.is_read,
-                'response_text': obj.response_text,
-                'responded_at': obj.responded_at,
-                'created_at': obj.created_at,
-                'updated_at': obj.updated_at,
-                'is_linked_to_account': obj.pet_seeker_id is not None
-            }
-            return super().model_validate(data, **kwargs)
-        return super().model_validate(obj, **kwargs)
 
 
 class MessageListItem(BaseModel):
     """Schema for message list item (summary view)."""
     id: UUID
-    breeder_id: UUID
-    pet_seeker_id: Optional[UUID] = None
-    offspring_id: Optional[UUID] = None
-    thread_id: Optional[UUID] = None
-    sender_name: str
-    sender_email: str
-    message_preview: Optional[str]  # First 100 characters
+    sender_id: UUID
+    receiver_id: UUID
+    thread_id: UUID
+    content_preview: str  # First 100 characters
+    context_type: Optional[str] = None
+    context_id: Optional[UUID] = None
     is_read: bool
-    responded_at: Optional[datetime]
     created_at: datetime
+    
+    # Sender information
+    sender_name: Optional[str] = None
     
     model_config = ConfigDict(from_attributes=True)
 
 
-class MessageListResponse(BaseModel):
-    """Schema for paginated message list response."""
-    messages: list[MessageListItem]
-    total: int
+class ConversationResponse(BaseModel):
+    """Schema for conversation (thread) response."""
+    thread_id: UUID
+    participant_id: UUID  # The other participant
+    participant_name: str
+    participant_email: str
+    participant_is_breeder: bool
+    last_message: Optional[MessageListItem] = None
     unread_count: int
+    message_count: int
+    context_type: Optional[str] = None
+    context_id: Optional[UUID] = None
+    last_activity: datetime
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ConversationListResponse(BaseModel):
+    """Schema for paginated conversation list response."""
+    conversations: list[ConversationResponse]
+    total: int
+    unread_total: int
     limit: int
     offset: int
 
 
-class MessageUpdate(BaseModel):
-    """Schema for updating message (mark as read)."""
-    is_read: bool = Field(..., description="Read status")
+class MessageMarkReadRequest(BaseModel):
+    """Schema for marking message as read."""
+    message_ids: list[UUID] = Field(..., description="List of message IDs to mark as read")
 
 
-class MessageResponseCreate(BaseModel):
-    """Schema for breeder response to a message."""
-    response_text: str = Field(..., min_length=1, max_length=5000, description="Response text from breeder")
-    
-    @field_validator('response_text')
-    @classmethod
-    def validate_response_text(cls, v: str) -> str:
-        """Validate response text is not empty or just whitespace."""
-        if not v or not v.strip():
-            raise ValueError("Response text cannot be empty")
-        return v.strip()
+class UnreadCountResponse(BaseModel):
+    """Schema for unread message count response."""
+    unread_count: int
 
 
 class UnreadCountResponse(BaseModel):
@@ -129,11 +106,29 @@ class UnreadCountResponse(BaseModel):
 class MessageSendResponse(BaseModel):
     """Schema for successful message send response."""
     success: bool = True
-    message: str = "Your message has been sent to the breeder"
+    message: str = "Message sent successfully"
+
+
+class MessageUpdate(BaseModel):
+    """Schema for updating a message."""
+    is_read: Optional[bool] = None
+
+
+class MessageResponseCreate(BaseModel):
+    """Schema for creating a message response (deprecated - use MessageCreate instead)."""
+    response_text: str = Field(..., min_length=1, max_length=5000, description="Response text")
+    
+    @field_validator('response_text')
+    @classmethod
+    def validate_response_text(cls, v: str) -> str:
+        """Validate and clean response text."""
+        if not v or not v.strip():
+            raise ValueError("Response text cannot be empty")
+        return v.strip()
 
 
 class OffspringMessageCreate(BaseModel):
-    """Schema for creating a message about a specific offspring (authenticated users)."""
+    """Schema for creating a message about a specific offspring (deprecated - use MessageCreate with context)."""
     message: str = Field(..., min_length=1, max_length=2000, description="Message content")
     
     @field_validator('message')
@@ -146,7 +141,7 @@ class OffspringMessageCreate(BaseModel):
 
 
 class ThreadMessageResponse(BaseModel):
-    """Schema for messages in a thread."""
+    """Schema for messages in a thread (deprecated - use MessageResponse instead)."""
     id: UUID
     sender_id: UUID
     sender_name: str
@@ -159,12 +154,31 @@ class ThreadMessageResponse(BaseModel):
 
 
 class ThreadResponse(BaseModel):
-    """Schema for thread response with offspring context."""
+    """Schema for thread response with offspring context (deprecated - use ThreadMessagesResponse instead)."""
     thread_id: UUID
     offspring_id: UUID
     breeder_id: UUID
     pet_seeker_id: UUID
     messages: list[ThreadMessageResponse]
-    offspring: Optional[dict] = None  # Offspring details for context
+    offspring: Optional[dict] = None
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MessageListResponse(BaseModel):
+    """Schema for paginated message list response (deprecated - use ConversationListResponse)."""
+    messages: list[MessageListItem]
+    total: int
+    unread_count: int
+    limit: int
+    offset: int
+
+
+class ThreadMessagesResponse(BaseModel):
+    """Schema for thread messages response."""
+    thread_id: UUID
+    messages: list[MessageResponse]
+    participant: dict  # Other participant info
+    context: Optional[dict] = None  # Context entity info (e.g., offspring details)
     
     model_config = ConfigDict(from_attributes=True)
