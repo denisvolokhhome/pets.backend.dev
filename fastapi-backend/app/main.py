@@ -271,7 +271,7 @@ app.add_middleware(LoggingMiddleware)
 
 # Mount static files for image serving
 # Ensure storage directory exists before mounting
-storage_path = Path(settings.storage_path)
+storage_path = Path(settings.storage_path).parent  # Mount parent directory to serve both app/ and other subdirectories
 storage_path.mkdir(parents=True, exist_ok=True)
 
 app.mount(

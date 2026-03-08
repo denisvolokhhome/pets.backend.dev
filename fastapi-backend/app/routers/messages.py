@@ -141,6 +141,9 @@ async def list_messages(
         # Get sender info
         sender_name = msg.sender.name if msg.sender and msg.sender.name else msg.sender.email if msg.sender else "Unknown"
         
+        # Get receiver info
+        receiver_name = msg.receiver.name if msg.receiver and msg.receiver.name else msg.receiver.email if msg.receiver else "Unknown"
+        
         message_items.append(MessageListItem(
             id=msg.id,
             sender_id=msg.sender_id,
@@ -152,6 +155,7 @@ async def list_messages(
             is_read=msg.is_read,
             created_at=msg.created_at,
             sender_name=sender_name,
+            receiver_name=receiver_name,
         ))
     
     return MessageListResponse(
@@ -330,27 +334,26 @@ async def send_offspring_message(
     session: AsyncSession = Depends(get_async_session),
 ) -> Message:
     """
-    Send a message to a breeder about a specific offspring (authenticated users only).
+    Send a message about a specific offspring (authenticated users only).
     
     This endpoint creates a threaded conversation between a pet seeker and breeder
-    about a specific offspring. If this is the first message about this offspring
-    from this user, a new thread is created. Otherwise, the message is added to
-    the existing thread.
+    about a specific offspring.
     
     **Authentication Required:** Yes (logged-in users only)
     
     **Request Body:**
     ```json
     {
-        "message": "I'm interested in this puppy. Is it still available?"
+        "message": "I'm interested in this puppy. Is it still available?",
+        "receiver_id": "uuid-of-receiver",  // Required
+        "thread_id": "uuid-of-thread"  // Optional - if not provided, generates new thread
     }
     ```
     
     **Behavior:**
-    - Auto-generates thread_id for new conversations
-    - Links message to offspring via context fields
-    - Creates notification for breeder
-    - Associates message with authenticated user as sender
+    - If thread_id provided: uses it (continuing existing conversation)
+    - If thread_id not provided: generates new thread_id (starting new conversation)
+    - Creates notification for receiver
     
     **Returns:** Created message with thread_id
     """
@@ -365,23 +368,16 @@ async def send_offspring_message(
             detail="Offspring not found"
         )
     
-    # Check if there's an existing thread between this user and breeder for this offspring
-    existing_thread_query = select(Message).where(
-        Message.context_type == "offspring",
-        Message.context_id == offspring_id,
-        ((Message.sender_id == user.id) & (Message.receiver_id == offspring.user_id)) |
-        ((Message.sender_id == offspring.user_id) & (Message.receiver_id == user.id))
-    ).limit(1)
-    existing_thread_result = await session.execute(existing_thread_query)
-    existing_message = existing_thread_result.scalar_one_or_none()
+    # Get receiver_id from request or default to offspring owner
+    receiver_id = getattr(message_data, 'receiver_id', None) or offspring.user_id
     
-    # Use existing thread_id or generate new one
-    thread_id = existing_message.thread_id if existing_message else uuid.uuid4()
+    # Get thread_id from request or generate new one
+    thread_id = getattr(message_data, 'thread_id', None) or uuid.uuid4()
     
     # Create new message
     message = Message(
         sender_id=user.id,
-        receiver_id=offspring.user_id,
+        receiver_id=receiver_id,
         thread_id=thread_id,
         content=message_data.message,
         context_type="offspring",
@@ -393,17 +389,17 @@ async def send_offspring_message(
     await session.commit()
     await session.refresh(message)
     
-    # Create notification for breeder (only if they have it enabled)
+    # Create notification for receiver (only if they have it enabled)
     should_notify = await notification_preference_service.should_send_notification(
         db=session,
-        user_id=offspring.user_id,
+        user_id=receiver_id,
         notification_type="message_received"
     )
     
     if should_notify:
         sender_name = user.name if user.name else user.email
         notification_data = NotificationCreate(
-            user_id=offspring.user_id,
+            user_id=receiver_id,
             type="message_received",
             title="New message about offspring",
             message=f"{sender_name} sent you a message about {offspring.name or 'an offspring'}",
@@ -413,8 +409,8 @@ async def send_offspring_message(
         await notification_service.create_notification(session, notification_data)
     
     logger.info(
-        f"New offspring message created: {message.id} from user {user.id} "
-        f"to breeder {offspring.user_id} about offspring {offspring_id} in thread {thread_id}"
+        f"Message created: {message.id} from user {user.id} "
+        f"to user {receiver_id} about offspring {offspring_id} in thread {thread_id}"
     )
     
     return message
@@ -527,11 +523,17 @@ async def get_thread_messages(
         sender_name = msg.sender.name if msg.sender and msg.sender.name else msg.sender.email if msg.sender else "Unknown"
         sender_is_breeder = msg.sender.is_breeder if msg.sender else False
         
+        # Get profile image URL
+        sender_profile_image_url = None
+        if msg.sender and msg.sender.profile_image_path:
+            sender_profile_image_url = f"/storage/{msg.sender.profile_image_path}"
+        
         thread_messages.append(ThreadMessageResponse(
             id=msg.id,
             sender_id=msg.sender_id,
             sender_name=sender_name,
             sender_is_breeder=sender_is_breeder,
+            sender_profile_image_url=sender_profile_image_url,
             message=msg.content,
             created_at=msg.created_at,
             is_read=msg.is_read
@@ -547,3 +549,102 @@ async def get_thread_messages(
         messages=thread_messages,
         offspring=offspring_context
     )
+
+
+@router.get("/threads/offspring/{offspring_id}/check", response_model=dict)
+async def check_offspring_thread(
+    offspring_id: UUID,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    """
+    Check if there's an existing thread for an offspring between current user and breeder.
+    
+    This endpoint helps avoid creating duplicate threads when a user wants to contact
+    a breeder about an offspring they've already messaged about.
+    
+    **Authentication Required:** Yes (logged-in users only)
+    
+    **Returns:** 
+    - thread_id: UUID of existing thread if found, null otherwise
+    - has_thread: boolean indicating if thread exists
+    """
+    # Verify offspring exists
+    offspring_query = select(Offspring).where(Offspring.id == offspring_id)
+    offspring_result = await session.execute(offspring_query)
+    offspring = offspring_result.scalar_one_or_none()
+    
+    if offspring is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Offspring not found"
+        )
+    
+    # Check if there's an existing thread between this user and breeder for this offspring
+    existing_thread_query = select(Message).where(
+        Message.context_type == "offspring",
+        Message.context_id == offspring_id,
+        ((Message.sender_id == user.id) & (Message.receiver_id == offspring.user_id)) |
+        ((Message.sender_id == offspring.user_id) & (Message.receiver_id == user.id))
+    ).limit(1)
+    existing_thread_result = await session.execute(existing_thread_query)
+    existing_message = existing_thread_result.scalar_one_or_none()
+    
+    if existing_message:
+        return {
+            "has_thread": True,
+            "thread_id": str(existing_message.thread_id)
+        }
+    else:
+        return {
+            "has_thread": False,
+            "thread_id": None
+        }
+
+
+
+@router.get("/threads/offspring/{offspring_id}/count", response_model=dict)
+async def count_offspring_threads(
+    offspring_id: UUID,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    """
+    Count the number of unique conversation threads for a specific offspring.
+    
+    This endpoint counts distinct threads (unique conversations with different users)
+    rather than individual messages. Useful for showing how many people have inquired
+    about a specific offspring.
+    
+    **Authentication Required:** Yes (breeder only)
+    
+    **Returns:** 
+    - offspring_id: UUID of the offspring
+    - thread_count: Number of unique conversation threads
+    """
+    # Verify offspring exists and belongs to user
+    offspring_query = select(Offspring).where(
+        Offspring.id == offspring_id,
+        Offspring.user_id == user.id
+    )
+    offspring_result = await session.execute(offspring_query)
+    offspring = offspring_result.scalar_one_or_none()
+    
+    if offspring is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Offspring not found or does not belong to you"
+        )
+    
+    # Count distinct thread_ids for this offspring
+    thread_count_query = select(func.count(func.distinct(Message.thread_id))).where(
+        Message.context_type == "offspring",
+        Message.context_id == offspring_id
+    )
+    thread_count_result = await session.execute(thread_count_query)
+    thread_count = thread_count_result.scalar()
+    
+    return {
+        "offspring_id": str(offspring_id),
+        "thread_count": thread_count or 0
+    }

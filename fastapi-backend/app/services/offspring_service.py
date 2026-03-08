@@ -433,6 +433,48 @@ class OffspringService:
         
         return count
     
+    async def get_thread_counts_for_offspring(
+        self,
+        db: AsyncSession,
+        offspring_ids: List[uuid.UUID]
+    ) -> dict[uuid.UUID, int]:
+        """
+        Get thread counts for multiple offspring at once.
+        
+        Returns a dictionary mapping offspring_id to thread count.
+        This is more efficient than querying each offspring individually.
+        
+        Args:
+            db: Database session
+            offspring_ids: List of offspring IDs to get thread counts for
+            
+        Returns:
+            Dictionary mapping offspring_id to thread count
+        """
+        from app.models.message import Message
+        
+        if not offspring_ids:
+            return {}
+        
+        # Query to count distinct threads per offspring
+        query = select(
+            Message.context_id,
+            func.count(func.distinct(Message.thread_id)).label('thread_count')
+        ).where(
+            Message.context_type == "offspring",
+            Message.context_id.in_(offspring_ids)
+        ).group_by(Message.context_id)
+        
+        result = await db.execute(query)
+        rows = result.all()
+        
+        # Build dictionary with results, defaulting to 0 for offspring with no threads
+        thread_counts = {offspring_id: 0 for offspring_id in offspring_ids}
+        for row in rows:
+            thread_counts[row.context_id] = row.thread_count
+        
+        return thread_counts
+    
     async def get_public_offspring(
         self,
         db: AsyncSession,

@@ -56,8 +56,9 @@ class MessageListItem(BaseModel):
     is_read: bool
     created_at: datetime
     
-    # Sender information
+    # Sender and receiver information
     sender_name: Optional[str] = None
+    receiver_name: Optional[str] = None
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -128,8 +129,10 @@ class MessageResponseCreate(BaseModel):
 
 
 class OffspringMessageCreate(BaseModel):
-    """Schema for creating a message about a specific offspring (deprecated - use MessageCreate with context)."""
+    """Schema for creating a message about a specific offspring."""
     message: str = Field(..., min_length=1, max_length=2000, description="Message content")
+    receiver_id: Optional[UUID] = Field(None, description="Receiver user ID (defaults to offspring owner)")
+    thread_id: Optional[UUID] = Field(None, description="Thread ID (generates new if not provided)")
     
     @field_validator('message')
     @classmethod
@@ -146,6 +149,7 @@ class ThreadMessageResponse(BaseModel):
     sender_id: UUID
     sender_name: str
     sender_is_breeder: bool
+    sender_profile_image_url: Optional[str] = None
     message: str
     created_at: datetime
     is_read: bool

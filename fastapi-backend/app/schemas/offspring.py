@@ -85,6 +85,7 @@ class OffspringRead(OffspringBase):
     # Computed fields
     age: str
     favorites_count: int
+    thread_count: int = 0  # Number of unique conversation threads about this offspring
     is_favorited: bool = False  # Whether current user has favorited this offspring
     
     # Relationships (will be populated by service layer)

@@ -128,10 +128,19 @@ async def list_offsprings(
         breed_id=breed_id
     )
     
+    # Get thread counts for all offsprings in one query
+    offspring_ids = [offspring.id for offspring in offsprings]
+    thread_counts = await offspring_service.get_thread_counts_for_offspring(
+        db=session,
+        offspring_ids=offspring_ids
+    )
+    
     # Build responses with computed fields
     responses = []
     for offspring in offsprings:
         response = await _build_offspring_response(session, offspring, user_id=user.id)
+        # Add thread count
+        response["thread_count"] = thread_counts.get(offspring.id, 0)
         responses.append(response)
     
     return {
@@ -585,7 +594,8 @@ async def _build_offspring_response(
             "updated_at": mother.updated_at,
             "location_name": None
         } if mother else None,
-        "is_favorited": is_favorited  # Always include, defaults to False for guests
+        "is_favorited": is_favorited,  # Always include, defaults to False for guests
+        "thread_count": 0  # Will be populated by caller if needed
     }
     
     return response
