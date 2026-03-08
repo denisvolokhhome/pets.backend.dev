@@ -455,7 +455,8 @@ async def _build_offspring_response(
     
     # Use already-loaded relationships instead of making new queries
     favorites_count = len(offspring.favorites) if offspring.favorites else 0
-    messages_count = len(offspring.messages) if offspring.messages else 0
+    # Note: messages_count removed - messages now use generic context pattern
+    # To get message count, query Message table with context_type='offspring' and context_id=offspring.id
     images = offspring.images if offspring.images else []
     
     # Get primary image
@@ -489,7 +490,6 @@ async def _build_offspring_response(
         "updated_at": offspring.updated_at,
         "age": age,
         "favorites_count": favorites_count,
-        "messages_count": messages_count,
         "breeding": {
             "id": breeding.id,
             "description": breeding.description,

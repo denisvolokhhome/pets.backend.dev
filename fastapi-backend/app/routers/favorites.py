@@ -69,8 +69,7 @@ async def add_favorite(
             selectinload(OffspringFavorite.offspring).selectinload(Offspring.breeding),
             selectinload(OffspringFavorite.offspring).selectinload(Offspring.father),
             selectinload(OffspringFavorite.offspring).selectinload(Offspring.mother),
-            selectinload(OffspringFavorite.offspring).selectinload(Offspring.favorites),
-            selectinload(OffspringFavorite.offspring).selectinload(Offspring.messages),
+            selectinload(OffspringFavorite.offspring).selectinload(Offspring.favorites)
         )
     )
     

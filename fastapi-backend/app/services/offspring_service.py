@@ -213,8 +213,7 @@ class OffspringService:
             selectinload(Offspring.mother),
             selectinload(Offspring.breeding),
             selectinload(Offspring.images),
-            selectinload(Offspring.favorites),
-            selectinload(Offspring.messages)
+            selectinload(Offspring.favorites)
         )
         
         if status_filter:
@@ -369,8 +368,7 @@ class OffspringService:
             selectinload(Offspring.mother),
             selectinload(Offspring.breeding),
             selectinload(Offspring.images),
-            selectinload(Offspring.favorites),
-            selectinload(Offspring.messages)
+            selectinload(Offspring.favorites)
         )
         
         if breed_id:
@@ -468,8 +466,7 @@ class OffspringService:
             selectinload(Offspring.mother),
             selectinload(Offspring.breeding),
             selectinload(Offspring.images),
-            selectinload(Offspring.favorites),
-            selectinload(Offspring.messages)
+            selectinload(Offspring.favorites)
         )
         
         result = await db.execute(query)
