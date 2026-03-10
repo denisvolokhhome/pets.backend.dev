@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, date
 from typing import Optional, List
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, computed_field
 
 from app.schemas.pet_image import PetImageRead
 
@@ -113,5 +113,13 @@ class PetRead(PetBase):
     created_at: datetime
     updated_at: Optional[datetime] = None
     location_name: Optional[str] = None
+    
+    @computed_field
+    @property
+    def image_url(self) -> Optional[str]:
+        """Compute the full image URL from the legacy image_path field."""
+        if not self.image_path:
+            return None
+        return f"/storage/{self.image_path}"
     
     model_config = ConfigDict(from_attributes=True)

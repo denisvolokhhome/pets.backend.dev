@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 class PetImageBase(BaseModel):
@@ -25,9 +25,15 @@ class PetImageRead(PetImageBase):
     pet_id: uuid.UUID
     created_at: datetime
     updated_at: Optional[datetime] = None
+    
+    @computed_field
+    @property
+    def image_url(self) -> str:
+        """Compute the full image URL from the image path."""
+        # Format: /storage/{image_path}
+        return f"/storage/{self.image_path}"
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PetImageUpdate(BaseModel):
