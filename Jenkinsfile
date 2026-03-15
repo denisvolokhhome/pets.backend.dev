@@ -58,17 +58,14 @@ pipeline {
                     remote.password = VM_CREDS_PSW
                     remote.allowAnyHosts = true
 
-                    echo "Logging in to Harbor on dev server..."
-                    sshCommand remote: remote, command: 'echo "' + HARBOR_PASS + '" | docker login 192.168.68.110:80 -u "' + HARBOR_USER + '" --password-stdin'
+                    echo "Pulling latest backend image on dev server..."
+                    sshCommand remote: remote, command: 'cd /home/breedly/breedly-app && docker compose pull backend migration seed'
 
-                    echo "Pulling latest backend image..."
-                    sshCommand remote: remote, command: 'docker compose -f /home/breedly/breedly-app/docker-compose.yml pull backend migration seed'
-
-                    echo "Restarting backend services..."
-                    sshCommand remote: remote, command: 'docker compose -f /home/breedly/breedly-app/docker-compose.yml up -d backend migration seed'
+                    echo "Restarting backend services (includes migration + seed)..."
+                    sshCommand remote: remote, command: 'cd /home/breedly/breedly-app && docker compose up -d'
 
                     echo "Waiting for services to stabilize..."
-                    sshCommand remote: remote, command: 'sleep 10 && docker compose -f /home/breedly/breedly-app/docker-compose.yml ps'
+                    sshCommand remote: remote, command: 'sleep 15 && cd /home/breedly/breedly-app && docker compose ps'
                 }
                 echo "Deployment to dev server complete"
             }
