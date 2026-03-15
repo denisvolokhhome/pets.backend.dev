@@ -4,13 +4,14 @@ pipeline {
     environment {
         HARBOR_REGISTRY = '192.168.68.110:80'
         IMAGE_NAME = 'breedly/breedly-backend'
-        HARBOR_CREDS = credentials('harbor-credentials')
+        HARBOR_USER = credentials('harbor-username')
+        HARBOR_PASS = credentials('harbor-password')
     }
 
     stages {
         stage('Login to Harbor') {
             steps {
-                sh 'echo $HARBOR_CREDS_PSW | docker login $HARBOR_REGISTRY -u $HARBOR_CREDS_USR --password-stdin'
+                sh 'echo "$HARBOR_PASS" | docker login $HARBOR_REGISTRY -u "$HARBOR_USER" --password-stdin'
             }
         }
 
