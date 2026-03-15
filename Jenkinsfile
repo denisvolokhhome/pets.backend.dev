@@ -58,10 +58,14 @@ pipeline {
                     remote.password = VM_CREDS_PSW
                     remote.allowAnyHosts = true
 
+                    echo "Copying docker-compose.yml to dev server..."
+                    sshCommand remote: remote, command: 'mkdir -p /home/breedly/breedly-app'
+                    sshPut remote: remote, from: 'delivery/docker-compose.yml', into: '/home/breedly/breedly-app/'
+
                     echo "Pulling latest backend image on dev server..."
                     sshCommand remote: remote, command: 'cd /home/breedly/breedly-app && docker compose pull backend migration seed'
 
-                    echo "Restarting backend services (includes migration + seed)..."
+                    echo "Restarting services (includes migration + seed)..."
                     sshCommand remote: remote, command: 'cd /home/breedly/breedly-app && docker compose up -d'
 
                     echo "Waiting for services to stabilize..."

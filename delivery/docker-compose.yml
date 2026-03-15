@@ -1,0 +1,166 @@
+services:
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: breedly-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - breedly-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # PostgreSQL Database with PostGIS
+  postgres:
+    image: postgis/postgis:15-3.3-alpine
+    container_name: breedly-postgres
+    environment:
+      POSTGRES_DB: breedly_db
+      POSTGRES_USER: breedly_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - breedly-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U breedly_user -d breedly_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Database Migration Service (runs once on startup)
+  migration:
+    image: 192.168.68.110:80/breedly/breedly-backend:latest
+    container_name: breedly-migration
+    command: alembic upgrade head
+    environment:
+      DATABASE_URL: postgresql+asyncpg://breedly_user:${POSTGRES_PASSWORD}@postgres:5432/breedly_db
+      SECRET_KEY: ${SECRET_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - breedly-network
+    restart: "no"
+
+  # Database Seed Service (runs once after migration)
+  seed:
+    image: 192.168.68.110:80/breedly/breedly-backend:latest
+    container_name: breedly-seed
+    command: python db/seed_breeds.py
+    environment:
+      DATABASE_URL: postgresql+asyncpg://breedly_user:${POSTGRES_PASSWORD}@postgres:5432/breedly_db
+      SECRET_KEY: ${SECRET_KEY}
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+    networks:
+      - breedly-network
+    restart: "no"
+
+  # FastAPI Backend
+  backend:
+    image: 192.168.68.110:80/breedly/breedly-backend:latest
+    container_name: breedly-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Database
+      DATABASE_URL: postgresql+asyncpg://breedly_user:${POSTGRES_PASSWORD}@postgres:5432/breedly_db
+      
+      # Redis Cache
+      REDIS_URL: redis://redis:6379/0
+      
+      # Security
+      SECRET_KEY: ${SECRET_KEY}
+      
+      # File Storage
+      STORAGE_PATH: /app/storage
+      STORAGE_URL: /storage
+      
+      # OAuth
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_OAUTH_REDIRECT_URI: ${GOOGLE_OAUTH_REDIRECT_URI}
+      
+      # Frontend URL
+      FRONTEND_URL: https://dev.breedly.us
+      
+      # Environment
+      DEBUG: false
+      TESTING: false
+      
+      # Server Configuration
+      HOST: 0.0.0.0
+      PORT: 8000
+      
+      # Allowed Origins
+      ALLOWED_ORIGINS: https://breedly.us,https://dev.breedly.us,https://api-dev.breedly.us
+      
+      # Image Upload Configuration
+      MAX_IMAGE_SIZE_MB: 10
+      ALLOWED_IMAGE_TYPES: image/jpeg,image/png,image/webp
+      IMAGE_MAX_WIDTH: 1920
+      IMAGE_MAX_HEIGHT: 1920
+      IMAGE_QUALITY: 85
+      
+      # Geocoding Configuration
+      NOMINATIM_URL: https://nominatim.openstreetmap.org
+      GEOCODING_USER_AGENT: BreedyPetSearch/1.0
+      GEOCODING_RATE_LIMIT: 1.0
+      GEOCODING_CACHE_TTL: 86400
+    volumes:
+      - backend_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+    networks:
+      - breedly-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # Angular Frontend
+  frontend:
+    image: 192.168.68.110:80/breedly/breedly-frontend:latest
+    container_name: breedly-frontend
+    ports:
+      - "4200:80"
+    depends_on:
+      - backend
+    networks:
+      - breedly-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  backend_storage:
+    driver: local
+
+networks:
+  breedly-network:
+    driver: bridge
