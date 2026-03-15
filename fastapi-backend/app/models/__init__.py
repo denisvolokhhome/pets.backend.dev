@@ -12,6 +12,7 @@ from app.models.offspring import Offspring
 from app.models.offspring_image import OffspringImage
 from app.models.offspring_favorite import OffspringFavorite
 from app.models.notification import Notification
+from app.models.notification_preference import NotificationPreference
 
 __all__ = [
     "User",
@@ -28,4 +29,5 @@ __all__ = [
     "OffspringImage",
     "OffspringFavorite",
     "Notification",
+    "NotificationPreference",
 ]

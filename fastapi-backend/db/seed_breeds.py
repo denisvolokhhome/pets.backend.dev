@@ -21,10 +21,12 @@ sys.path.insert(0, str(ROOT))
 from dotenv import load_dotenv
 load_dotenv(ROOT / ".env")
 
-from sqlalchemy import select
+from sqlalchemy import select, Table, Column, Integer, String, MetaData
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
 from app.config import Settings
+
+# Import Breed model directly to avoid circular import issues
 from app.models.breed import Breed
 
 
@@ -44,9 +46,16 @@ async def seed_breeds():
         print(f"Error: CSV file not found at {csv_path}")
         sys.exit(1)
 
-    print(f"Reading breeds from {csv_path}\n")
-
     async with async_session_maker() as session:
+        # Check if breeds already exist
+        result = await session.execute(select(Breed).limit(1))
+        if result.scalar_one_or_none():
+            print("Breeds already exist in database, skipping seed")
+            print("To re-seed, manually delete breeds first")
+            return
+        
+        print(f"Reading breeds from {csv_path}\n")
+        
         added = 0
         skipped = 0
 
@@ -64,14 +73,6 @@ async def seed_breeds():
 
                 if kind not in ("dog", "cat"):
                     print(f"Row {row_idx}: Skipping '{name}' – invalid kind '{kind}'")
-                    skipped += 1
-                    continue
-
-                result = await session.execute(
-                    select(Breed).where(Breed.name == name, Breed.kind == kind)
-                )
-                if result.scalar_one_or_none():
-                    print(f"Row {row_idx}: '{name}' ({kind}) already exists, skipping")
                     skipped += 1
                     continue
 
