@@ -10,7 +10,7 @@ pipeline {
     stages {
         stage('Login to Harbor') {
             steps {
-                sh "docker login ${HARBOR_REGISTRY} -u '${HARBOR_CREDS_USR}' -p '${HARBOR_CREDS_PSW}'"
+                sh 'echo $HARBOR_CREDS_PSW | docker login $HARBOR_REGISTRY -u $HARBOR_CREDS_USR --password-stdin'
             }
         }
 
