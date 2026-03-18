@@ -62,6 +62,9 @@ pipeline {
                     sshCommand remote: remote, command: 'mkdir -p /home/breedly/breedly-app'
                     sshPut remote: remote, from: 'delivery/docker-compose.yml', into: '/home/breedly/breedly-app/'
 
+                    echo "Logging into Harbor on dev server..."
+                    sshCommand remote: remote, command: "echo '${HARBOR_PASS}' | docker login ${HARBOR_REGISTRY} -u '${HARBOR_USER}' --password-stdin"
+
                     echo "Pulling latest backend image on dev server..."
                     sshCommand remote: remote, command: 'cd /home/breedly/breedly-app && docker compose pull backend migration seed'
 
