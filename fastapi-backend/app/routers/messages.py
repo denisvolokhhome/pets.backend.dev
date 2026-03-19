@@ -485,7 +485,7 @@ async def get_thread_messages(
                 "age": offspring.age,
                 "status": offspring.status,
                 "price": float(offspring.price) if offspring.price else None,
-                "primary_image_url": offspring.primary_image.image_url if offspring.primary_image else None
+                "primary_image_url": offspring.primary_image.image_path if offspring.primary_image else None
             }
     
     # Determine the other participant (breeder/pet_seeker)
