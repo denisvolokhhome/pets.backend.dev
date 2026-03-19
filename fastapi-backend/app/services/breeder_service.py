@@ -18,7 +18,8 @@ class BreederService:
         latitude: float,
         longitude: float,
         radius_miles: float,
-        breed_id: Optional[int] = None
+        breed_id: Optional[int] = None,
+        animal_kind: Optional[str] = None
     ) -> List[BreederSearchResult]:
         """
         Search for breeding locations within radius using PostGIS.
@@ -102,6 +103,10 @@ class BreederService:
         if breed_id:
             query = query.where(Pet.breed_id == breed_id)
         
+        # Filter by animal kind if specified
+        if animal_kind:
+            query = query.join(Breed, Pet.breed_id == Breed.id).where(Breed.kind == animal_kind)
+        
         # Group by location to avoid duplicates (one row per location)
         query = query.group_by(
             Location.id,
@@ -127,6 +132,7 @@ class BreederService:
                 select(
                     Breed.id.label('breed_id'),
                     Breed.name.label('breed_name'),
+                    Breed.kind.label('breed_kind'),
                     func.count(Pet.id).label('pet_count')
                 )
                 .join(Pet, Pet.breed_id == Breed.id)
@@ -135,7 +141,7 @@ class BreederService:
                     Pet.is_deleted == False,
                     Pet.breed_id.isnot(None)
                 )
-                .group_by(Breed.id, Breed.name)
+                .group_by(Breed.id, Breed.name, Breed.kind)
             )
             
             # If breed filter is specified, only include that breed
@@ -157,6 +163,7 @@ class BreederService:
                     BreedInfo(
                         breed_id=b.breed_id,
                         breed_name=b.breed_name,
+                        breed_kind=b.breed_kind,
                         pet_count=b.pet_count
                     ) for b in available_breeds
                 ],

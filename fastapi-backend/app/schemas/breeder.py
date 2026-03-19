@@ -9,6 +9,7 @@ class BreedInfo(BaseModel):
     
     breed_id: int = Field(..., description="Unique identifier for the breed")
     breed_name: str = Field(..., description="Name of the breed")
+    breed_kind: str = Field(..., description="Animal kind (dog, cat, cow, horse)")
     pet_count: int = Field(..., ge=0, description="Number of pets of this breed at this location")
     
     class Config:
@@ -17,6 +18,7 @@ class BreedInfo(BaseModel):
             "example": {
                 "breed_id": 1,
                 "breed_name": "Golden Retriever",
+                "breed_kind": "dog",
                 "pet_count": 3
             }
         }
