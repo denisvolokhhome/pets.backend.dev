@@ -11,7 +11,7 @@ import uuid
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
@@ -479,3 +479,126 @@ async def delete_pet_image(
     await session.refresh(pet)
     
     return pet
+
+# ─── Pet Documents ───────────────────────────────────────────────────────────
+
+
+@router.get("/{pet_id}/documents", response_model=list)
+async def list_pet_documents(
+    pet_id: uuid.UUID,
+    user: User = Depends(require_breeder),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """List all documents for a pet."""
+    from app.models.document import Document
+
+    # Verify pet ownership
+    pet_query = select(Pet).where(Pet.id == pet_id, Pet.user_id == user.id)
+    pet_result = await session.execute(pet_query)
+    if pet_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Pet not found")
+
+    query = select(Document).where(
+        Document.entity_type == "pet",
+        Document.entity_id == pet_id,
+    ).order_by(Document.created_at)
+    result = await session.execute(query)
+    docs = result.scalars().all()
+
+    return [
+        {
+            "id": doc.id,
+            "file_name": doc.file_name,
+            "file_type": doc.file_type,
+            "file_size": doc.file_size,
+            "file_url": f"/storage/{doc.file_path}" if not doc.file_path.startswith("/") else f"/storage{doc.file_path}",
+            "created_at": doc.created_at.isoformat(),
+        }
+        for doc in docs
+    ]
+
+
+@router.post("/{pet_id}/documents", status_code=status.HTTP_201_CREATED)
+async def upload_pet_document(
+    pet_id: uuid.UUID,
+    file: UploadFile = File(...),
+    user: User = Depends(require_breeder),
+    session: AsyncSession = Depends(get_async_session),
+    file_service: FileService = Depends(get_file_service),
+):
+    """Upload a document (PDF or image) for a pet. Max 10 documents per pet."""
+    from app.models.document import Document
+
+    # Verify pet ownership
+    pet_query = select(Pet).where(Pet.id == pet_id, Pet.user_id == user.id)
+    pet_result = await session.execute(pet_query)
+    if pet_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Pet not found")
+
+    # Check document count
+    count_query = select(func.count()).where(
+        Document.entity_type == "pet",
+        Document.entity_id == pet_id,
+    )
+    count_result = await session.execute(count_query)
+    if count_result.scalar() >= 10:
+        raise HTTPException(status_code=400, detail="Maximum of 10 documents per pet")
+
+    try:
+        file_path, file_name, file_type, file_size = await file_service.save_document(file, pet_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    doc = Document(
+        entity_type="pet",
+        entity_id=pet_id,
+        file_path=file_path,
+        file_name=file_name,
+        file_type=file_type,
+        file_size=file_size,
+    )
+    session.add(doc)
+    await session.commit()
+    await session.refresh(doc)
+
+    return {
+        "id": doc.id,
+        "file_name": doc.file_name,
+        "file_type": doc.file_type,
+        "file_size": doc.file_size,
+        "file_url": f"/storage/{doc.file_path}" if not doc.file_path.startswith("/") else f"/storage{doc.file_path}",
+        "created_at": doc.created_at.isoformat(),
+    }
+
+
+@router.delete("/{pet_id}/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_pet_document(
+    pet_id: uuid.UUID,
+    document_id: int,
+    user: User = Depends(require_breeder),
+    session: AsyncSession = Depends(get_async_session),
+    file_service: FileService = Depends(get_file_service),
+):
+    """Delete a document from a pet."""
+    from app.models.document import Document
+
+    # Verify pet ownership
+    pet_query = select(Pet).where(Pet.id == pet_id, Pet.user_id == user.id)
+    pet_result = await session.execute(pet_query)
+    if pet_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Pet not found")
+
+    query = select(Document).where(
+        Document.id == document_id,
+        Document.entity_type == "pet",
+        Document.entity_id == pet_id,
+    )
+    result = await session.execute(query)
+    doc = result.scalar_one_or_none()
+
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    await file_service.delete_document(doc.file_path)
+    await session.delete(doc)
+    await session.commit()

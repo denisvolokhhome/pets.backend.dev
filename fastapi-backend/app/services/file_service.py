@@ -245,3 +245,50 @@ class FileService:
             raise FileNotFoundError(f"Profile image file not found: {image_path}")
 
         file_path.unlink()
+    ALLOWED_DOCUMENT_TYPES = {
+        "application/pdf",
+        "image/jpeg", "image/png", "image/gif", "image/webp",
+    }
+    MAX_DOCUMENT_SIZE = 10 * 1024 * 1024  # 10MB
+
+    async def save_document(
+        self,
+        file: UploadFile,
+        pet_id: uuid.UUID,
+    ) -> Tuple[str, str, str, int]:
+        """
+        Save uploaded document (PDF or image) and return metadata.
+
+        Returns:
+            Tuple of (relative_path, original_filename, content_type, file_size)
+        """
+        if file.content_type not in self.ALLOWED_DOCUMENT_TYPES:
+            raise ValueError(
+                f"Invalid file type. Allowed: PDF, JPEG, PNG, GIF, WebP"
+            )
+
+        contents = await file.read()
+
+        if len(contents) > self.MAX_DOCUMENT_SIZE:
+            size_mb = len(contents) / (1024 * 1024)
+            raise ValueError(f"File size ({size_mb:.1f}MB) exceeds 10MB limit")
+
+        ext = Path(file.filename).suffix if file.filename else ".pdf"
+        if not ext:
+            ext = ".pdf"
+        filename = f"doc_{pet_id}_{uuid.uuid4()}{ext}"
+        file_path = self.storage_path / filename
+
+        with open(file_path, "wb") as f:
+            f.write(contents)
+
+        relative_path = str(file_path.relative_to(self.storage_path.parent))
+        original_filename = file.filename or filename
+
+        return relative_path, original_filename, file.content_type, len(contents)
+
+    async def delete_document(self, file_path: str) -> None:
+        """Delete a document file from storage."""
+        full_path = self.storage_path.parent / file_path
+        if full_path.exists():
+            full_path.unlink()

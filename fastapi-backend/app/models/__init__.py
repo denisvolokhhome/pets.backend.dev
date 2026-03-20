@@ -2,6 +2,7 @@
 from app.models.user import User
 from app.models.pet import Pet
 from app.models.pet_image import PetImage
+from app.models.document import Document
 from app.models.breed import Breed, BreedColour
 from app.models.breeding import Breeding
 from app.models.breeding_pet import BreedingPet
@@ -18,6 +19,7 @@ __all__ = [
     "User",
     "Pet",
     "PetImage",
+    "Document",
     "Breed",
     "BreedColour",
     "Breeding",
