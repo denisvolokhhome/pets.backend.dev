@@ -134,9 +134,22 @@ async def list_messages(
     message_items = []
     for msg in messages:
         # Create preview (first 100 characters)
-        content_preview = msg.content[:100] if msg.content else ""
-        if msg.content and len(msg.content) > 100:
-            content_preview += "..."
+        # Check if this is a location share message
+        content_preview = ""
+        if msg.content:
+            try:
+                import json
+                parsed = json.loads(msg.content)
+                if isinstance(parsed, dict) and parsed.get("__type") == "location":
+                    content_preview = "📍 Shared Location"
+                else:
+                    content_preview = msg.content[:100]
+                    if len(msg.content) > 100:
+                        content_preview += "..."
+            except (json.JSONDecodeError, TypeError):
+                content_preview = msg.content[:100]
+                if len(msg.content) > 100:
+                    content_preview += "..."
         
         # Get sender info
         sender_name = msg.sender.name if msg.sender and msg.sender.name else msg.sender.email if msg.sender else "Unknown"
@@ -648,3 +661,135 @@ async def count_offspring_threads(
         "offspring_id": str(offspring_id),
         "thread_count": thread_count or 0
     }
+@router.post("/threads/{thread_id}/share-location", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
+async def share_location_in_thread(
+    thread_id: UUID,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> Message:
+    """
+    Share breeder's location as a special location card message in a thread.
+
+    Only breeders can share their location. Resolves the most relevant location:
+    1. If thread is about an offspring, use the offspring's parent pet location
+    2. Fall back to breeder's first published user location
+    """
+    if not user.is_breeder:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only breeders can share their location"
+        )
+
+    # Verify user is a participant in this thread
+    thread_query = select(Message).where(
+        Message.thread_id == thread_id,
+        (Message.sender_id == user.id) | (Message.receiver_id == user.id)
+    ).limit(1)
+    thread_result = await session.execute(thread_query)
+    thread_msg = thread_result.scalar_one_or_none()
+
+    if thread_msg is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thread not found or access denied"
+        )
+
+    # Get the other participant as receiver
+    if thread_msg.sender_id == user.id:
+        receiver_id = thread_msg.receiver_id
+    else:
+        receiver_id = thread_msg.sender_id
+
+    # Resolve the most relevant location
+    from app.models.location import Location
+    from app.models.pet import Pet
+    import json
+
+    location = None
+
+    # 1. If thread is about an offspring, try to get location from parent pets
+    if thread_msg.context_type == "offspring" and thread_msg.context_id:
+        offspring_query = select(Offspring).where(Offspring.id == thread_msg.context_id)
+        offspring_result = await session.execute(offspring_query)
+        offspring = offspring_result.scalar_one_or_none()
+
+        if offspring:
+            # Try mother's location first, then father's
+            for parent_id in [offspring.mother_id, offspring.father_id]:
+                if parent_id and not location:
+                    pet_query = select(Pet).where(Pet.id == parent_id)
+                    pet_result = await session.execute(pet_query)
+                    pet = pet_result.scalar_one_or_none()
+                    if pet and pet.location_id:
+                        loc_query = select(Location).where(
+                            Location.id == pet.location_id,
+                            Location.is_published == True
+                        )
+                        loc_result = await session.execute(loc_query)
+                        location = loc_result.scalar_one_or_none()
+
+    # 2. Fall back to breeder's primary published user location
+    if location is None:
+        location_query = select(Location).where(
+            Location.user_id == user.id,
+            Location.is_published == True,
+            Location.location_type == "user"
+        ).limit(1)
+        location_result = await session.execute(location_query)
+        location = location_result.scalar_one_or_none()
+
+    if location is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No published location found. Please add a location in your settings first."
+        )
+
+    location_data = {
+        "__type": "location",
+        "name": location.name or user.breedery_name or user.name or "Breeder Location",
+        "address1": location.address1,
+        "address2": location.address2,
+        "city": location.city,
+        "state": location.state,
+        "zipcode": location.zipcode,
+        "country": location.country,
+        "latitude": location.latitude,
+        "longitude": location.longitude,
+    }
+
+    message = Message(
+        sender_id=user.id,
+        receiver_id=receiver_id,
+        thread_id=thread_id,
+        content=json.dumps(location_data),
+        context_type=thread_msg.context_type,
+        context_id=thread_msg.context_id,
+        is_read=False,
+    )
+
+    session.add(message)
+    await session.commit()
+    await session.refresh(message)
+
+    # Create notification
+    should_notify = await notification_preference_service.should_send_notification(
+        db=session,
+        user_id=receiver_id,
+        notification_type="message_received"
+    )
+
+    if should_notify:
+        sender_name = user.name if user.name else user.email
+        notification_data = NotificationCreate(
+            user_id=receiver_id,
+            type="message_received",
+            title="Location shared",
+            message=f"{sender_name} shared their location with you",
+            related_id=message.id,
+            related_type="message"
+        )
+        await notification_service.create_notification(session, notification_data)
+
+    logger.info(f"Breeder {user.id} shared location in thread {thread_id}")
+
+    return message
