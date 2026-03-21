@@ -140,6 +140,38 @@ class Settings(BaseSettings):
         description="Frontend URL for OAuth redirects"
     )
 
+    # SMTP / Email Configuration
+    smtp_host: str = Field(
+        default="",
+        description="SMTP server hostname"
+    )
+    smtp_port: int = Field(
+        default=587,
+        ge=1,
+        le=65535,
+        description="SMTP server port"
+    )
+    smtp_user: str = Field(
+        default="",
+        description="SMTP username"
+    )
+    smtp_password: str = Field(
+        default="",
+        description="SMTP password"
+    )
+    smtp_from_email: str = Field(
+        default="noreply@breedly.us",
+        description="Default sender email address"
+    )
+    smtp_from_name: str = Field(
+        default="Breedly",
+        description="Default sender display name"
+    )
+    smtp_tls: bool = Field(
+        default=True,
+        description="Use TLS for SMTP connection"
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env" if not os.getenv("TESTING") else None,
         env_file_encoding="utf-8",
