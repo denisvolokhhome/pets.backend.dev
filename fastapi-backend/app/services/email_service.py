@@ -66,6 +66,7 @@ class EmailService:
         msg.attach(MIMEText(html, "html"))
 
         try:
+            tls_context = ssl.create_default_context(cafile=certifi.where())
             await aiosmtplib.send(
                 msg,
                 hostname=self.host,
@@ -73,6 +74,7 @@ class EmailService:
                 username=self.user,
                 password=self.password,
                 start_tls=self.use_tls,
+                tls_context=tls_context,
             )
             logger.info("Email sent to %s — subject: %s", to, subject)
             return True
