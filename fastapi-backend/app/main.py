@@ -14,7 +14,7 @@ from sqlalchemy.exc import NoResultFound
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import Settings
-from app.routers import auth, pets, breeds, breedings, locations, users, geocoding, search, messages, offsprings, favorites, notifications, notification_preferences
+from app.routers import auth, pets, breeds, breedings, locations, users, geocoding, search, messages, offsprings, favorites, notifications, notification_preferences, admin_stats
 
 # Configure logging
 logging.basicConfig(
@@ -306,6 +306,7 @@ app.include_router(offsprings.router, tags=["offsprings"])
 app.include_router(favorites.router, tags=["favorites"])
 app.include_router(notifications.router, tags=["notifications"])
 app.include_router(notification_preferences.router, tags=["notification-preferences"])
+app.include_router(admin_stats.router, tags=["admin-stats"])
 
 
 @app.get("/health")

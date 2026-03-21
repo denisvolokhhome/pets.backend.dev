@@ -140,6 +140,12 @@ class Settings(BaseSettings):
         description="Frontend URL for OAuth redirects"
     )
 
+    # Admin Dashboard Configuration
+    admin_api_key: str = Field(
+        default="",
+        description="Secret API key for admin dashboard access"
+    )
+
     # SMTP / Email Configuration
     smtp_host: str = Field(
         default="",
