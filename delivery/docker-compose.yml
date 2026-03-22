@@ -127,7 +127,7 @@ services:
       SMTP_TLS: ${SMTP_TLS}
 
       # Admin key
-      ADMIN_API_KEY: ${ADMIN_API_KEY}
+      ADMIN_API_KEY: zdUE4F8TqJd3kyf1zt65t1a5oWU8mBNBgxrsbypY49YT3LjJk2V3QN9r7kWymu31kMATfEUxt2GwLNgEkxQwQDtXLu3YWMzULJJq
     volumes:
       - backend_storage:/app/storage
     depends_on:
