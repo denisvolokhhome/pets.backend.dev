@@ -153,10 +153,16 @@ class Settings(BaseSettings):
     )
     smtp_port: int = Field(
         default=587,
-        ge=1,
-        le=65535,
         description="SMTP server port"
     )
+
+    @field_validator("smtp_port", mode="before")
+    @classmethod
+    def parse_smtp_port(cls, v):
+        """Handle empty string for smtp_port."""
+        if v == "" or v is None:
+            return 587
+        return int(v)
     smtp_user: str = Field(
         default="",
         description="SMTP username"
@@ -177,6 +183,16 @@ class Settings(BaseSettings):
         default=True,
         description="Use TLS for SMTP connection"
     )
+
+    @field_validator("smtp_tls", mode="before")
+    @classmethod
+    def parse_smtp_tls(cls, v):
+        """Handle empty string for smtp_tls."""
+        if v == "" or v is None:
+            return True
+        if isinstance(v, str):
+            return v.lower() in ("true", "1", "yes")
+        return bool(v)
 
     model_config = SettingsConfigDict(
         env_file=".env" if not os.getenv("TESTING") else None,
