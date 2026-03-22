@@ -118,16 +118,16 @@ services:
       GEOCODING_CACHE_TTL: 86400
 
       # SMTP / Email Configuration
-      SMTP_HOST: {SMTP_HOST}
-      SMTP_PORT: {SMTP_PORT}
-      SMTP_USER: {SMTP_USER}
-      SMTP_PASSWORD: {SMTP_PASSWORD}
-      SMTP_FROM_EMAIL: {SMTP_FROM_EMAIL}
-      SMTP_FROM_NAME: {SMTP_FROM_NAME}
-      SMTP_TLS: {SMTP_TLS}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME}
+      SMTP_TLS: ${SMTP_TLS}
 
       # Admin key
-      ADMIN_API_KEY: {ADMIN_API_KEY}
+      ADMIN_API_KEY: ${ADMIN_API_KEY}
     volumes:
       - backend_storage:/app/storage
     depends_on:
