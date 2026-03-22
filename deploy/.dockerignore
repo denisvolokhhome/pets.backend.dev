@@ -38,6 +38,7 @@ docs/
 alembic.ini
 
 # Environment
+.env
 .env.local
 .env.*.local
 
