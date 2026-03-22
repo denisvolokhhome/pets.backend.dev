@@ -125,6 +125,9 @@ services:
       SMTP_FROM_EMAIL: {SMTP_FROM_EMAIL}
       SMTP_FROM_NAME: {SMTP_FROM_NAME}
       SMTP_TLS: {SMTP_TLS}
+
+      # Admin key
+      ADMIN_API_KEY: {ADMIN_API_KEY}
     volumes:
       - backend_storage:/app/storage
     depends_on:
