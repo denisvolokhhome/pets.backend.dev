@@ -49,33 +49,36 @@ pipeline {
 
         stage('Deploy to Dev') {
             steps {
-                echo "Deploying to dev server at 192.168.68.113..."
-                script {
-                    def remote = [:]
-                    remote.name = 'breedly-vm'
-                    remote.host = '192.168.68.113'
-                    remote.user = VM_CREDS_USR
-                    remote.password = VM_CREDS_PSW
-                    remote.allowAnyHosts = true
+                withCredentials([file(credentialsId: 'breedly-env-file', variable: 'ENV_FILE')]) {
+                    echo "Deploying to dev server at 192.168.68.113..."
+                    sh "cp \$ENV_FILE delivery/.env"
+                    script {
+                        def remote = [:]
+                        remote.name = 'breedly-vm'
+                        remote.host = '192.168.68.113'
+                        remote.user = VM_CREDS_USR
+                        remote.password = VM_CREDS_PSW
+                        remote.allowAnyHosts = true
 
-                    echo "Copying docker-compose.yml and .env to dev server..."
-                    sshCommand remote: remote, command: 'mkdir -p /home/breedly/breedly-app'
-                    sshPut remote: remote, from: 'delivery/docker-compose.yml', into: '/home/breedly/breedly-app/'
-                    sshPut remote: remote, from: 'delivery/.env', into: '/home/breedly/breedly-app/'
+                        echo "Copying docker-compose.yml and .env to dev server..."
+                        sshCommand remote: remote, command: 'mkdir -p /home/breedly/breedly-app'
+                        sshPut remote: remote, from: 'delivery/docker-compose.yml', into: '/home/breedly/breedly-app/'
+                        sshPut remote: remote, from: 'delivery/.env', into: '/home/breedly/breedly-app/'
 
-                    echo "Logging into Harbor on dev server..."
-                    sshCommand remote: remote, command: "echo '${HARBOR_PASS}' | docker login ${HARBOR_REGISTRY} -u '${HARBOR_USER}' --password-stdin"
+                        echo "Logging into Harbor on dev server..."
+                        sshCommand remote: remote, command: "echo '${HARBOR_PASS}' | docker login ${HARBOR_REGISTRY} -u '${HARBOR_USER}' --password-stdin"
 
-                    echo "Pulling latest backend image on dev server..."
-                    sshCommand remote: remote, command: 'cd /home/breedly/breedly-app && docker compose pull backend migration seed'
+                        echo "Pulling latest backend image on dev server..."
+                        sshCommand remote: remote, command: 'cd /home/breedly/breedly-app && docker compose pull backend migration seed'
 
-                    echo "Restarting services (includes migration + seed)..."
-                    sshCommand remote: remote, command: 'cd /home/breedly/breedly-app && docker compose up -d'
+                        echo "Restarting services (includes migration + seed)..."
+                        sshCommand remote: remote, command: 'cd /home/breedly/breedly-app && docker compose up -d'
 
-                    echo "Waiting for services to stabilize..."
-                    sshCommand remote: remote, command: 'sleep 15 && cd /home/breedly/breedly-app && docker compose ps'
+                        echo "Waiting for services to stabilize..."
+                        sshCommand remote: remote, command: 'sleep 15 && cd /home/breedly/breedly-app && docker compose ps'
+                    }
+                    echo "Deployment to dev server complete"
                 }
-                echo "Deployment to dev server complete"
             }
         }
     }

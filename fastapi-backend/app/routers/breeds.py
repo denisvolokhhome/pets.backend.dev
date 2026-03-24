@@ -120,6 +120,7 @@ async def list_breeds(
 @router.get("/autocomplete", response_model=List[BreedRead])
 async def autocomplete_breeds(
     search_term: str = Query(..., min_length=2, max_length=100, description="Search term for breed name (minimum 2 characters)"),
+    kind: Optional[str] = Query(None, pattern="^(dog|cat|cow|horse)$", description="Filter by animal kind"),
     session: AsyncSession = Depends(get_async_session),
 ) -> List[Breed]:
     """
@@ -183,6 +184,13 @@ async def autocomplete_breeds(
                 func.lower(Breed.code).like(func.lower(search_pattern))
             )
         )
+    )
+
+    if kind:
+        query = query.where(Breed.kind == kind)
+
+    query = (
+        query
         .order_by(
             # Exact matches first
             func.lower(Breed.name) == func.lower(search_term),
