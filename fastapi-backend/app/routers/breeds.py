@@ -10,7 +10,7 @@ This module provides CRUD operations for dog breed management including:
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, or_, func
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_async_session
@@ -174,15 +174,12 @@ async def autocomplete_breeds(
     # Create case-insensitive search pattern
     search_pattern = f"%{search_term}%"
     
-    # Query breeds matching the search term in name or code
+    # Query breeds matching the search term in name
     # Order by exact match first, then partial matches
     query = (
         select(Breed)
         .where(
-            or_(
-                func.lower(Breed.name).like(func.lower(search_pattern)),
-                func.lower(Breed.code).like(func.lower(search_pattern))
-            )
+            func.lower(Breed.name).like(func.lower(search_pattern))
         )
     )
 
