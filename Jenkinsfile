@@ -51,7 +51,8 @@ pipeline {
             steps {
                 withCredentials([file(credentialsId: 'breedly-env-file', variable: 'ENV_FILE')]) {
                     echo "Deploying to dev server at 192.168.68.113..."
-                    sh "cp \$ENV_FILE delivery/.env"
+                    sh 'mkdir -p delivery'
+                    sh 'cp "$ENV_FILE" delivery/.env'
                     script {
                         def remote = [:]
                         remote.name = 'breedly-vm'
