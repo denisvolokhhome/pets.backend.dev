@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional, List
 
 from fastapi_users import schemas
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class UserRead(schemas.BaseUser[uuid.UUID]):
@@ -60,6 +60,23 @@ class UserUpdate(schemas.BaseUserUpdate):
     breedery_name: Optional[str] = None
     breedery_description: Optional[str] = None
     search_tags: Optional[List[str]] = None
+
+    @field_validator("phone_number")
+    @classmethod
+    def validate_phone_number(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        # Strip whitespace
+        v = v.strip()
+        if not v:
+            return None
+        # Must look like a phone number (digits, spaces, dashes, parens, plus)
+        import re
+        if not re.match(r"^[\d\s\-\(\)\+\.]+$", v):
+            raise ValueError("Invalid phone number format")
+        if len(v) > 50:
+            raise ValueError("Phone number too long")
+        return v
 
 
 class ProfileImageResponse(BaseModel):
