@@ -51,7 +51,7 @@ pipeline {
             steps {
                 withCredentials([file(credentialsId: 'breedly-env-file', variable: 'ENV_FILE')]) {
                     echo "Deploying to dev server at 192.168.68.113..."
-                    sh 'cp "$ENV_FILE" /tmp/breedly_env_deploy.env'
+                    sh 'cp "$ENV_FILE" "${WORKSPACE}/breedly_env_deploy.env"'
                     script {
                         def remote = [:]
                         remote.name = 'breedly-vm'
@@ -63,7 +63,7 @@ pipeline {
                         echo "Copying docker-compose.yml and .env to dev server..."
                         sshCommand remote: remote, command: 'mkdir -p /home/breedly/breedly-app'
                         sshPut remote: remote, from: 'delivery/docker-compose.yml', into: '/home/breedly/breedly-app/'
-                        sshPut remote: remote, from: '/tmp/breedly_env_deploy.env', into: '/home/breedly/breedly-app/'
+                        sshPut remote: remote, from: "${WORKSPACE}/breedly_env_deploy.env", into: '/home/breedly/breedly-app/'
                         sshCommand remote: remote, command: 'mv /home/breedly/breedly-app/breedly_env_deploy.env /home/breedly/breedly-app/.env'
 
                         echo "Logging into Harbor on dev server..."
