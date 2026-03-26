@@ -90,7 +90,8 @@ async def google_authorize():
 
 @router.get("/google/callback", tags=["auth"])
 async def google_callback(
-    code: str,
+    code: Optional[str] = None,
+    error: Optional[str] = None,
     session: AsyncSession = Depends(get_async_session),
     user_manager: UserManager = Depends(get_user_manager)
 ):
@@ -99,6 +100,7 @@ async def google_callback(
     
     Args:
         code: Authorization code from Google
+        error: Error code from Google (e.g. access_denied)
         session: Database session
         user_manager: User manager for user operations
         
@@ -108,6 +110,12 @@ async def google_callback(
     Raises:
         HTTPException: If OAuth flow fails or user creation fails
     """
+    from fastapi.responses import RedirectResponse
+
+    # Handle Google OAuth errors (user denied consent, etc.)
+    if error or not code:
+        error_url = f"{settings.frontend_url}/login?error={error or 'oauth_failed'}"
+        return RedirectResponse(url=error_url)
     if not settings.google_oauth_client_id or not settings.google_oauth_client_secret:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -202,7 +210,6 @@ async def google_callback(
         token_str = await strategy.write_token(user)
         
         # Redirect to frontend with token
-        from fastapi.responses import RedirectResponse
         frontend_redirect_url = f"{settings.frontend_url}/auth/callback?token={token_str}"
         return RedirectResponse(url=frontend_redirect_url)
         
@@ -213,7 +220,6 @@ async def google_callback(
         logger.error(f"OAuth callback error: {str(e)}")
         
         # Redirect to frontend with error
-        from fastapi.responses import RedirectResponse
         error_url = f"{settings.frontend_url}/login?error=oauth_failed"
         return RedirectResponse(url=error_url)
 
