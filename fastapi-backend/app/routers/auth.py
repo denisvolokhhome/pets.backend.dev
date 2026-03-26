@@ -9,7 +9,11 @@ from app.database import get_async_session
 from app.dependencies import auth_backend, fastapi_users, get_user_manager
 from app.schemas.user import UserRead, UserCreate, UserUpdate, PetSeekerCreate, GuestToAccountCreate
 from app.services.user_manager import UserManager
+from app.services.notification_service import NotificationService
+from app.schemas.notification import NotificationCreate
 from app.middleware.rate_limiter import rate_limiter, get_client_ip
+from app.dependencies import current_active_user
+from app.models.user import User
 
 
 # Initialize settings
@@ -32,11 +36,14 @@ router.include_router(
     tags=["auth"],
 )
 
-# Include register router
-router.include_router(
-    fastapi_users.get_register_router(UserRead, UserCreate),
-    tags=["auth"],
-)
+# NOTE: We do NOT include the default fastapi-users register router.
+# Instead we define a custom /register endpoint below that checks for
+# SSO-created accounts and returns a specific error code so the frontend
+# can redirect the user to the sign-in page.
+# router.include_router(
+#     fastapi_users.get_register_router(UserRead, UserCreate),
+#     tags=["auth"],
+# )
 
 # Include reset password router
 router.include_router(
@@ -211,6 +218,66 @@ async def google_callback(
         return RedirectResponse(url=error_url)
 
 
+@router.post("/register", tags=["auth"], status_code=status.HTTP_201_CREATED)
+async def register_breeder(
+    user_data: UserCreate,
+    request: Request,
+    session: AsyncSession = Depends(get_async_session),
+    user_manager: UserManager = Depends(get_user_manager),
+):
+    """
+    Register a new breeder account.
+
+    Replaces the default fastapi-users register endpoint so we can
+    detect SSO-created accounts and return a specific error code.
+    """
+    from app.models.user import User
+    from sqlalchemy import select
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # Rate limiting
+    client_ip = await get_client_ip(request)
+    await rate_limiter.check_rate_limit(
+        key=f"register:{client_ip}",
+        max_requests=5,
+        window_seconds=300,
+    )
+
+    # Check for existing user with SSO-specific error
+    stmt = select(User).where(User.email == user_data.email)
+    result = await session.execute(stmt)
+    existing_user = result.scalar_one_or_none()
+
+    if existing_user:
+        if existing_user.oauth_provider:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="REGISTER_SSO_ACCOUNT_EXISTS",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="REGISTER_USER_ALREADY_EXISTS",
+        )
+
+    try:
+        user = await user_manager.create(user_data, request=request)
+    except Exception as e:
+        error_str = str(e).lower()
+        if "already exists" in error_str or "duplicate" in error_str:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="REGISTER_USER_ALREADY_EXISTS",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Registration failed: {str(e)}",
+        )
+
+    return UserRead.model_validate(user, from_attributes=True)
+
+
 @router.post("/register/pet-seeker", tags=["auth"])
 async def register_pet_seeker(
     pet_seeker_data: PetSeekerCreate,
@@ -261,6 +328,12 @@ async def register_pet_seeker(
         
         if existing_user:
             logger.warning(f"Attempt to register existing email: {pet_seeker_data.email}")
+            # If the existing account was created via SSO, return a specific error
+            if existing_user.oauth_provider:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="REGISTER_SSO_ACCOUNT_EXISTS"
+                )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="REGISTER_USER_ALREADY_EXISTS"
@@ -399,6 +472,11 @@ async def register_from_message(
         
         if existing_user:
             logger.warning(f"Attempt to register existing email: {guest_data.email}")
+            if existing_user.oauth_provider:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="REGISTER_SSO_ACCOUNT_EXISTS"
+                )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="REGISTER_USER_ALREADY_EXISTS"
@@ -482,3 +560,73 @@ async def register_from_message(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Account conversion failed: {str(e)}"
         )
+
+
+@router.post("/convert-to-breeder", tags=["auth"])
+async def convert_to_breeder(
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """
+    Convert a pet seeker account to a breeder account.
+
+    This is a one-way, irreversible operation. Once converted, the user
+    cannot revert to pet seeker without contacting support@breedly.us.
+
+    As a breeder the user will not be able to message other breeders
+    within the application. The breeder account must be verified before
+    the user can publish offspring listings or their public profile.
+
+    Returns:
+        dict: Updated user data and confirmation message
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    if user.is_breeder:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="ALREADY_BREEDER",
+        )
+
+    # Flip the flag
+    user.is_breeder = True
+    await session.commit()
+    await session.refresh(user)
+
+    # Send notification about the conversion
+    try:
+        notification_service = NotificationService()
+        await notification_service.create_notification(
+            db=session,
+            notification_data=NotificationCreate(
+                user_id=user.id,
+                type="account_type_changed",
+                title="Account converted to Breeder",
+                message=(
+                    "Your account has been converted to a Breeder account. "
+                    "Please note: as a breeder you cannot message other breeders "
+                    "within the application, and this change is irreversible. "
+                    "To revert, contact support@breedly.us. "
+                    "You will need to verify your breeding account before you can "
+                    "publish offspring listings or your public breeder profile."
+                ),
+            ),
+        )
+    except Exception as e:
+        logger.warning(f"Failed to create conversion notification for user {user.id}: {e}")
+
+    logger.info(f"User {user.id} converted from pet seeker to breeder")
+
+    return {
+        "message": "Account successfully converted to breeder",
+        "user": {
+            "id": str(user.id),
+            "email": user.email,
+            "is_breeder": user.is_breeder,
+            "is_active": user.is_active,
+            "is_verified": user.is_verified,
+            "name": user.name,
+        },
+    }
