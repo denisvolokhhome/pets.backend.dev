@@ -14,7 +14,7 @@ from sqlalchemy.exc import NoResultFound
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import Settings
-from app.routers import auth, pets, breeds, breedings, locations, users, geocoding, search, messages, offsprings, favorites, notifications, notification_preferences, admin_stats, support
+from app.routers import auth, pets, breeds, breedings, locations, users, geocoding, search, messages, offsprings, favorites, notifications, notification_preferences, admin_stats, support, genealogy
 
 # Configure logging
 logging.basicConfig(
@@ -44,7 +44,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         # Log request
         start_time = time.time()
         logger.info(
-            f"Request started",
+            f"Request started: {request.method} {request.url.path}",
             extra={
                 "request_id": request_id,
                 "method": request.method,
@@ -63,7 +63,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             
             # Log response
             logger.info(
-                f"Request completed",
+                f"Request completed: {request.method} {request.url.path} [{response.status_code}] {round(duration * 1000, 2)}ms",
                 extra={
                     "request_id": request_id,
                     "method": request.method,
@@ -308,6 +308,7 @@ app.include_router(notifications.router, tags=["notifications"])
 app.include_router(notification_preferences.router, tags=["notification-preferences"])
 app.include_router(admin_stats.router, tags=["admin-stats"])
 app.include_router(support.router, tags=["support"])
+app.include_router(genealogy.router, tags=["genealogy"])
 
 
 @app.get("/health")
@@ -345,7 +346,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     elif exc.status_code >= 500:
         logger.error(f"HTTP error {exc.status_code}: {request.url.path} - {exc.detail}")
     else:
-        logger.info(f"HTTP {exc.status_code}: {request.url.path}")
+        logger.info(f"HTTP {exc.status_code}: {request.url.path} - {exc.detail}")
     
     # Map status codes to error codes
     error_code_map = {
