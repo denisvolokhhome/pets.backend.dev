@@ -115,6 +115,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup: Create storage directory if it doesn't exist
     storage_path = Path(settings.storage_path)
     storage_path.mkdir(parents=True, exist_ok=True)
+
+    # Initialize IP hash key for rate limiter
+    from app.middleware.rate_limiter import set_ip_hash_key
+    set_ip_hash_key(settings.secret_key)
     
     print(f"✓ Storage directory created/verified at: {storage_path.absolute()}")
     print(f"✓ Application started: {settings.app_name}")

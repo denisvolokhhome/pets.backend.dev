@@ -599,3 +599,117 @@ async def _build_offspring_response(
     }
     
     return response
+
+
+# ─── Offspring Documents ─────────────────────────────────────────────────────
+
+
+@router.get("/{offspring_id}/documents", response_model=list)
+async def list_offspring_documents(
+    offspring_id: uuid.UUID,
+    user: User = Depends(require_breeder),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """List all documents for an offspring."""
+    from app.models.document import Document
+    from app.models.offspring import Offspring
+
+    q = select(Offspring).where(Offspring.id == offspring_id, Offspring.user_id == user.id)
+    if (await session.execute(q)).scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Offspring not found")
+
+    query = select(Document).where(
+        Document.entity_type == "offspring",
+        Document.entity_id == offspring_id,
+    ).order_by(Document.created_at)
+    docs = (await session.execute(query)).scalars().all()
+
+    return [
+        {
+            "id": d.id,
+            "file_name": d.file_name,
+            "file_type": d.file_type,
+            "file_size": d.file_size,
+            "file_url": f"/storage/{d.file_path}" if not d.file_path.startswith("/") else f"/storage{d.file_path}",
+            "created_at": d.created_at.isoformat(),
+        }
+        for d in docs
+    ]
+
+
+@router.post("/{offspring_id}/documents", status_code=status.HTTP_201_CREATED)
+async def upload_offspring_document(
+    offspring_id: uuid.UUID,
+    file: UploadFile = File(...),
+    user: User = Depends(require_breeder),
+    session: AsyncSession = Depends(get_async_session),
+    file_service: FileService = Depends(get_file_service),
+):
+    """Upload a document (PDF or image) for an offspring. Max 10 per offspring."""
+    from app.models.document import Document
+    from app.models.offspring import Offspring
+    from sqlalchemy import func as sa_func
+
+    q = select(Offspring).where(Offspring.id == offspring_id, Offspring.user_id == user.id)
+    if (await session.execute(q)).scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Offspring not found")
+
+    count = (await session.execute(
+        select(sa_func.count()).where(Document.entity_type == "offspring", Document.entity_id == offspring_id)
+    )).scalar()
+    if count >= 10:
+        raise HTTPException(status_code=400, detail="Maximum of 10 documents per offspring")
+
+    try:
+        file_path, file_name, file_type, file_size = await file_service.save_document(file, offspring_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    doc = Document(
+        entity_type="offspring",
+        entity_id=offspring_id,
+        file_path=file_path,
+        file_name=file_name,
+        file_type=file_type,
+        file_size=file_size,
+    )
+    session.add(doc)
+    await session.commit()
+    await session.refresh(doc)
+
+    return {
+        "id": doc.id,
+        "file_name": doc.file_name,
+        "file_type": doc.file_type,
+        "file_size": doc.file_size,
+        "file_url": f"/storage/{doc.file_path}" if not doc.file_path.startswith("/") else f"/storage{doc.file_path}",
+        "created_at": doc.created_at.isoformat(),
+    }
+
+
+@router.delete("/{offspring_id}/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_offspring_document(
+    offspring_id: uuid.UUID,
+    document_id: int,
+    user: User = Depends(require_breeder),
+    session: AsyncSession = Depends(get_async_session),
+    file_service: FileService = Depends(get_file_service),
+):
+    """Delete a document from an offspring."""
+    from app.models.document import Document
+    from app.models.offspring import Offspring
+
+    q = select(Offspring).where(Offspring.id == offspring_id, Offspring.user_id == user.id)
+    if (await session.execute(q)).scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Offspring not found")
+
+    doc = (await session.execute(
+        select(Document).where(Document.id == document_id, Document.entity_type == "offspring", Document.entity_id == offspring_id)
+    )).scalar_one_or_none()
+
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    await file_service.delete_document(doc.file_path)
+    await session.delete(doc)
+    await session.commit()

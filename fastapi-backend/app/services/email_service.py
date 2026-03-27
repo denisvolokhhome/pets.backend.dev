@@ -107,23 +107,42 @@ class EmailService:
             text=f"Welcome to Breedly, {name}!",
         )
 
+    async def send_verification(
+        self, to: str, token: str, name: str, frontend_url: str
+    ) -> bool:
+        """Send email verification link."""
+        verify_url = f"{frontend_url}/verify-email?token={token}"
+        html = _render_verification(name, verify_url)
+        return await self.send_email(
+            to=to,
+            subject="Verify your Breedly email address",
+            html=html,
+            text=f"Verify your email: {verify_url}",
+        )
+
 
 # ── Simple HTML templates ──────────────────────────────────────────
 
 def _base_wrapper(content: str) -> str:
     return f"""
-    <div style="font-family: 'Poppins', Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #1f2937;">
-      <div style="text-align: center; margin-bottom: 32px;">
-        <div style="display: inline-block; width: 56px; height: 56px; line-height: 56px; border-radius: 50%;
-                    background: linear-gradient(135deg, #ff6b6b, #4ecdc4); color: white; font-size: 28px; font-weight: 700;">
-          B
+    <div style="background-color: #f0f0f0; padding: 40px 20px; font-family: 'Poppins', Arial, sans-serif;">
+      <div style="max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); overflow: hidden;">
+        <div style="text-align: center; padding: 32px 24px 0;">
+          <div style="display: inline-block; width: 56px; height: 56px; line-height: 56px; border-radius: 50%;
+                      background: linear-gradient(135deg, #ff6b6b, #4ecdc4); color: white; font-size: 28px; font-weight: 700;">
+            B
+          </div>
+          <h2 style="margin: 12px 0 0; font-size: 22px; font-weight: 700; color: #1f2937;">Breedly</h2>
         </div>
-        <h2 style="margin: 12px 0 0; font-size: 22px; font-weight: 700; color: #1f2937;">Breedly</h2>
+        <div style="padding: 24px 32px 32px; color: #1f2937;">
+          {content}
+        </div>
+        <div style="padding: 16px 32px; border-top: 1px solid #e5e7eb; text-align: center;">
+          <p style="margin: 0; font-size: 12px; color: #9ca3af;">
+            &copy; Breedly &mdash; Connecting breeders with loving families.
+          </p>
+        </div>
       </div>
-      {content}
-      <p style="margin-top: 40px; font-size: 12px; color: #9ca3af; text-align: center;">
-        &copy; Breedly &mdash; Connecting breeders with loving families.
-      </p>
     </div>
     """
 
@@ -153,4 +172,22 @@ def _render_welcome(name: str) -> str:
         Thanks for joining Breedly. You're all set to start managing your breeding program
         or find your perfect companion.
       </p>
+    """)
+
+
+def _render_verification(name: str, verify_url: str) -> str:
+    return _base_wrapper(f"""
+      <h3 style="font-size: 18px; font-weight: 600;">Verify your email, {name}</h3>
+      <p style="font-size: 14px; line-height: 1.6; color: #4b5563;">
+        Thanks for signing up for Breedly. Please click the button below to verify your email address
+        and activate your account.
+      </p>
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="{verify_url}"
+           style="display: inline-block; padding: 12px 32px; background: linear-gradient(135deg, #ff6b6b, #ff5252);
+                  color: white; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px;">
+          Verify Email Address
+        </a>
+      </div>
+      <p style="font-size: 12px; color: #9ca3af;">If you didn't create an account, you can safely ignore this email.</p>
     """)

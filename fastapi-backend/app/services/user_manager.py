@@ -39,6 +39,12 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         await self.email_service.send_welcome(
             to=user.email, name=user.name or user.email
         )
+        # Auto-request email verification for non-OAuth users
+        if not user.is_verified:
+            try:
+                await self.request_verify(user, request)
+            except Exception as e:
+                logger.warning("Failed to send verification email for user %s: %s", user.id, e)
 
     async def on_after_forgot_password(
         self, user: User, token: str, request: Optional[Request] = None
@@ -54,7 +60,12 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         self, user: User, token: str, request: Optional[Request] = None
     ) -> None:
         logger.info("Verification requested for user %s", user.id)
-        # Future: send verification email
+        await self.email_service.send_verification(
+            to=user.email,
+            token=token,
+            name=user.name or user.email,
+            frontend_url=self.settings.frontend_url,
+        )
 
     async def validate_password(
         self, password: str, user: Optional[User] = None

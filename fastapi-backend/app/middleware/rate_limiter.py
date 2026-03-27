@@ -3,6 +3,27 @@ from fastapi import Request, HTTPException, status
 from datetime import datetime, timedelta
 from collections import defaultdict
 import asyncio
+import hashlib
+import hmac
+
+
+# Secret key for IP hashing — loaded from settings at runtime
+_IP_HASH_KEY: str = ""
+
+
+def set_ip_hash_key(key: str) -> None:
+    """Set the HMAC key for IP hashing (call once at startup)."""
+    global _IP_HASH_KEY
+    _IP_HASH_KEY = key
+
+
+def hash_ip(ip: str) -> str:
+    """
+    Hash an IP address using HMAC-SHA256 with a secret key.
+    Returns a hex digest that can be stored/compared safely.
+    """
+    key = (_IP_HASH_KEY or "fallback-key").encode()
+    return hmac.new(key, ip.encode(), hashlib.sha256).hexdigest()
 
 
 class RateLimiter:

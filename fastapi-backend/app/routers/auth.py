@@ -51,11 +51,13 @@ router.include_router(
     tags=["auth"],
 )
 
-# Include verify router
-router.include_router(
-    fastapi_users.get_verify_router(UserRead),
-    tags=["auth"],
-)
+# NOTE: We do NOT include the default fastapi-users verify router.
+# Instead we define custom /verify and /request-verify-token endpoints
+# below with rate limiting to prevent SMTP abuse.
+# router.include_router(
+#     fastapi_users.get_verify_router(UserRead),
+#     tags=["auth"],
+# )
 
 # Include users router (for /users/me endpoint)
 router.include_router(
@@ -239,16 +241,18 @@ async def register_breeder(
     """
     from app.models.user import User
     from sqlalchemy import select
+    from app.middleware.rate_limiter import hash_ip
     import logging
 
     logger = logging.getLogger(__name__)
 
-    # Rate limiting
+    # Rate limiting — 3 registrations per IP per 10 minutes
     client_ip = await get_client_ip(request)
+    hashed = hash_ip(client_ip)
     await rate_limiter.check_rate_limit(
-        key=f"register:{client_ip}",
-        max_requests=5,
-        window_seconds=300,
+        key=f"register:{hashed}",
+        max_requests=3,
+        window_seconds=600,
     )
 
     # Check for existing user with SSO-specific error
@@ -312,18 +316,20 @@ async def register_pet_seeker(
     from app.dependencies import get_jwt_strategy
     from app.services.message_linking_service import MessageLinkingService
     from app.models.user import User
+    from app.middleware.rate_limiter import hash_ip
     import logging
     from sqlalchemy import select
     from sqlalchemy.exc import IntegrityError
     
     logger = logging.getLogger(__name__)
     
-    # Rate limiting: 5 registration attempts per IP per 5 minutes
+    # Rate limiting: 3 registration attempts per IP per 10 minutes
     client_ip = await get_client_ip(request)
+    hashed = hash_ip(client_ip)
     await rate_limiter.check_rate_limit(
-        key=f"register:{client_ip}",
-        max_requests=5,
-        window_seconds=300
+        key=f"register:{hashed}",
+        max_requests=3,
+        window_seconds=600
     )
     
     try:
@@ -456,18 +462,20 @@ async def register_from_message(
     from app.dependencies import get_jwt_strategy
     from app.services.message_linking_service import MessageLinkingService
     from app.models.user import User
+    from app.middleware.rate_limiter import hash_ip
     import logging
     from sqlalchemy import select
     from sqlalchemy.exc import IntegrityError
     
     logger = logging.getLogger(__name__)
     
-    # Rate limiting: 5 registration attempts per IP per 5 minutes
+    # Rate limiting: 3 registration attempts per IP per 10 minutes
     client_ip = await get_client_ip(request)
+    hashed = hash_ip(client_ip)
     await rate_limiter.check_rate_limit(
-        key=f"register:{client_ip}",
-        max_requests=5,
-        window_seconds=300
+        key=f"register:{hashed}",
+        max_requests=3,
+        window_seconds=600
     )
     
     try:
@@ -566,6 +574,88 @@ async def register_from_message(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Account conversion failed: {str(e)}"
         )
+
+
+@router.post("/request-verify-token", tags=["auth"])
+async def request_verify_token(
+    request: Request,
+    email_body: dict,
+    session: AsyncSession = Depends(get_async_session),
+    user_manager: UserManager = Depends(get_user_manager),
+):
+    """
+    Request a new email verification token.
+
+    Rate limited: 2 requests per email per 5 minutes, 5 per IP per 10 minutes.
+    """
+    import logging
+    from sqlalchemy import select
+    from pydantic import EmailStr
+
+    logger = logging.getLogger(__name__)
+    email = email_body.get("email", "")
+
+    if not email:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Email is required")
+
+    # Rate limit by IP
+    client_ip = await get_client_ip(request)
+    await rate_limiter.check_rate_limit(
+        key=f"verify_ip:{client_ip}",
+        max_requests=5,
+        window_seconds=600,
+    )
+
+    # Rate limit by email (stricter)
+    await rate_limiter.check_rate_limit(
+        key=f"verify_email:{email}",
+        max_requests=2,
+        window_seconds=300,
+    )
+
+    # Find user
+    stmt = select(User).where(User.email == email)
+    result = await session.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if user and not user.is_verified:
+        try:
+            await user_manager.request_verify(user)
+        except Exception as e:
+            logger.warning(f"Failed to send verification for {email}: {e}")
+
+    # Always return 202 to prevent email enumeration
+    return {"detail": "If the email exists and is not verified, a verification link has been sent."}
+
+
+@router.post("/verify", tags=["auth"])
+async def verify_user(
+    request: Request,
+    token_body: dict,
+    user_manager: UserManager = Depends(get_user_manager),
+):
+    """Verify a user's email using the token from the verification email."""
+    from fastapi_users.exceptions import InvalidVerifyToken, UserAlreadyVerified
+
+    token = token_body.get("token", "")
+    if not token:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Token is required")
+
+    # Rate limit by IP
+    client_ip = await get_client_ip(request)
+    await rate_limiter.check_rate_limit(
+        key=f"verify_token:{client_ip}",
+        max_requests=10,
+        window_seconds=300,
+    )
+
+    try:
+        user = await user_manager.verify(token, request)
+        return UserRead.model_validate(user, from_attributes=True)
+    except InvalidVerifyToken:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="VERIFY_USER_BAD_TOKEN")
+    except UserAlreadyVerified:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="VERIFY_USER_ALREADY_VERIFIED")
 
 
 @router.post("/convert-to-breeder", tags=["auth"])

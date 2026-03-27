@@ -793,3 +793,102 @@ async def share_location_in_thread(
     logger.info(f"Breeder {user.id} shared location in thread {thread_id}")
 
     return message
+
+
+@router.post("/threads/{thread_id}/share-documents", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
+async def share_documents_in_thread(
+    thread_id: UUID,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> Message:
+    """
+    Share offspring documents as a special message in a thread.
+
+    Only breeders can share documents. Finds documents attached to the
+    offspring that the thread is about.
+    """
+    import json
+    from app.models.document import Document
+
+    if not user.is_breeder:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only breeders can share documents")
+
+    # Verify thread participation
+    thread_query = select(Message).where(
+        Message.thread_id == thread_id,
+        (Message.sender_id == user.id) | (Message.receiver_id == user.id)
+    ).limit(1)
+    thread_msg = (await session.execute(thread_query)).scalar_one_or_none()
+
+    if thread_msg is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found or access denied")
+
+    # Must be about an offspring
+    if thread_msg.context_type != "offspring" or not thread_msg.context_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This thread is not about an offspring")
+
+    # Verify offspring belongs to breeder
+    offspring_q = select(Offspring).where(Offspring.id == thread_msg.context_id, Offspring.user_id == user.id)
+    offspring = (await session.execute(offspring_q)).scalar_one_or_none()
+    if not offspring:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Offspring not found")
+
+    # Get documents for this offspring
+    docs_q = select(Document).where(
+        Document.entity_type == "offspring", Document.entity_id == thread_msg.context_id
+    ).order_by(Document.created_at)
+    docs = (await session.execute(docs_q)).scalars().all()
+
+    if not docs:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No documents found for this offspring. Upload documents first.")
+
+    receiver_id = thread_msg.receiver_id if thread_msg.sender_id == user.id else thread_msg.sender_id
+
+    documents_data = {
+        "__type": "documents",
+        "offspring_name": offspring.name or "Offspring",
+        "documents": [
+            {
+                "id": d.id,
+                "file_name": d.file_name,
+                "file_type": d.file_type,
+                "file_size": d.file_size,
+                "file_url": f"/storage/{d.file_path}" if not d.file_path.startswith("/") else f"/storage{d.file_path}",
+            }
+            for d in docs
+        ],
+    }
+
+    message = Message(
+        sender_id=user.id,
+        receiver_id=receiver_id,
+        thread_id=thread_id,
+        content=json.dumps(documents_data),
+        context_type=thread_msg.context_type,
+        context_id=thread_msg.context_id,
+        is_read=False,
+    )
+    session.add(message)
+    await session.commit()
+    await session.refresh(message)
+
+    # Notification
+    should_notify = await notification_preference_service.should_send_notification(
+        db=session, user_id=receiver_id, notification_type="message_received"
+    )
+    if should_notify:
+        sender_name = user.name or user.email
+        await notification_service.create_notification(
+            session,
+            NotificationCreate(
+                user_id=receiver_id,
+                type="message_received",
+                title="Documents shared",
+                message=f"{sender_name} shared documents for {offspring.name or 'an offspring'} with you",
+                related_id=message.id,
+                related_type="message",
+            ),
+        )
+
+    logger.info(f"Breeder {user.id} shared documents in thread {thread_id}")
+    return message
