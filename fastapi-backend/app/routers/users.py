@@ -159,3 +159,47 @@ async def get_profile_image(
         media_type="image/jpeg",
         filename=file_path.name
     )
+
+
+@router.get("/breeder/{breeder_id}/public")
+async def get_public_breeder_profile(
+    breeder_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    """Public breeder profile info with location (no auth required)."""
+    from app.models.location import Location
+
+    stmt = select(User).where(User.id == breeder_id, User.is_breeder == True)
+    user = (await session.execute(stmt)).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="Breeder not found")
+
+    # Get published location
+    loc_stmt = select(Location).where(
+        Location.user_id == breeder_id,
+        Location.is_published == True,
+        Location.location_type == "user",
+    ).limit(1)
+    location = (await session.execute(loc_stmt)).scalar_one_or_none()
+
+    img = f"/storage/{user.profile_image_path}" if user.profile_image_path else None
+    loc_data = None
+    if location:
+        loc_data = {
+            "name": location.name,
+            "city": location.city,
+            "state": location.state,
+            "zipcode": location.zipcode,
+            "latitude": location.latitude,
+            "longitude": location.longitude,
+        }
+
+    return {
+        "id": str(user.id),
+        "name": user.name,
+        "breedery_name": user.breedery_name,
+        "breedery_description": user.breedery_description,
+        "profile_image_url": img,
+        "search_tags": user.search_tags,
+        "location": loc_data,
+    }
