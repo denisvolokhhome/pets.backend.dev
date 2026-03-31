@@ -63,8 +63,8 @@ pipeline {
                         sshCommand remote: remote, command: 'mkdir -p /home/breedly/breedly-app'
                         sshPut remote: remote, from: 'delivery/docker-compose.yml', into: '/home/breedly/breedly-app/'
 
-                        // Upload env file and rename: sshPut puts it with its original temp name,
-                        // then we find and rename the newest non-compose, non-.env file
+                        // Upload env file: clean up stale files first, upload, then rename
+                        sshCommand remote: remote, command: 'cd /home/breedly/breedly-app && ls | grep -v docker-compose.yml | grep -v .env | xargs -r rm -f'
                         sshPut remote: remote, from: ENV_FILE, into: '/home/breedly/breedly-app/'
                         sshCommand remote: remote, command: '''
                             cd /home/breedly/breedly-app
