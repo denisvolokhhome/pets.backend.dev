@@ -51,9 +51,7 @@ pipeline {
             steps {
                 withCredentials([file(credentialsId: 'breedly-env-file', variable: 'ENV_FILE')]) {
                     echo "Deploying to dev server at 192.168.68.113..."
-                    sh 'cp "$ENV_FILE" "$WORKSPACE_TMP/breedly.env"'
                     script {
-                        def envFile = "${env.WORKSPACE_TMP}/breedly.env"
                         def remote = [:]
                         remote.name = 'breedly-vm'
                         remote.host = '192.168.68.113'
@@ -64,8 +62,19 @@ pipeline {
                         echo "Copying docker-compose.yml and .env to dev server..."
                         sshCommand remote: remote, command: 'mkdir -p /home/breedly/breedly-app'
                         sshPut remote: remote, from: 'delivery/docker-compose.yml', into: '/home/breedly/breedly-app/'
-                        sshPut remote: remote, from: envFile, into: '/home/breedly/breedly-app/'
-                        sshCommand remote: remote, command: 'mv /home/breedly/breedly-app/breedly.env /home/breedly/breedly-app/.env'
+
+                        // Upload env file and rename: sshPut puts it with its original temp name,
+                        // then we find and rename the newest non-compose, non-.env file
+                        sshPut remote: remote, from: ENV_FILE, into: '/home/breedly/breedly-app/'
+                        sshCommand remote: remote, command: '''
+                            cd /home/breedly/breedly-app
+                            for f in *; do
+                                case "$f" in
+                                    docker-compose.yml|.env) ;;
+                                    *) mv "$f" .env; break ;;
+                                esac
+                            done
+                        '''
 
                         echo "Logging into Harbor on dev server..."
                         sshCommand remote: remote, command: "echo '${HARBOR_PASS}' | docker login ${HARBOR_REGISTRY} -u '${HARBOR_USER}' --password-stdin"
