@@ -166,8 +166,10 @@ async def get_public_breeder_profile(
     breeder_id: uuid.UUID,
     session: AsyncSession = Depends(get_async_session),
 ) -> dict:
-    """Public breeder profile info with location (no auth required)."""
+    """Public breeder profile info with location and breeds (no auth required)."""
     from app.models.location import Location
+    from app.models.pet import Pet
+    from app.models.breed import Breed
 
     stmt = select(User).where(User.id == breeder_id, User.is_breeder == True)
     user = (await session.execute(stmt)).scalar_one_or_none()
@@ -181,6 +183,17 @@ async def get_public_breeder_profile(
         Location.location_type == "user",
     ).limit(1)
     location = (await session.execute(loc_stmt)).scalar_one_or_none()
+
+    # Get unique breeds from breeder's pets
+    breed_stmt = (
+        select(Breed.name, Breed.kind)
+        .join(Pet, Pet.breed_id == Breed.id)
+        .where(Pet.user_id == breeder_id, Pet.is_deleted == False)
+        .distinct()
+    )
+    breed_rows = (await session.execute(breed_stmt)).all()
+    breeds = [{"name": r.name, "kind": r.kind} for r in breed_rows]
+    kinds = sorted(set(r.kind for r in breed_rows if r.kind))
 
     img = f"/storage/{user.profile_image_path}" if user.profile_image_path else None
     loc_data = None
@@ -202,4 +215,6 @@ async def get_public_breeder_profile(
         "profile_image_url": img,
         "search_tags": user.search_tags,
         "location": loc_data,
+        "breeds": breeds,
+        "animal_kinds": kinds,
     }
