@@ -14,9 +14,26 @@ os.environ['DEBUG'] = 'true'
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy import text
+from sqlalchemy.schema import DefaultClause
 
 from app.database import Base
 from app.models import User
+
+
+def _fix_string_server_defaults():
+    """Convert string server_default values to text() expressions.
+    
+    Some models use plain strings for server_default (e.g. "gen_random_uuid()")
+    which works with Alembic migrations but breaks Base.metadata.create_all
+    with asyncpg because asyncpg treats them as literal string values.
+    """
+    for table in Base.metadata.tables.values():
+        for column in table.columns:
+            if column.server_default is not None and isinstance(column.server_default.arg, str):
+                val = column.server_default.arg
+                # Only convert values that look like SQL expressions
+                if val.endswith(")") or val.lower() in ("true", "false"):
+                    column.server_default = DefaultClause(text(val))
 
 
 @pytest.fixture(autouse=True)
@@ -30,6 +47,10 @@ def setup_test_env() -> Generator[None, None, None]:
     # Set required environment variables for testing
     os.environ['DATABASE_URL'] = 'postgresql+asyncpg://test:test@localhost:5432/test_db'
     os.environ['SECRET_KEY'] = 'test_secret_key_at_least_32_characters_long_for_security'
+    
+    # Reset the rate limiter between tests to prevent cross-test interference
+    from app.middleware.rate_limiter import rate_limiter
+    rate_limiter.requests.clear()
     
     yield
     
@@ -73,6 +94,8 @@ async def async_session() -> AsyncGenerator[AsyncSession, None]:
     async with engine.begin() as conn:
         # Enable PostGIS extension for geospatial support
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
+        # Fix string server_defaults before creating tables
+        _fix_string_server_defaults()
         await conn.run_sync(Base.metadata.create_all)
     
     # Create session

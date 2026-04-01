@@ -94,11 +94,8 @@ class TestBreederService:
             longitude=-74.0060,
             distance=5.3,
             available_breeds=[
-                BreedInfo(breed_id=1, breed_name="Golden Retriever", pet_count=3)
+                BreedInfo(breed_id=1, breed_name="Golden Retriever", breed_kind="dog", pet_count=3)
             ],
-            thumbnail_url="/path/to/image.jpg",
-            location_description="Main Facility",
-            rating=None
         )
         
         # Verify structure
@@ -132,6 +129,7 @@ class TestBreederService:
         breed_info = BreedInfo(
             breed_id=1,
             breed_name="Labrador Retriever",
+            breed_kind="dog",
             pet_count=5
         )
         
@@ -149,9 +147,9 @@ class TestBreederService:
             longitude=-74.0060,
             distance=3.2,
             available_breeds=[
-                BreedInfo(breed_id=1, breed_name="Golden Retriever", pet_count=3),
-                BreedInfo(breed_id=2, breed_name="Labrador Retriever", pet_count=2),
-                BreedInfo(breed_id=3, breed_name="German Shepherd", pet_count=4),
+                BreedInfo(breed_id=1, breed_name="Golden Retriever", breed_kind="dog", pet_count=3),
+                BreedInfo(breed_id=2, breed_name="Labrador Retriever", breed_kind="dog", pet_count=2),
+                BreedInfo(breed_id=3, breed_name="German Shepherd", breed_kind="dog", pet_count=4),
             ],
             thumbnail_url=None,
             location_description="Main Breeding Facility",

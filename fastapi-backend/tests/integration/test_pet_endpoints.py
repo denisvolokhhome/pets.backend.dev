@@ -474,7 +474,10 @@ class TestStaticFileServing:
         
         try:
             # Try to access the file via the /storage URL
-            response = await client.get(f"/storage/{test_filename}")
+            # The app mounts storage_path.parent at /storage, so files in storage_path
+            # (which is storage/app) are accessible at /storage/app/filename
+            relative_path = test_file_path.relative_to(storage_path.parent)
+            response = await client.get(f"/storage/{relative_path}")
             
             # Verify the response
             assert response.status_code == 200, \

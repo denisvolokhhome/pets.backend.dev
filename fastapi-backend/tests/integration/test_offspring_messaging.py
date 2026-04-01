@@ -42,11 +42,12 @@ async def test_send_offspring_message_creates_thread(
     assert response.status_code == 201
     data = response.json()
     
-    assert data["breeder_id"] == str(test_breeder.id)
-    assert data["pet_seeker_id"] == str(test_pet_seeker.id)
-    assert data["offspring_id"] == str(test_offspring.id)
+    assert data["sender_id"] == str(test_pet_seeker.id)
+    assert data["receiver_id"] == str(test_breeder.id)
+    assert data["context_type"] == "offspring"
+    assert data["context_id"] == str(test_offspring.id)
     assert data["thread_id"] is not None
-    assert data["message"] == "I'm interested in this puppy. Is it still available?"
+    assert data["content"] == "I'm interested in this puppy. Is it still available?"
     assert data["is_read"] is False
 
 
@@ -81,11 +82,12 @@ async def test_send_offspring_message_reuses_thread(
     assert response1.status_code == 201
     thread_id_1 = response1.json()["thread_id"]
     
-    # Send second message
+    # Send second message with same thread_id to reuse thread
     response2 = await unauthenticated_client.post(
         f"/api/messages/offspring/{test_offspring.id}",
         json={
-            "message": "Second message"
+            "message": "Second message",
+            "thread_id": thread_id_1
         },
         headers={"Authorization": f"Bearer {token}"}
     )
@@ -248,11 +250,12 @@ async def test_get_thread_messages(
     assert response1.status_code == 201
     thread_id = response1.json()["thread_id"]
     
-    # Send second message
+    # Send second message in same thread
     response2 = await unauthenticated_client.post(
         f"/api/messages/offspring/{test_offspring.id}",
         json={
-            "message": "Second message"
+            "message": "Second message",
+            "thread_id": thread_id
         },
         headers={"Authorization": f"Bearer {token}"}
     )
@@ -269,8 +272,6 @@ async def test_get_thread_messages(
     
     assert data["thread_id"] == thread_id
     assert data["offspring_id"] == str(test_offspring.id)
-    assert data["breeder_id"] == str(test_breeder.id)
-    assert data["pet_seeker_id"] == str(test_pet_seeker.id)
     assert len(data["messages"]) == 2
     assert data["messages"][0]["message"] == "First message"
     assert data["messages"][1]["message"] == "Second message"

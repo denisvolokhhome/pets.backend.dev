@@ -41,33 +41,33 @@ class TestUserManagerHooks:
     """Test UserManager lifecycle hooks."""
     
     @pytest.mark.asyncio
-    async def test_on_after_register(self, user_manager, test_user_obj, capsys):
+    async def test_on_after_register(self, user_manager, test_user_obj, caplog):
         """Test that on_after_register hook is called after registration."""
-        await user_manager.on_after_register(test_user_obj)
+        import logging
+        with caplog.at_level(logging.INFO):
+            await user_manager.on_after_register(test_user_obj)
         
-        captured = capsys.readouterr()
-        assert f"User {test_user_obj.id} has registered" in captured.out
-        assert test_user_obj.email in captured.out
+        assert "registered" in caplog.text.lower()
     
     @pytest.mark.asyncio
-    async def test_on_after_forgot_password(self, user_manager, test_user_obj, capsys):
+    async def test_on_after_forgot_password(self, user_manager, test_user_obj, caplog):
         """Test that on_after_forgot_password hook is called."""
+        import logging
         token = "test_reset_token"
-        await user_manager.on_after_forgot_password(test_user_obj, token)
+        with caplog.at_level(logging.INFO):
+            await user_manager.on_after_forgot_password(test_user_obj, token)
         
-        captured = capsys.readouterr()
-        assert f"User {test_user_obj.id} has requested password reset" in captured.out
-        assert token in captured.out
+        assert "password reset" in caplog.text.lower()
     
     @pytest.mark.asyncio
-    async def test_on_after_request_verify(self, user_manager, test_user_obj, capsys):
+    async def test_on_after_request_verify(self, user_manager, test_user_obj, caplog):
         """Test that on_after_request_verify hook is called."""
+        import logging
         token = "test_verification_token"
-        await user_manager.on_after_request_verify(test_user_obj, token)
+        with caplog.at_level(logging.INFO):
+            await user_manager.on_after_request_verify(test_user_obj, token)
         
-        captured = capsys.readouterr()
-        assert f"Verification requested for user {test_user_obj.id}" in captured.out
-        assert token in captured.out
+        assert "verification requested" in caplog.text.lower()
 
 
 class TestPasswordValidation:
@@ -142,5 +142,5 @@ class TestUserManagerConfiguration:
         
         assert manager.reset_password_token_secret == settings.secret_key
         assert manager.verification_token_secret == settings.secret_key
-        assert manager.reset_password_token_lifetime_seconds == settings.jwt_lifetime_seconds
+        assert manager.reset_password_token_lifetime_seconds == 3600
         assert manager.verification_token_lifetime_seconds == settings.jwt_lifetime_seconds

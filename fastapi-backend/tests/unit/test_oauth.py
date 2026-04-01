@@ -199,11 +199,13 @@ class TestOAuthCallbackEndpoint:
         Validates: Requirements 4.3
         """
         with patch('app.routers.auth.settings', mock_settings):
-            response = await client.get("/api/auth/google/callback")
+            response = await client.get("/api/auth/google/callback", follow_redirects=False)
             
-            # FastAPI will return 422 for missing required query parameter
-            assert response.status_code == 422, \
-                "Should return 422 for missing code parameter"
+            # code is Optional, so missing code triggers redirect with error
+            assert response.status_code == 307, \
+                "Should return 307 redirect when code is missing"
+            assert "error=" in response.headers["location"], \
+                "Redirect should include error parameter"
 
 
 class TestOAuthStateValidation:
