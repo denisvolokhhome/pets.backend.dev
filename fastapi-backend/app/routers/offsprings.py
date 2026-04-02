@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.database import get_async_session
-from app.dependencies import current_active_user, require_breeder, optional_current_user
+from app.dependencies import current_active_user, require_breeder, optional_current_user, check_offspring_limit
 from app.models.user import User
 from app.schemas.offspring import OffspringCreate, OffspringRead, OffspringUpdate, OffspringListResponse
 from app.schemas.offspring_image import OffspringImageRead
@@ -52,7 +52,7 @@ def get_offspring_image_service(
 @router.post("/", response_model=OffspringRead, status_code=status.HTTP_201_CREATED)
 async def create_offspring(
     offspring_data: OffspringCreate,
-    user: User = Depends(require_breeder),
+    user: User = Depends(check_offspring_limit),
     session: AsyncSession = Depends(get_async_session),
 ) -> dict:
     """

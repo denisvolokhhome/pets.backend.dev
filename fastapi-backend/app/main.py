@@ -6,6 +6,7 @@ import logging
 import time
 
 from fastapi import FastAPI, Request, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -14,7 +15,7 @@ from sqlalchemy.exc import NoResultFound
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import Settings
-from app.routers import auth, pets, breeds, breedings, locations, users, geocoding, search, messages, offsprings, favorites, notifications, notification_preferences, admin_stats, support, genealogy
+from app.routers import auth, pets, breeds, breedings, locations, users, geocoding, search, messages, offsprings, favorites, notifications, notification_preferences, admin_stats, support, genealogy, billing
 
 # Configure logging
 logging.basicConfig(
@@ -269,6 +270,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add billing security headers middleware (outermost → runs last on response)
+from app.middleware.billing_security_headers import BillingSecurityHeadersMiddleware
+app.add_middleware(BillingSecurityHeadersMiddleware)
+
+# Add billing rate limiter middleware
+from app.middleware.billing_rate_limiter import BillingRateLimiterMiddleware
+app.add_middleware(BillingRateLimiterMiddleware)
+
 # Add logging middleware
 app.add_middleware(LoggingMiddleware)
 
@@ -313,6 +322,7 @@ app.include_router(notification_preferences.router, tags=["notification-preferen
 app.include_router(admin_stats.router, tags=["admin-stats"])
 app.include_router(support.router, tags=["support"])
 app.include_router(genealogy.router, tags=["genealogy"])
+app.include_router(billing.router, tags=["billing"])
 
 
 @app.get("/health")
@@ -369,6 +379,42 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
             "detail": exc.detail,
             "error_code": error_code
         }
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Handle Pydantic validation errors, logging billing validation failures to the audit log."""
+    logger.warning(f"Validation error: {request.url.path} - {exc.errors()}")
+
+    # Log billing endpoint validation failures to the audit logger
+    if request.url.path.startswith("/api/billing/"):
+        try:
+            from app.services.billing_audit_logger import log_billing_event
+            from app.database import async_session_maker
+
+            error_fields = ", ".join(
+                ".".join(str(loc) for loc in e.get("loc", []))
+                for e in exc.errors()
+            )
+            async with async_session_maker() as audit_session:
+                await log_billing_event(
+                    audit_session,
+                    user_id=None,
+                    operation="validation_failed",
+                    outcome="failure",
+                    details=f"Input validation failed on {request.method} {request.url.path}: {error_fields}",
+                )
+                await audit_session.commit()
+        except Exception:
+            logger.error("Failed to write billing validation audit log", exc_info=True)
+
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": exc.errors(),
+            "error_code": "VALIDATION_ERROR",
+        },
     )
 
 

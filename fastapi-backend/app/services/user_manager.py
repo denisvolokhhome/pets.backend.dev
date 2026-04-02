@@ -46,6 +46,16 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             except Exception as e:
                 logger.warning("Failed to send verification email for user %s: %s", user.id, e)
 
+        # Assign default FREE subscription for breeder accounts
+        if user.is_breeder:
+            try:
+                from app.services.billing_service import billing_service
+                session = self.user_db.session
+                await billing_service.create_default_subscription(session, user.id)
+                logger.info("Default FREE subscription assigned to breeder %s", user.id)
+            except Exception as e:
+                logger.error("Failed to assign default subscription for breeder %s: %s", user.id, e)
+
     async def on_after_forgot_password(
         self, user: User, token: str, request: Optional[Request] = None
     ) -> None:

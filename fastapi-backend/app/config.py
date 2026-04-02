@@ -146,6 +146,20 @@ class Settings(BaseSettings):
         description="Secret API key for admin dashboard access"
     )
 
+    # Stripe / Billing Configuration
+    stripe_api_key: str = Field(
+        default="",
+        description="Stripe API secret key for payment processing"
+    )
+    stripe_webhook_secret: str = Field(
+        default="",
+        description="Stripe webhook signing secret for signature verification"
+    )
+    billing_encryption_key: str = Field(
+        default="",
+        description="Encryption key for AES-256 field-level encryption of billing data"
+    )
+
     # SMTP / Email Configuration
     smtp_host: str = Field(
         default="",

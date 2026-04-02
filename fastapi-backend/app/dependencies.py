@@ -18,6 +18,7 @@ from app.database import get_async_session
 from app.models.user import User
 from app.services.user_manager import UserManager
 from app.services.geocoding_service import GeocodingService
+from app.services.billing_service import billing_service
 
 
 # Initialize settings
@@ -171,4 +172,80 @@ def require_pet_seeker(user: User = Depends(current_active_user)) -> User:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Pet seeker access required"
         )
+    return user
+
+
+# Usage limit enforcement dependencies
+async def check_pet_limit(
+    user: User = Depends(require_breeder),
+    session: AsyncSession = Depends(get_async_session),
+) -> User:
+    """
+    Dependency that checks whether the breeder is within their plan's pet limit.
+
+    Delegates to billing_service.check_usage which handles subscription lookup,
+    FREE plan fallback for non-active subscriptions, and raises HTTPException(403)
+    with USAGE_LIMIT_EXCEEDED if at or above limit.
+
+    Args:
+        user: Authenticated breeder user
+        session: Async database session
+
+    Returns:
+        User: The authenticated breeder if within limits
+
+    Raises:
+        HTTPException: 403 if pet limit reached
+    """
+    await billing_service.check_usage(session, user.id, "pets")
+    return user
+
+
+async def check_location_limit(
+    user: User = Depends(require_breeder),
+    session: AsyncSession = Depends(get_async_session),
+) -> User:
+    """
+    Dependency that checks whether the breeder is within their plan's published location limit.
+
+    Delegates to billing_service.check_usage which handles subscription lookup,
+    FREE plan fallback for non-active subscriptions, and raises HTTPException(403)
+    with USAGE_LIMIT_EXCEEDED if at or above limit.
+
+    Args:
+        user: Authenticated breeder user
+        session: Async database session
+
+    Returns:
+        User: The authenticated breeder if within limits
+
+    Raises:
+        HTTPException: 403 if published location limit reached
+    """
+    await billing_service.check_usage(session, user.id, "locations")
+    return user
+
+
+async def check_offspring_limit(
+    user: User = Depends(require_breeder),
+    session: AsyncSession = Depends(get_async_session),
+) -> User:
+    """
+    Dependency that checks whether the breeder is within their plan's simultaneous offspring limit.
+
+    Delegates to billing_service.check_usage which handles subscription lookup,
+    FREE plan fallback for non-active subscriptions, and raises HTTPException(403)
+    with USAGE_LIMIT_EXCEEDED if at or above limit.
+
+    Args:
+        user: Authenticated breeder user
+        session: Async database session
+
+    Returns:
+        User: The authenticated breeder if within limits
+
+    Raises:
+        HTTPException: 403 if offspring limit reached
+    """
+    await billing_service.check_usage(session, user.id, "offsprings")
     return user

@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.database import get_async_session
-from app.dependencies import current_active_user, require_breeder
+from app.dependencies import current_active_user, require_breeder, check_pet_limit
 from app.models.pet import Pet
 from app.models.user import User
 from app.schemas.pet import PetCreate, PetRead, PetUpdate
@@ -43,7 +43,7 @@ def get_file_service() -> FileService:
 @router.post("/", response_model=PetRead, status_code=status.HTTP_201_CREATED)
 async def create_pet(
     pet_data: PetCreate,
-    user: User = Depends(require_breeder),
+    user: User = Depends(check_pet_limit),
     session: AsyncSession = Depends(get_async_session),
 ) -> Pet:
     """

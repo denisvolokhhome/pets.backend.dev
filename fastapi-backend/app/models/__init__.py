@@ -14,6 +14,10 @@ from app.models.offspring_image import OffspringImage
 from app.models.offspring_favorite import OffspringFavorite
 from app.models.notification import Notification
 from app.models.notification_preference import NotificationPreference
+from app.models.plan import Plan
+from app.models.subscription import Subscription
+from app.models.invoice import Invoice
+from app.models.billing_audit_log import BillingAuditLog
 
 __all__ = [
     "User",
@@ -32,4 +36,8 @@ __all__ = [
     "OffspringFavorite",
     "Notification",
     "NotificationPreference",
+    "Plan",
+    "Subscription",
+    "Invoice",
+    "BillingAuditLog",
 ]

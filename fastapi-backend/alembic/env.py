@@ -24,7 +24,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Import all models here so Alembic can detect them
-from app.models import User, Pet, Breed, BreedColour, Breeding, BreedingPet, Location, UserContact  # noqa
+from app.models import User, Pet, Breed, BreedColour, Breeding, BreedingPet, Location, UserContact, Plan, Subscription, Invoice  # noqa
 target_metadata = Base.metadata
 
 

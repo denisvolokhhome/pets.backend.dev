@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_async_session
-from app.dependencies import current_active_user, get_redis, settings, require_breeder
+from app.dependencies import current_active_user, get_redis, settings, require_breeder, check_location_limit
 from app.models.location import Location
 from app.models.user import User
 from app.schemas.location import LocationCreate, LocationRead, LocationUpdate
@@ -110,7 +110,7 @@ async def geocode_location_address(
 @router.post("/", response_model=LocationRead, status_code=status.HTTP_201_CREATED)
 async def create_location(
     location_data: LocationCreate,
-    user: User = Depends(require_breeder),
+    user: User = Depends(check_location_limit),
     session: AsyncSession = Depends(get_async_session),
     geocoding_service: GeocodingService = Depends(get_geocoding_service),
 ) -> Location:
