@@ -1,2 +1,5 @@
 .DS_Store
 delivery/.env
+.env
+__pycache__
+.venv
