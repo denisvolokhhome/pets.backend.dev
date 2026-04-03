@@ -126,6 +126,11 @@ services:
       SMTP_FROM_NAME: ${SMTP_FROM_NAME}
       SMTP_TLS: ${SMTP_TLS}
 
+      # Stripe / Billing Configuration
+      STRIPE_API_KEY: ${STRIPE_API_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      BILLING_ENCRYPTION_KEY: ${BILLING_ENCRYPTION_KEY}
+
       # Admin key
       ADMIN_API_KEY: ${ADMIN_API_KEY}
     volumes:
