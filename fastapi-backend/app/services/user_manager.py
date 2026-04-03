@@ -77,6 +77,25 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             frontend_url=self.settings.frontend_url,
         )
 
+    async def authenticate(self, credentials) -> Optional[User]:
+        """Override to return a specific error for suspended accounts."""
+        user = await super().authenticate(credentials)
+        if user is None:
+            # Check if the user exists but is inactive (suspended)
+            try:
+                found = await self.user_db.get_by_email(credentials.username)
+                if found and not found.is_active:
+                    from fastapi import HTTPException
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Your account has been deactivated. Please contact support for further investigation.",
+                    )
+            except HTTPException:
+                raise
+            except Exception:
+                pass
+        return user
+
     async def validate_password(
         self, password: str, user: Optional[User] = None
     ) -> None:
