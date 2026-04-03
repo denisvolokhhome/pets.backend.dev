@@ -2,7 +2,7 @@
 from typing import List
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_async_session
@@ -14,6 +14,15 @@ from app.services.notification_service import notification_service
 
 
 router = APIRouter(prefix="/api/favorites", tags=["favorites"])
+
+
+def _require_pet_seeker(user: User) -> None:
+    """Raise 403 if the user is a breeder."""
+    if user.is_breeder:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Favorites are only available to pet seekers",
+        )
 
 
 @router.post(
@@ -43,6 +52,7 @@ async def add_favorite(
         HTTPException: 404 if offspring not found or archived
         HTTPException: 400 if already favorited
     """
+    _require_pet_seeker(current_user)
     favorite = await favorite_service.add_favorite(
         db=db,
         offspring_id=offspring_id,
@@ -101,6 +111,7 @@ async def remove_favorite(
     Raises:
         HTTPException: 404 if favorite not found
     """
+    _require_pet_seeker(current_user)
     await favorite_service.remove_favorite(
         db=db,
         offspring_id=offspring_id,
@@ -132,6 +143,7 @@ async def list_favorites(
     Returns:
         List of favorites with offspring details
     """
+    _require_pet_seeker(current_user)
     favorites = await favorite_service.list_user_favorites(
         db=db,
         user_id=current_user.id,
@@ -164,6 +176,7 @@ async def check_favorite_status(
     Returns:
         Dictionary with is_favorited boolean
     """
+    _require_pet_seeker(current_user)
     is_favorited = await favorite_service.check_favorite_status(
         db=db,
         offspring_id=offspring_id,
