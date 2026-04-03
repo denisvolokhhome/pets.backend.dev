@@ -20,6 +20,7 @@ redis>=5.0.0
 aioredis>=2.0.1
 aiolimiter>=1.1.0
 cryptography>=43.0.0
+stripe>=8.0.0
 
 # Development dependencies
 pytest>=8.3.0
