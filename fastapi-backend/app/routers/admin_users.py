@@ -97,6 +97,7 @@ async def unsuspend_user(
 async def list_users(
     role: Optional[str] = None,
     status: Optional[str] = None,
+    search: Optional[str] = None,
     limit: int = 50,
     _: bool = Depends(verify_admin_key),
     session: AsyncSession = Depends(get_async_session),
@@ -107,6 +108,7 @@ async def list_users(
     Query params:
         role: 'breeder' | 'seeker' | None (all)
         status: 'active' | 'suspended' | None (all)
+        search: partial email match (case-insensitive)
         limit: max rows (default 50)
     """
     query = select(User).order_by(User.created_at.desc()).limit(limit)
@@ -120,6 +122,9 @@ async def list_users(
         query = query.where(User.is_active == True)
     elif status == "suspended":
         query = query.where(User.is_active == False)
+
+    if search:
+        query = query.where(User.email.ilike(f"%{search}%"))
 
     result = await session.execute(query)
     users = result.scalars().all()
