@@ -32,7 +32,7 @@ def _fix_string_server_defaults():
             if column.server_default is not None and isinstance(column.server_default.arg, str):
                 val = column.server_default.arg
                 # Only convert values that look like SQL expressions
-                if val.endswith(")") or val.lower() in ("true", "false"):
+                if val.endswith(")") or val.lower() in ("true", "false") or "::" in val:
                     column.server_default = DefaultClause(text(val))
 
 

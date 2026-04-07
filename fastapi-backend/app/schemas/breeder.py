@@ -39,7 +39,8 @@ class BreederSearchResult(BaseModel):
     )
     thumbnail_url: Optional[str] = Field(None, description="URL to breeder profile image or representative pet image")
     location_description: Optional[str] = Field(None, description="Description or name of the breeding location")
-    rating: Optional[float] = Field(None, ge=0, le=5, description="Breeder rating (future feature)")
+    rating: Optional[float] = Field(None, ge=0, le=5, description="Average breeder rating from reviews")
+    review_count: int = Field(0, ge=0, description="Total number of reviews for this breeder")
     
     @validator('distance')
     def round_distance(cls, v):
@@ -70,6 +71,7 @@ class BreederSearchResult(BaseModel):
                 ],
                 "thumbnail_url": "/storage/profile_image.jpg",
                 "location_description": "Main Breeding Facility",
-                "rating": None
+                "rating": 4.5,
+                "review_count": 12
             }
         }

@@ -18,6 +18,7 @@ from app.models.plan import Plan
 from app.models.subscription import Subscription
 from app.models.invoice import Invoice
 from app.models.billing_audit_log import BillingAuditLog
+from app.models.breeder_review import BreederReview
 
 __all__ = [
     "User",
@@ -40,4 +41,5 @@ __all__ = [
     "Subscription",
     "Invoice",
     "BillingAuditLog",
+    "BreederReview",
 ]

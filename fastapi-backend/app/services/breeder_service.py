@@ -1,11 +1,12 @@
 """Breeder service for geospatial search of breeding locations."""
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, literal, select
+from sqlalchemy import func, select
 from app.models.location import Location
 from app.models.user import User
 from app.models.pet import Pet
 from app.models.breed import Breed
+from app.models.breeder_review import BreederReview
 from app.schemas.breeder import BreederSearchResult, BreedInfo
 
 
@@ -58,6 +59,17 @@ class BreederService:
         # Convert miles to meters for PostGIS distance functions
         radius_meters = radius_miles * 1609.34
         
+        # Subquery for review aggregation per breeder
+        review_subq = (
+            select(
+                BreederReview.breeder_id,
+                func.round(func.coalesce(func.avg(BreederReview.rating), 0), 1).label('avg_rating'),
+                func.count(BreederReview.id).label('review_count'),
+            )
+            .group_by(BreederReview.breeder_id)
+            .subquery()
+        )
+
         # Build base query for locations with pets
         # We need to find locations that:
         # 1. Are user locations (location_type='user')
@@ -79,10 +91,12 @@ class BreederService:
                 ) / 1609.34).label('distance'),  # Convert meters to miles
                 User.profile_image_path.label('thumbnail_url'),
                 Location.name.label('location_description'),
-                literal(None).label('rating')  # Placeholder for future rating feature
+                func.coalesce(review_subq.c.avg_rating, 0).label('rating'),
+                func.coalesce(review_subq.c.review_count, 0).label('review_count'),
             )
             .join(User, Location.user_id == User.id)
             .join(Pet, Pet.location_id == Location.id)
+            .outerjoin(review_subq, review_subq.c.breeder_id == Location.user_id)
             .where(
                 Location.location_type == 'user',  # Only breeding locations
                 Location.is_published == True,  # Only published locations visible on map
@@ -114,7 +128,9 @@ class BreederService:
             User.breedery_name,
             Location.coordinates,
             User.profile_image_path,
-            Location.name
+            Location.name,
+            review_subq.c.avg_rating,
+            review_subq.c.review_count,
         )
         
         # Order by distance (nearest first)
@@ -169,7 +185,8 @@ class BreederService:
                 ],
                 thumbnail_url=loc.thumbnail_url,
                 location_description=loc.location_description,
-                rating=loc.rating
+                rating=float(loc.rating) if loc.rating else None,
+                review_count=int(loc.review_count) if loc.review_count else 0,
             ))
         
         return results

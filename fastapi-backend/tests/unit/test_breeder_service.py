@@ -105,6 +105,7 @@ class TestBreederService:
         assert len(result.available_breeds) == 1
         assert result.available_breeds[0].breed_name == "Golden Retriever"
         assert result.available_breeds[0].pet_count == 3
+        assert result.review_count == 0  # Default value
     
     def test_distance_rounding(self):
         """Test that distance is rounded to 1 decimal place."""
