@@ -28,6 +28,8 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - breedly-network
+    ports:
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U breedly_user -d breedly_db"]
       interval: 10s
