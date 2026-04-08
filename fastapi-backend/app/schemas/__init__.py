@@ -33,6 +33,7 @@ from app.schemas.offspring import OffspringBase, OffspringCreate, OffspringUpdat
 from app.schemas.offspring_image import OffspringImageRead
 from app.schemas.offspring_favorite import OffspringFavoriteRead
 from app.schemas.notification import NotificationRead
+from app.schemas.pet_import import PetImportRow, ImportPayload, ImportError, ImportResult
 
 # Rebuild models to resolve forward references
 OffspringRead.model_rebuild()
@@ -90,4 +91,9 @@ __all__ = [
     "OffspringFavoriteRead",
     # Notification schemas
     "NotificationRead",
+    # Pet import schemas
+    "PetImportRow",
+    "ImportPayload",
+    "ImportError",
+    "ImportResult",
 ]

@@ -15,7 +15,7 @@ from sqlalchemy.exc import NoResultFound
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import Settings
-from app.routers import auth, pets, breeds, breedings, locations, users, geocoding, search, messages, offsprings, favorites, notifications, notification_preferences, admin_stats, admin_users, support, genealogy, billing, reviews
+from app.routers import auth, pets, breeds, breedings, locations, users, geocoding, search, messages, offsprings, favorites, notifications, notification_preferences, admin_stats, admin_users, support, genealogy, billing, reviews, pet_import
 
 # Configure logging
 logging.basicConfig(
@@ -325,6 +325,7 @@ app.include_router(support.router, tags=["support"])
 app.include_router(genealogy.router, tags=["genealogy"])
 app.include_router(billing.router, tags=["billing"])
 app.include_router(reviews.router, tags=["reviews"])
+app.include_router(pet_import.router)
 
 
 @app.get("/health")
