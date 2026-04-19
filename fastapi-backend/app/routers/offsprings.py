@@ -232,6 +232,36 @@ async def delete_offspring(
     )
 
 
+@router.patch("/{offspring_id}/publish", response_model=OffspringRead)
+async def toggle_publish_offspring(
+    offspring_id: uuid.UUID,
+    user: User = Depends(require_breeder),
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    """
+    Toggle the published state of an offspring.
+
+    Published offsprings are visible to pet seekers; unpublished ones are hidden.
+    """
+    from sqlalchemy import select as sa_select
+    from app.models.offspring import Offspring as OffspringModel
+
+    result = await session.execute(
+        sa_select(OffspringModel).where(
+            OffspringModel.id == offspring_id,
+            OffspringModel.user_id == user.id,
+        )
+    )
+    offspring = result.scalar_one_or_none()
+    if not offspring:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Offspring not found")
+
+    offspring.is_published = not offspring.is_published
+    await session.commit()
+    await session.refresh(offspring)
+    return await _build_offspring_response(session, offspring, user_id=user.id)
+
+
 
 
 # Public endpoints for pet seekers
@@ -495,6 +525,7 @@ async def _build_offspring_response(
         "price": offspring.price,
         "description": offspring.description,
         "color_markings": offspring.color_markings,
+        "is_published": offspring.is_published,
         "created_at": offspring.created_at,
         "updated_at": offspring.updated_at,
         "age": age,
@@ -504,7 +535,14 @@ async def _build_offspring_response(
             "description": breeding.description,
             "status": breeding.status,
             "created_at": breeding.created_at,
-            "updated_at": breeding.updated_at
+            "updated_at": breeding.updated_at,
+            "application_form": {
+                "id": breeding.application_form.id,
+                "breeding_id": breeding.application_form.breeding_id,
+                "form_fields": breeding.application_form.form_fields,
+                "created_at": breeding.application_form.created_at,
+                "updated_at": breeding.application_form.updated_at,
+            } if breeding.application_form else None,
         } if breeding else None,
         "breed": {
             "id": breed.id,

@@ -361,7 +361,8 @@ class OffspringService:
         
         query = select(Offspring).where(
             Offspring.user_id == breeder_id,
-            Offspring.status != "Archived"  # Exclude archived offsprings
+            Offspring.status != "Archived",  # Exclude archived offsprings
+            Offspring.is_published == True   # Only published offsprings visible to seekers
         ).options(
             selectinload(Offspring.breed),
             selectinload(Offspring.father),
@@ -416,7 +417,8 @@ class OffspringService:
         
         query = select(func.count(Offspring.id)).where(
             Offspring.user_id == breeder_id,
-            Offspring.status != "Archived"  # Exclude archived offsprings
+            Offspring.status != "Archived",  # Exclude archived offsprings
+            Offspring.is_published == True   # Only published offsprings visible to seekers
         )
         
         if breed_id:
@@ -501,7 +503,8 @@ class OffspringService:
         
         query = select(Offspring).where(
             Offspring.id == offspring_id,
-            Offspring.status != "Archived"
+            Offspring.status != "Archived",
+            Offspring.is_published == True  # Only published offsprings visible to seekers
         ).options(
             selectinload(Offspring.breed),
             selectinload(Offspring.father),

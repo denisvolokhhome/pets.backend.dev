@@ -25,6 +25,7 @@ class OffspringBase(BaseModel):
     price: Optional[Decimal] = Field(None, ge=0)
     description: Optional[str] = None
     color_markings: Optional[str] = None
+    is_published: bool = False
     
     @field_validator('date_of_birth')
     @classmethod
@@ -61,6 +62,7 @@ class OffspringUpdate(BaseModel):
     price: Optional[Decimal] = Field(None, ge=0)
     description: Optional[str] = None
     color_markings: Optional[str] = None
+    is_published: Optional[bool] = None
     
     @field_validator('price')
     @classmethod

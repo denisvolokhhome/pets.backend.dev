@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from app.models.pet import Pet
     from app.models.litter_pet import BreedingPet
     from app.models.user import User
+    from app.models.breeding_application_form import BreedingApplicationForm
 
 
 class Breeding(Base):
@@ -94,6 +95,14 @@ class Breeding(Base):
         "Offspring",
         back_populates="breeding",
         lazy="selectin"
+    )
+
+    application_form: Mapped[Optional["BreedingApplicationForm"]] = relationship(
+        "BreedingApplicationForm",
+        back_populates="breeding",
+        uselist=False,
+        lazy="selectin",
+        cascade="all, delete-orphan",
     )
     
     def __repr__(self) -> str:

@@ -282,7 +282,8 @@ async def get_litter(
         "created_at": breeding.created_at,
         "updated_at": breeding.updated_at,
         "parent_pets": parent_pets if parent_pets else None,
-        "puppies": puppies if puppies else None
+        "puppies": puppies if puppies else None,
+        "application_form": breeding.application_form,
     }
 
 
@@ -761,3 +762,101 @@ async def delete_litter(
         "parent_pets": parent_pets if parent_pets else None,
         "puppies": puppies if puppies else None
     }
+
+
+# ── Application Form endpoints ────────────────────────────────────────────────
+
+from app.models.breeding_application_form import BreedingApplicationForm
+from app.schemas.breeding import ApplicationFormCreate, ApplicationFormRead
+
+
+@router.put("/{breeding_id}/application-form", response_model=ApplicationFormRead)
+async def upsert_application_form(
+    breeding_id: int,
+    form_data: ApplicationFormCreate,
+    session: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(require_breeder),
+) -> BreedingApplicationForm:
+    """
+    Create or replace the application form for a breeding.
+
+    Breeders can define a list of text/textarea fields that pet seekers must fill
+    before contacting them about an offspring from this breeding.
+    """
+    # Verify ownership
+    breeding_result = await session.execute(
+        select(Breeding).where(
+            Breeding.id == breeding_id,
+            Breeding.user_id == current_user.id,
+        )
+    )
+    breeding = breeding_result.scalar_one_or_none()
+    if not breeding:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Breeding not found")
+
+    # Upsert
+    existing_result = await session.execute(
+        select(BreedingApplicationForm).where(
+            BreedingApplicationForm.breeding_id == breeding_id
+        )
+    )
+    form = existing_result.scalar_one_or_none()
+
+    fields_data = [f.model_dump() for f in form_data.form_fields]
+
+    if form:
+        form.form_fields = fields_data
+    else:
+        form = BreedingApplicationForm(
+            breeding_id=breeding_id,
+            user_id=current_user.id,
+            form_fields=fields_data,
+        )
+        session.add(form)
+
+    await session.commit()
+    await session.refresh(form)
+    return form
+
+
+@router.delete("/{breeding_id}/application-form", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_application_form(
+    breeding_id: int,
+    session: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(require_breeder),
+) -> None:
+    """Remove the application form from a breeding."""
+    existing_result = await session.execute(
+        select(BreedingApplicationForm).where(
+            BreedingApplicationForm.breeding_id == breeding_id,
+            BreedingApplicationForm.user_id == current_user.id,
+        )
+    )
+    form = existing_result.scalar_one_or_none()
+    if not form:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application form not found")
+
+    await session.delete(form)
+    await session.commit()
+
+
+@router.get("/public/{breeding_id}/application-form", response_model=ApplicationFormRead)
+async def get_public_application_form(
+    breeding_id: int,
+    session: AsyncSession = Depends(get_async_session),
+) -> BreedingApplicationForm:
+    """
+    Get the application form for a breeding (public — no auth required).
+
+    Pet seekers call this to render the form before contacting a breeder.
+    Returns 404 if no form is configured.
+    """
+    result = await session.execute(
+        select(BreedingApplicationForm).where(
+            BreedingApplicationForm.breeding_id == breeding_id
+        )
+    )
+    form = result.scalar_one_or_none()
+    if not form:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No application form for this breeding")
+    return form

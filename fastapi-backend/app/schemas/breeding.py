@@ -1,6 +1,6 @@
 """Breeding schemas for API request/response validation."""
 from datetime import datetime, date
-from typing import Optional, List
+from typing import Optional, List, Any, Dict
 from enum import Enum
 import uuid
 
@@ -74,6 +74,7 @@ class LitterResponse(LitterBase):
     updated_at: Optional[datetime] = None
     parent_pets: Optional[List[dict]] = None
     puppies: Optional[List[dict]] = None
+    application_form: Optional["ApplicationFormRead"] = None
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -87,3 +88,34 @@ class LitterRead(LitterBase):
     updated_at: Optional[datetime] = None
     
     model_config = ConfigDict(from_attributes=True)
+
+
+# ── Application Form ──────────────────────────────────────────────────────────
+
+class ApplicationFormField(BaseModel):
+    """A single field in a breeding application form."""
+    id: str  # client-generated UUID for stable identity
+    type: str = Field(..., pattern="^(text|textarea)$")
+    label: str = Field(..., min_length=1, max_length=255)
+    required: bool = False
+
+
+class ApplicationFormCreate(BaseModel):
+    """Create or replace the application form for a breeding."""
+    form_fields: List[ApplicationFormField]
+
+
+class ApplicationFormRead(BaseModel):
+    """Application form response."""
+    id: int
+    breeding_id: int
+    form_fields: List[ApplicationFormField]
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ApplicationFormResponse(BaseModel):
+    """A pet seeker's filled-out application form response."""
+    responses: Dict[str, str]  # field_id -> answer

@@ -4,7 +4,7 @@ from typing import Optional, TYPE_CHECKING
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import String, Text, Integer, Date, DateTime, Numeric, ForeignKey, func, select
+from sqlalchemy import String, Text, Boolean, Integer, Date, DateTime, Numeric, ForeignKey, func, select
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship, column_property
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -115,7 +115,15 @@ class Offspring(Base):
         Text,
         nullable=True
     )
-    
+
+    # Publication flag — breeders control visibility to pet seekers
+    is_published: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        index=True
+    )
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
