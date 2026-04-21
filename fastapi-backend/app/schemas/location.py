@@ -17,6 +17,7 @@ class LocationBase(BaseModel):
     zipcode: str = Field(..., min_length=1, max_length=20)
     location_type: str = Field(..., min_length=1, max_length=50)
     is_published: bool = Field(default=True, description="Whether location is published and searchable on map")
+    is_default: bool = Field(default=False, description="Whether this is the default location for new pets")
     
     @field_validator('name', 'address1', 'city', 'state', 'country', 'zipcode', 'location_type')
     @classmethod
@@ -43,6 +44,7 @@ class LocationUpdate(BaseModel):
     zipcode: Optional[str] = Field(None, min_length=1, max_length=20)
     location_type: Optional[str] = Field(None, min_length=1, max_length=50)
     is_published: Optional[bool] = Field(None, description="Whether location is published and searchable on map")
+    is_default: Optional[bool] = Field(None, description="Whether this is the default location for new pets")
     
     @field_validator('name', 'address1', 'city', 'state', 'country', 'zipcode', 'location_type')
     @classmethod

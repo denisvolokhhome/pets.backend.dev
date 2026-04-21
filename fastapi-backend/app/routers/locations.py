@@ -13,6 +13,7 @@ import logging
 import uuid
 from typing import List, Optional
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, status
 from redis.asyncio import Redis
 from sqlalchemy import select
@@ -156,6 +157,14 @@ async def create_location(
     
     **Returns:** The created location record with generated ID and coordinates
     """
+    # If this location is being set as default, unset all others first
+    if location_data.is_default:
+        await session.execute(
+            sa.update(Location)
+            .where(Location.user_id == user.id)
+            .values(is_default=False)
+        )
+
     # Create new location instance
     location = Location(
         user_id=user.id,
@@ -168,6 +177,7 @@ async def create_location(
         zipcode=location_data.zipcode,
         location_type=location_data.location_type,
         is_published=location_data.is_published,
+        is_default=location_data.is_default,
     )
     
     # Add to session first to get an ID
@@ -241,6 +251,7 @@ async def list_locations(
             "zipcode": location.zipcode,
             "location_type": location.location_type,
             "is_published": location.is_published,
+            "is_default": location.is_default,
             "created_at": location.created_at,
             "updated_at": location.updated_at,
             "pets": [{"id": pet.id, "name": pet.name} for pet in pets]
@@ -319,6 +330,14 @@ async def update_location(
     if any(field in update_data for field in address_fields):
         address_changed = True
     
+    # If setting as default, unset all other locations first
+    if update_data.get('is_default'):
+        await session.execute(
+            sa.update(Location)
+            .where(Location.user_id == user.id, Location.id != location_id)
+            .values(is_default=False)
+        )
+    
     # Update fields that were provided
     for field, value in update_data.items():
         setattr(location, field, value)
@@ -379,6 +398,14 @@ async def patch_location(
     if any(field in update_data for field in address_fields):
         address_changed = True
     
+    # If setting as default, unset all other locations first
+    if update_data.get('is_default'):
+        await session.execute(
+            sa.update(Location)
+            .where(Location.user_id == user.id, Location.id != location_id)
+            .values(is_default=False)
+        )
+    
     # Update fields that were provided
     for field, value in update_data.items():
         setattr(location, field, value)
@@ -391,6 +418,47 @@ async def patch_location(
         except Exception as e:
             logger.warning(f"Re-geocoding failed for location {location_id}: {e}. Location updated without new coordinates.")
     
+    await session.commit()
+    await session.refresh(location)
+    
+    return location
+
+
+@router.post("/{location_id}/set-default", response_model=LocationRead)
+async def set_default_location(
+    location_id: int,
+    user: User = Depends(require_breeder),
+    session: AsyncSession = Depends(get_async_session),
+) -> Location:
+    """
+    Set a location as the default for new pet creation.
+    
+    Only one location can be the default at a time.
+    Setting a new default will automatically unset the previous one.
+    """
+    # Fetch the location
+    query = select(Location).where(
+        Location.id == location_id,
+        Location.user_id == user.id
+    )
+    result = await session.execute(query)
+    location = result.scalar_one_or_none()
+    
+    if location is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Location not found"
+        )
+    
+    # Unset default on all other locations
+    await session.execute(
+        sa.update(Location)
+        .where(Location.user_id == user.id, Location.id != location_id)
+        .values(is_default=False)
+    )
+    
+    # Set this location as default
+    location.is_default = True
     await session.commit()
     await session.refresh(location)
     

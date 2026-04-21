@@ -79,6 +79,12 @@ class Location(Base):
         nullable=False,
         server_default='true'
     )
+    is_default: Mapped[bool] = mapped_column(
+        sa.Boolean,
+        nullable=False,
+        server_default='false',
+        comment="Whether this is the default location for new pets"
+    )
     
     # Geospatial columns
     latitude: Mapped[Optional[float]] = mapped_column(
