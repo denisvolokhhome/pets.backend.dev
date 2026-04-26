@@ -56,6 +56,10 @@ pipeline {
                     remote.password = VM_CREDS_PSW
                     remote.allowAnyHosts = true
 
+                    echo "Copying docker-compose.yml to dev server..."
+                    sshCommand remote: remote, command: 'mkdir -p /home/breedly/breedly-app'
+                    sshPut remote: remote, from: 'delivery/docker-compose.yml', into: '/home/breedly/breedly-app/'
+
                     echo "Logging into Harbor on dev server..."
                     sshCommand remote: remote, command: "echo '${HARBOR_PASS}' | docker login ${HARBOR_REGISTRY} -u '${HARBOR_USER}' --password-stdin"
 
