@@ -1,0 +1,89 @@
+pipeline {
+    agent any
+
+    environment {
+        HARBOR_REGISTRY = '192.168.68.110:80'
+        IMAGE_NAME = 'breedly/breedly-billing-admin'
+        HARBOR_USER = credentials('harbor-username')
+        HARBOR_PASS = credentials('harbor-password')
+        VM_CREDS = credentials('vm-ssh-credentials')
+    }
+
+    stages {
+        stage('Login to Harbor') {
+            steps {
+                echo "Logging in to Harbor registry at ${HARBOR_REGISTRY}..."
+                sh 'echo "$HARBOR_PASS" | docker login $HARBOR_REGISTRY -u "$HARBOR_USER" --password-stdin'
+                echo "Harbor login successful"
+            }
+        }
+
+        stage('Build') {
+            steps {
+                echo "Building Docker image: ${HARBOR_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
+                sh """
+                    docker build \
+                        --platform linux/amd64 \
+                        -t ${HARBOR_REGISTRY}/${IMAGE_NAME}:latest \
+                        -t ${HARBOR_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} \
+                        -f billing-admin/Dockerfile \
+                        billing-admin/
+                """
+                echo "Docker image built successfully"
+                sh "docker images ${HARBOR_REGISTRY}/${IMAGE_NAME} --format 'table {{.Repository}}\\t{{.Tag}}\\t{{.Size}}'"
+            }
+        }
+
+        stage('Push') {
+            steps {
+                echo "Pushing image to Harbor..."
+                sh "docker push ${HARBOR_REGISTRY}/${IMAGE_NAME}:latest"
+                echo "Pushed :latest"
+                sh "docker push ${HARBOR_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
+                echo "Pushed :${BUILD_NUMBER}"
+                echo "All images pushed to Harbor successfully"
+            }
+        }
+
+        stage('Deploy to Dev') {
+            steps {
+                echo "Deploying billing-admin to dev server at 192.168.68.113..."
+                script {
+                    def remote = [:]
+                    remote.name = 'breedly-vm'
+                    remote.host = '192.168.68.113'
+                    remote.user = VM_CREDS_USR
+                    remote.password = VM_CREDS_PSW
+                    remote.allowAnyHosts = true
+
+                    echo "Logging into Harbor on dev server..."
+                    sshCommand remote: remote, command: "echo '${HARBOR_PASS}' | docker login ${HARBOR_REGISTRY} -u '${HARBOR_USER}' --password-stdin"
+
+                    echo "Pulling latest billing-admin image on dev server..."
+                    sshCommand remote: remote, command: 'cd /home/breedly/breedly-app && docker compose pull billing-admin'
+
+                    echo "Restarting billing-admin service..."
+                    sshCommand remote: remote, command: 'cd /home/breedly/breedly-app && docker compose up -d billing-admin'
+
+                    echo "Waiting for service to stabilize..."
+                    sshCommand remote: remote, command: 'sleep 10 && cd /home/breedly/breedly-app && docker compose ps billing-admin'
+                }
+                echo "Deployment to dev server complete"
+            }
+        }
+    }
+
+    post {
+        always {
+            echo "Cleaning up local images..."
+            sh "docker rmi ${HARBOR_REGISTRY}/${IMAGE_NAME}:latest || true"
+            sh "docker rmi ${HARBOR_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} || true"
+        }
+        success {
+            echo "Pipeline completed successfully! Billing Admin deployed to https://qa-billing.breedly.us"
+        }
+        failure {
+            echo "Pipeline failed. Check logs above for details."
+        }
+    }
+}

@@ -172,6 +172,28 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  # Billing Admin Dashboard (Streamlit)
+  billing-admin:
+    image: 192.168.68.110:80/breedly/breedly-billing-admin:latest
+    container_name: breedly-billing-admin
+    ports:
+      - "8501:8501"
+    environment:
+      DATABASE_URL: postgresql://breedly_user:${POSTGRES_PASSWORD}@postgres:5432/breedly_db
+      ADMIN_PASSWORD: ${BILLING_ADMIN_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - breedly-network
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
 volumes:
   postgres_data:
     driver: local

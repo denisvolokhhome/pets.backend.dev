@@ -101,7 +101,7 @@ pipeline {
             sh "docker rmi ${HARBOR_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} || true"
         }
         success {
-            echo "Pipeline completed successfully! Backend deployed to https://api.dev.breedly.us"
+            echo "Pipeline completed successfully! Backend deployed to https://api-dev.breedly.us"
         }
         failure {
             echo "Pipeline failed. Check logs above for details."
