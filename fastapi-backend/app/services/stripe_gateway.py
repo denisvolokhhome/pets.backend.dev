@@ -128,6 +128,13 @@ class StripeGateway:
             logger.error("Subscription %s not found for checkout completed", subscription_id)
             return
 
+        # Update plan_id from metadata — this is the authoritative moment to apply the plan change
+        plan_id_str = checkout_session["metadata"].get("plan_id")
+        if plan_id_str:
+            subscription.plan_id = uuid.UUID(plan_id_str)
+        else:
+            logger.warning("checkout.session.completed missing plan_id in metadata for subscription %s", subscription_id)
+
         subscription.status = "active"
         subscription.stripe_customer_id = checkout_session.get("customer")
         subscription.stripe_subscription_id = checkout_session.get("subscription")
@@ -143,8 +150,8 @@ class StripeGateway:
         )
 
         logger.info(
-            "Checkout completed: subscription %s activated, customer %s",
-            subscription_id, checkout_session.get("customer"),
+            "Checkout completed: subscription %s activated to plan %s, customer %s",
+            subscription_id, plan_id_str, checkout_session.get("customer"),
         )
 
     async def handle_invoice_paid(self, event: dict, session: AsyncSession) -> None:
