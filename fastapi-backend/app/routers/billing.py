@@ -13,12 +13,14 @@ from app.schemas.billing import (
     CheckoutSessionResponse,
     InvoiceRead,
     PlanRead,
+    PortalSessionResponse,
     SubscribeRequest,
     SubscriptionRead,
 )
 from app.services.billing_service import billing_service
 from app.services.stripe_gateway import stripe_gateway
 from app.services.billing_audit_logger import log_billing_event
+from app.config import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +104,28 @@ async def create_checkout_session(
     )
 
     return CheckoutSessionResponse(checkout_url=checkout_url)
+
+
+@router.post("/portal-session", response_model=PortalSessionResponse)
+async def create_portal_session(
+    user: User = Depends(require_breeder),
+    session: AsyncSession = Depends(get_async_session),
+) -> PortalSessionResponse:
+    """Create a Stripe Customer Portal session for the authenticated breeder."""
+    subscription = await billing_service.get_subscription(session, user.id)
+
+    if not subscription.stripe_customer_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No Stripe customer found. Please complete a payment first.",
+        )
+
+    settings = Settings()
+    return_url = f"{settings.frontend_url}/settings/subscription"
+    portal_url = stripe_gateway.create_portal_session(
+        subscription.stripe_customer_id, return_url
+    )
+    return PortalSessionResponse(portal_url=portal_url)
 
 
 @router.post("/webhook", status_code=status.HTTP_200_OK)

@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from sqlalchemy.exc import NoResultFound
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config import Settings
 from app.routers import auth, pets, breeds, breedings, locations, users, geocoding, search, messages, offsprings, favorites, notifications, notification_preferences, admin_stats, admin_users, support, genealogy, billing, reviews, pet_import
@@ -25,69 +25,58 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class LoggingMiddleware(BaseHTTPMiddleware):
-    """Middleware to log all requests and responses."""
-    
-    async def dispatch(self, request: Request, call_next):
-        """Log request and response details."""
-        # Generate request ID for tracing
+class LoggingMiddleware:
+    """Pure ASGI middleware to log all requests and responses."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope, receive, send)
         request_id = id(request)
-        
-        # Extract user ID if available (from auth token)
-        user_id = None
-        try:
-            # Try to get user from request state (set by auth dependency)
-            if hasattr(request.state, "user"):
-                user_id = str(request.state.user.id)
-        except Exception:
-            pass
-        
-        # Log request
         start_time = time.time()
+
         logger.info(
             f"Request started: {request.method} {request.url.path}",
             extra={
                 "request_id": request_id,
                 "method": request.method,
                 "path": request.url.path,
-                "user_id": user_id,
-                "client": request.client.host if request.client else None
-            }
+                "client": request.client.host if request.client else None,
+            },
         )
-        
-        # Process request
+
+        status_code = 500
+
+        async def send_with_logging(message):
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = message["status"]
+            await send(message)
+
         try:
-            response = await call_next(request)
-            
-            # Calculate duration
+            await self.app(scope, receive, send_with_logging)
             duration = time.time() - start_time
-            
-            # Log response
             logger.info(
-                f"Request completed: {request.method} {request.url.path} [{response.status_code}] {round(duration * 1000, 2)}ms",
+                f"Request completed: {request.method} {request.url.path} [{status_code}] {round(duration * 1000, 2)}ms",
                 extra={
                     "request_id": request_id,
                     "method": request.method,
                     "path": request.url.path,
-                    "user_id": user_id,
-                    "status_code": response.status_code,
-                    "duration_ms": round(duration * 1000, 2)
-                }
+                    "status_code": status_code,
+                    "duration_ms": round(duration * 1000, 2),
+                },
             )
-            
-            return response
-            
         except Exception as exc:
-            # Calculate duration
             duration = time.time() - start_time
-            
-            # Safely get error message without triggering lazy loading
             try:
                 error_message = str(exc)
             except Exception:
                 error_message = f"{type(exc).__name__} (error message unavailable)"
-            
-            # Log error
             logger.error(
                 f"Request failed",
                 exc_info=True,
@@ -95,14 +84,11 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                     "request_id": request_id,
                     "method": request.method,
                     "path": request.url.path,
-                    "user_id": user_id,
                     "duration_ms": round(duration * 1000, 2),
                     "error_type": type(exc).__name__,
-                    "error_message": error_message
-                }
+                    "error_message": error_message,
+                },
             )
-            
-            # Re-raise to let exception handlers deal with it
             raise
 
 

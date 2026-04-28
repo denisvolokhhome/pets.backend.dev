@@ -272,6 +272,25 @@ class StripeGateway:
             details=f"invoice.payment_failed, invoice_id={invoice.id}",
         )
 
+    def create_portal_session(self, stripe_customer_id: str, return_url: str) -> str:
+        """
+        Create a Stripe Customer Portal session for invoice management.
+
+        Args:
+            stripe_customer_id: The Stripe customer ID for the breeder
+            return_url: URL to redirect back to after the portal session
+
+        Returns:
+            The portal session URL for frontend redirect
+        """
+        self._configure_stripe()
+        portal_session = stripe.billing_portal.Session.create(
+            customer=stripe_customer_id,
+            return_url=return_url,
+        )
+        logger.info("Created portal session for customer %s", stripe_customer_id)
+        return portal_session.url
+
     def verify_webhook_signature(self, payload: bytes, sig_header: str) -> dict:
         """
         Verify a Stripe webhook signature and construct the event.

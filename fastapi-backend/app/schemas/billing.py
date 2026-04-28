@@ -62,3 +62,8 @@ class InvoiceRead(BaseModel):
 class CheckoutSessionResponse(BaseModel):
     """Schema for Stripe checkout session redirect URL."""
     checkout_url: str
+
+
+class PortalSessionResponse(BaseModel):
+    """Schema for Stripe customer portal session redirect URL."""
+    portal_url: str
