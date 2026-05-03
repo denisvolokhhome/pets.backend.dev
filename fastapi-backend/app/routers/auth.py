@@ -650,8 +650,16 @@ async def verify_user(
     )
 
     try:
+        from app.dependencies import get_jwt_strategy
         user = await user_manager.verify(token, request)
-        return UserRead.model_validate(user, from_attributes=True)
+        # Issue a JWT so the frontend can auto-login after verification
+        strategy = get_jwt_strategy()
+        access_token = await strategy.write_token(user)
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": UserRead.model_validate(user, from_attributes=True),
+        }
     except InvalidVerifyToken:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="VERIFY_USER_BAD_TOKEN")
     except UserAlreadyVerified:
