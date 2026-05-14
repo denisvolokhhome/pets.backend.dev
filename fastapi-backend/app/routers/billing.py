@@ -1,13 +1,17 @@
 """Billing router for subscription management, plan listing, invoices, and Stripe webhooks."""
 import logging
+import uuid
 from typing import List
 
 import stripe
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_async_session
 from app.dependencies import require_breeder
+from app.models.subscription import Subscription
 from app.models.user import User
 from app.schemas.billing import (
     CheckoutSessionResponse,
@@ -128,7 +132,117 @@ async def create_portal_session(
     return PortalSessionResponse(portal_url=portal_url)
 
 
-@router.post("/webhook", status_code=status.HTTP_200_OK)
+@router.get("/verify-session/{session_id}", response_model=SubscriptionRead)
+async def verify_checkout_session(
+    session_id: str,
+    user: User = Depends(require_breeder),
+    session: AsyncSession = Depends(get_async_session),
+) -> SubscriptionRead:
+    """
+    Verify a completed Stripe Checkout Session and apply the plan upgrade.
+
+    Called by the frontend after Stripe redirects back with ?session_id=...
+    This is the reliable fallback for when the webhook hasn't fired yet
+    (e.g. dev environments without a public tunnel, or race conditions).
+
+    The endpoint:
+    1. Retrieves the session from Stripe
+    2. Confirms payment_status == 'paid'
+    3. Verifies the session belongs to this user (via metadata)
+    4. Applies the same plan update as the webhook handler
+    5. Returns the updated subscription
+    """
+    import stripe as stripe_lib
+    from app.config import Settings
+
+    settings = Settings()
+    stripe_lib.api_key = settings.stripe_api_key
+
+    try:
+        checkout_session = stripe_lib.checkout.Session.retrieve(session_id)
+    except stripe_lib.error.StripeError as e:
+        logger.error("Failed to retrieve Stripe session %s: %s", session_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired checkout session.",
+        )
+
+    # Verify payment was successful
+    if checkout_session.get("payment_status") != "paid":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Payment not completed for this session.",
+        )
+
+    # Verify this session belongs to the authenticated user
+    metadata = checkout_session.get("metadata", {})
+    session_user_id = metadata.get("user_id")
+    if session_user_id != str(user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Session does not belong to the current user.",
+        )
+
+    # Apply the plan update (idempotent — safe to call even if webhook already ran)
+    plan_id_str = metadata.get("plan_id")
+    subscription_id_str = metadata.get("subscription_id")
+
+    if not plan_id_str or not subscription_id_str:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Session metadata incomplete.",
+        )
+
+    result = await session.execute(
+        select(Subscription)
+        .options(selectinload(Subscription.plan))
+        .where(Subscription.id == uuid.UUID(subscription_id_str))
+    )
+    subscription = result.scalar_one_or_none()
+
+    if not subscription:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Subscription not found.",
+        )
+
+    # Apply update only if not already on the correct plan (idempotent)
+    target_plan_id = uuid.UUID(plan_id_str)
+    if subscription.plan_id != target_plan_id or subscription.status != "active":
+        subscription.plan_id = target_plan_id
+        subscription.status = "active"
+        subscription.stripe_customer_id = checkout_session.get("customer") or subscription.stripe_customer_id
+        subscription.stripe_subscription_id = checkout_session.get("subscription") or subscription.stripe_subscription_id
+        await session.flush()
+        await session.refresh(subscription)
+
+        await log_billing_event(
+            session,
+            user_id=user.id,
+            operation="plan_changed",
+            outcome="success",
+            details=f"Plan applied via session verify, plan_id={plan_id_str}, session_id={session_id}",
+        )
+        logger.info(
+            "Session verify: subscription %s updated to plan %s for user %s",
+            subscription_id_str, plan_id_str, user.id,
+        )
+    else:
+        logger.info(
+            "Session verify: subscription %s already on correct plan %s (idempotent)",
+            subscription_id_str, plan_id_str,
+        )
+
+    # Re-fetch with plan loaded
+    result = await session.execute(
+        select(Subscription)
+        .options(selectinload(Subscription.plan))
+        .where(Subscription.id == uuid.UUID(subscription_id_str))
+    )
+    return result.scalar_one()
+
+
+
 async def webhook(
     request: Request,
     session: AsyncSession = Depends(get_async_session),
