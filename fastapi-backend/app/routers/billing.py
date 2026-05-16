@@ -144,23 +144,13 @@ async def verify_checkout_session(
     Called by the frontend after Stripe redirects back with ?session_id=...
     This is the reliable fallback for when the webhook hasn't fired yet
     (e.g. dev environments without a public tunnel, or race conditions).
-
-    The endpoint:
-    1. Retrieves the session from Stripe
-    2. Confirms payment_status == 'paid'
-    3. Verifies the session belongs to this user (via metadata)
-    4. Applies the same plan update as the webhook handler
-    5. Returns the updated subscription
     """
-    import stripe as stripe_lib
-    from app.config import Settings
-
-    settings = Settings()
-    stripe_lib.api_key = settings.stripe_api_key
+    # Use the gateway to configure stripe (reuses the singleton settings)
+    stripe_gateway._configure_stripe()
 
     try:
-        checkout_session = stripe_lib.checkout.Session.retrieve(session_id)
-    except stripe_lib.error.StripeError as e:
+        checkout_session = stripe.checkout.Session.retrieve(session_id)
+    except stripe.error.StripeError as e:
         logger.error("Failed to retrieve Stripe session %s: %s", session_id, e)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -168,14 +158,14 @@ async def verify_checkout_session(
         )
 
     # Verify payment was successful
-    if checkout_session.get("payment_status") != "paid":
+    if checkout_session.payment_status != "paid":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Payment not completed for this session.",
         )
 
     # Verify this session belongs to the authenticated user
-    metadata = checkout_session.get("metadata", {})
+    metadata = checkout_session.metadata or {}
     session_user_id = metadata.get("user_id")
     if session_user_id != str(user.id):
         raise HTTPException(
@@ -183,7 +173,6 @@ async def verify_checkout_session(
             detail="Session does not belong to the current user.",
         )
 
-    # Apply the plan update (idempotent — safe to call even if webhook already ran)
     plan_id_str = metadata.get("plan_id")
     subscription_id_str = metadata.get("subscription_id")
 
@@ -211,8 +200,8 @@ async def verify_checkout_session(
     if subscription.plan_id != target_plan_id or subscription.status != "active":
         subscription.plan_id = target_plan_id
         subscription.status = "active"
-        subscription.stripe_customer_id = checkout_session.get("customer") or subscription.stripe_customer_id
-        subscription.stripe_subscription_id = checkout_session.get("subscription") or subscription.stripe_subscription_id
+        subscription.stripe_customer_id = checkout_session.customer or subscription.stripe_customer_id
+        subscription.stripe_subscription_id = checkout_session.subscription or subscription.stripe_subscription_id
         await session.flush()
         await session.refresh(subscription)
 
@@ -233,7 +222,7 @@ async def verify_checkout_session(
             subscription_id_str, plan_id_str,
         )
 
-    # Re-fetch with plan loaded
+    # Re-fetch with plan loaded to return fresh data
     result = await session.execute(
         select(Subscription)
         .options(selectinload(Subscription.plan))
@@ -242,7 +231,7 @@ async def verify_checkout_session(
     return result.scalar_one()
 
 
-
+@router.post("/webhook", status_code=status.HTTP_200_OK)
 async def webhook(
     request: Request,
     session: AsyncSession = Depends(get_async_session),
