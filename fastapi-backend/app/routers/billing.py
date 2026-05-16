@@ -165,16 +165,16 @@ async def verify_checkout_session(
         )
 
     # Verify this session belongs to the authenticated user
-    metadata = checkout_session.metadata or {}
-    session_user_id = metadata.get("user_id")
+    metadata = checkout_session.metadata
+    session_user_id = metadata["user_id"] if metadata and "user_id" in metadata else None
     if session_user_id != str(user.id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Session does not belong to the current user.",
         )
 
-    plan_id_str = metadata.get("plan_id")
-    subscription_id_str = metadata.get("subscription_id")
+    plan_id_str = metadata["plan_id"] if metadata and "plan_id" in metadata else None
+    subscription_id_str = metadata["subscription_id"] if metadata and "subscription_id" in metadata else None
 
     if not plan_id_str or not subscription_id_str:
         raise HTTPException(
