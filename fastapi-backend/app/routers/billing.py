@@ -162,6 +162,41 @@ async def create_checkout_session(
     return CheckoutSessionResponse(checkout_url=checkout_url)
 
 
+@router.post("/cancel-pending-downgrade", response_model=SubscriptionRead)
+async def cancel_pending_downgrade(
+    user: User = Depends(require_breeder),
+    session: AsyncSession = Depends(get_async_session),
+) -> SubscriptionRead:
+    """Cancel a scheduled pending downgrade, keeping the current plan active."""
+    subscription = await billing_service.get_subscription(session, user.id)
+
+    if not subscription.pending_plan_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No pending downgrade to cancel.",
+        )
+
+    subscription.pending_plan_id = None
+    subscription.pending_plan_effective_date = None
+    await session.flush()
+    await session.refresh(subscription)
+
+    await log_billing_event(
+        session,
+        user_id=user.id,
+        operation="plan_downgrade_canceled",
+        outcome="success",
+        details="Pending downgrade canceled by user",
+    )
+
+    result = await session.execute(
+        select(Subscription)
+        .options(selectinload(Subscription.plan))
+        .where(Subscription.id == subscription.id)
+    )
+    return result.scalar_one()
+
+
 @router.post("/portal-session", response_model=PortalSessionResponse)
 async def create_portal_session(
     user: User = Depends(require_breeder),
