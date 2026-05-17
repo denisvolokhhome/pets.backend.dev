@@ -276,6 +276,9 @@ class StripeGateway:
         """
         Create a Stripe Customer Portal session for invoice management.
 
+        Uses a portal configuration that disables the cancel subscription
+        feature — breeders manage plan changes through the app UI instead.
+
         Args:
             stripe_customer_id: The Stripe customer ID for the breeder
             return_url: URL to redirect back to after the portal session
@@ -284,10 +287,39 @@ class StripeGateway:
             The portal session URL for frontend redirect
         """
         self._configure_stripe()
-        portal_session = stripe.billing_portal.Session.create(
-            customer=stripe_customer_id,
-            return_url=return_url,
-        )
+
+        # Build portal session kwargs
+        session_kwargs: dict = {
+            "customer": stripe_customer_id,
+            "return_url": return_url,
+        }
+
+        # Create (or reuse) a portal configuration that disables cancellation.
+        # We create it lazily and cache the ID on the instance so we only call
+        # the Stripe API once per process lifetime.
+        if not getattr(self, "_portal_config_id", None):
+            try:
+                config = stripe.billing_portal.Configuration.create(
+                    business_profile={
+                        "headline": "Manage your Breedly subscription",
+                    },
+                    features={
+                        "subscription_cancel": {"enabled": False},
+                        "invoice_history": {"enabled": True},
+                        "payment_method_update": {"enabled": True},
+                    },
+                )
+                self._portal_config_id = config.id
+                logger.info("Created Stripe portal configuration %s", config.id)
+            except stripe.error.StripeError as e:
+                # If config creation fails, fall back to default portal
+                logger.warning("Could not create portal config, using default: %s", e)
+                self._portal_config_id = None
+
+        if self._portal_config_id:
+            session_kwargs["configuration"] = self._portal_config_id
+
+        portal_session = stripe.billing_portal.Session.create(**session_kwargs)
         logger.info("Created portal session for customer %s", stripe_customer_id)
         return portal_session.url
 

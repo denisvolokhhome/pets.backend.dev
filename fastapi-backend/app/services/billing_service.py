@@ -74,8 +74,9 @@ class BillingService:
         """
         Change a breeder's subscription to a different plan.
 
-        Updates the subscription's plan_id and resets the billing period to
-        start now with a new period end one month from now.
+        For downgrades (moving to a cheaper/lower plan), validates that the
+        breeder's current usage fits within the target plan's limits before
+        allowing the change.
 
         Args:
             session: Async database session
@@ -87,7 +88,8 @@ class BillingService:
 
         Raises:
             HTTPException: 404 if plan not found, 404 if no subscription,
-                           400 if already on the requested plan
+                           400 if already on the requested plan,
+                           422 if current usage exceeds target plan limits
         """
         # Verify the target plan exists
         plan_result = await session.execute(
@@ -108,6 +110,61 @@ class BillingService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Already subscribed to this plan",
             )
+
+        # Downgrade validation: check current usage fits within target plan limits
+        is_downgrade = plan.price < subscription.plan.price if subscription.plan else False
+        if is_downgrade:
+            violations = []
+
+            # Check pet count
+            pet_count_result = await session.execute(
+                select(func.count(Pet.id)).where(
+                    Pet.user_id == user_id,
+                    Pet.is_deleted == False,  # noqa: E712
+                )
+            )
+            pet_count = pet_count_result.scalar_one()
+            if pet_count > plan.max_pets:
+                violations.append(
+                    f"You have {pet_count} pets but the {plan.name} plan allows {plan.max_pets}. "
+                    f"Please remove {pet_count - plan.max_pets} pet(s) before downgrading."
+                )
+
+            # Check published locations
+            loc_count_result = await session.execute(
+                select(func.count(Location.id)).where(
+                    Location.user_id == user_id,
+                    Location.is_published == True,  # noqa: E712
+                )
+            )
+            loc_count = loc_count_result.scalar_one()
+            if loc_count > plan.max_published_locations:
+                violations.append(
+                    f"You have {loc_count} published location(s) but the {plan.name} plan allows "
+                    f"{plan.max_published_locations}. Please unpublish "
+                    f"{loc_count - plan.max_published_locations} location(s) before downgrading."
+                )
+
+            # Check simultaneous offsprings (Available + Reserved)
+            offspring_count_result = await session.execute(
+                select(func.count(Offspring.id)).where(
+                    Offspring.user_id == user_id,
+                    Offspring.status.in_(["Available", "Reserved"]),
+                )
+            )
+            offspring_count = offspring_count_result.scalar_one()
+            if offspring_count > plan.max_simultaneous_offsprings:
+                violations.append(
+                    f"You have {offspring_count} active offspring(s) but the {plan.name} plan allows "
+                    f"{plan.max_simultaneous_offsprings}. Please archive or sell "
+                    f"{offspring_count - plan.max_simultaneous_offsprings} offspring(s) before downgrading."
+                )
+
+            if violations:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={"message": "Cannot downgrade: usage exceeds target plan limits.", "violations": violations},
+                )
 
         now = datetime.now(timezone.utc)
         subscription.plan_id = plan_id
