@@ -74,6 +74,17 @@ class Subscription(Base):
         nullable=True
     )
 
+    # Pending downgrade: plan to switch to at period end
+    pending_plan_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("plans.id"),
+        nullable=True
+    )
+    pending_plan_effective_date: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -93,6 +104,12 @@ class Subscription(Base):
     )
     plan: Mapped["Plan"] = relationship(
         "Plan",
+        foreign_keys=[plan_id],
+        lazy="selectin"
+    )
+    pending_plan: Mapped[Optional["Plan"]] = relationship(
+        "Plan",
+        foreign_keys=[pending_plan_id],
         lazy="selectin"
     )
 

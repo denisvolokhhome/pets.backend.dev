@@ -37,6 +37,9 @@ class SubscriptionRead(BaseModel):
     plan: PlanRead
     stripe_customer_id: Optional[str] = None
     stripe_subscription_id: Optional[str] = None
+    pending_plan_id: Optional[uuid.UUID] = None
+    pending_plan_effective_date: Optional[datetime] = None
+    pending_plan: Optional[PlanRead] = None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -66,6 +66,25 @@ class BillingService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No active subscription found",
             )
+
+        # Apply pending plan if its effective date has passed
+        now = datetime.now(timezone.utc)
+        if (
+            subscription.pending_plan_id is not None
+            and subscription.pending_plan_effective_date is not None
+            and subscription.pending_plan_effective_date <= now
+        ):
+            subscription.plan_id = subscription.pending_plan_id
+            subscription.pending_plan_id = None
+            subscription.pending_plan_effective_date = None
+            subscription.updated_at = now
+            await session.flush()
+            await session.refresh(subscription)
+            logger.info(
+                "Applied pending plan for subscription %s at %s",
+                subscription.id, now.isoformat(),
+            )
+
         return subscription
 
     async def subscribe(
@@ -166,8 +185,30 @@ class BillingService:
                     detail={"message": "Cannot downgrade: usage exceeds target plan limits.", "violations": violations},
                 )
 
+            # Schedule the downgrade for end of current billing period (grace period)
+            subscription.pending_plan_id = plan_id
+            subscription.pending_plan_effective_date = subscription.current_period_end
+            subscription.updated_at = datetime.now(timezone.utc)
+
+            await session.flush()
+            await session.refresh(subscription)
+
+            await log_billing_event(
+                session,
+                user_id=user_id,
+                operation="plan_downgrade_scheduled",
+                outcome="success",
+                details=f"Downgrade to plan '{plan.name}' scheduled for {subscription.current_period_end.isoformat()}",
+            )
+
+            return subscription
+
+        # Upgrade (or same-tier switch): apply immediately
+        # Also clear any pending downgrade if upgrading
         now = datetime.now(timezone.utc)
         subscription.plan_id = plan_id
+        subscription.pending_plan_id = None
+        subscription.pending_plan_effective_date = None
         subscription.current_period_start = now
         subscription.current_period_end = now + timedelta(days=30)
         subscription.updated_at = now
@@ -180,7 +221,7 @@ class BillingService:
             user_id=user_id,
             operation="plan_changed",
             outcome="success",
-            details=f"Changed to plan '{plan.name}', plan_id={plan_id}",
+            details=f"Upgraded to plan '{plan.name}', plan_id={plan_id}",
         )
 
         return subscription
