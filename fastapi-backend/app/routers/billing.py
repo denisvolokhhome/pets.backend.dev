@@ -21,6 +21,7 @@ from app.schemas.billing import (
     SubscribeRequest,
     SubscriptionRead,
 )
+from app.models.invoice import Invoice
 from app.services.billing_service import billing_service
 from app.services.stripe_gateway import stripe_gateway
 from app.services.billing_audit_logger import log_billing_event
@@ -72,6 +73,57 @@ async def get_invoices(
     """Return the authenticated breeder's invoice history, ordered by created_at descending."""
     invoices = await billing_service.get_invoices(session, user.id)
     return invoices
+
+
+@router.get("/invoices/{invoice_id}/download")
+async def download_invoice(
+    invoice_id: uuid.UUID,
+    user: User = Depends(require_breeder),
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    """
+    Return the Stripe-hosted invoice URL and PDF link for a specific invoice.
+
+    Fetches the invoice from Stripe using the stored stripe_invoice_id and
+    returns the hosted_invoice_url (web view) and invoice_pdf (direct PDF download).
+    Only returns invoices belonging to the authenticated user.
+    """
+    # Load the invoice and verify it belongs to this user
+    result = await session.execute(
+        select(Invoice)
+        .join(Subscription, Invoice.subscription_id == Subscription.id)
+        .where(Invoice.id == invoice_id)
+        .where(Subscription.user_id == user.id)
+    )
+    invoice = result.scalar_one_or_none()
+
+    if not invoice:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invoice not found.",
+        )
+
+    if not invoice.stripe_invoice_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No Stripe invoice associated with this record.",
+        )
+
+    # Fetch from Stripe to get the download URLs
+    stripe_gateway._configure_stripe()
+    try:
+        stripe_invoice = stripe.Invoice.retrieve(invoice.stripe_invoice_id)
+    except stripe.error.StripeError as e:
+        logger.error("Failed to retrieve Stripe invoice %s: %s", invoice.stripe_invoice_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not retrieve invoice from payment provider.",
+        )
+
+    return {
+        "hosted_invoice_url": stripe_invoice.get("hosted_invoice_url"),
+        "invoice_pdf": stripe_invoice.get("invoice_pdf"),
+    }
 
 
 @router.post("/create-checkout-session", response_model=CheckoutSessionResponse)

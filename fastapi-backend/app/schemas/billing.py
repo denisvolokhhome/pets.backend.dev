@@ -35,6 +35,8 @@ class SubscriptionRead(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime] = None
     plan: PlanRead
+    stripe_customer_id: Optional[str] = None
+    stripe_subscription_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
