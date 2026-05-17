@@ -16,6 +16,8 @@ from app.models.billing_audit_log import BillingAuditLog
 VALID_OPERATIONS = frozenset({
     "subscription_created",
     "plan_changed",
+    "plan_downgrade_scheduled",
+    "plan_downgrade_canceled",
     "payment_received",
     "payment_failed",
     "webhook_processed",
