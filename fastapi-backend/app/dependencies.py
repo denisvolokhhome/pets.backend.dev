@@ -175,6 +175,29 @@ def require_pet_seeker(user: User = Depends(current_active_user)) -> User:
     return user
 
 
+def require_service_provider(user: User = Depends(current_active_user)) -> User:
+    """
+    Dependency that ensures the current user is a service provider.
+    
+    Args:
+        user: Current authenticated user
+        
+    Returns:
+        User: The authenticated service provider user
+        
+    Raises:
+        HTTPException: 403 Forbidden if user is not a service provider
+    """
+    from fastapi import HTTPException, status
+    
+    if getattr(user, "account_type", None) != "service":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Service provider account required"
+        )
+    return user
+
+
 # Usage limit enforcement dependencies
 async def check_pet_limit(
     user: User = Depends(require_breeder),
@@ -202,27 +225,58 @@ async def check_pet_limit(
 
 
 async def check_location_limit(
-    user: User = Depends(require_breeder),
+    user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> User:
     """
-    Dependency that checks whether the breeder is within their plan's published location limit.
+    Dependency that checks whether the user is within their plan's published location limit.
 
-    Delegates to billing_service.check_usage which handles subscription lookup,
-    FREE plan fallback for non-active subscriptions, and raises HTTPException(403)
-    with USAGE_LIMIT_EXCEEDED if at or above limit.
+    Allows both breeders and service providers to manage locations.
+    Service providers have a fixed limit of 10 active locations (Requirement 5.6).
+    Breeders delegate to billing_service.check_usage for plan-based limits.
 
     Args:
-        user: Authenticated breeder user
+        user: Authenticated user (breeder or service provider)
         session: Async database session
 
     Returns:
-        User: The authenticated breeder if within limits
+        User: The authenticated user if within limits
 
     Raises:
+        HTTPException: 403 if not a breeder or service provider
         HTTPException: 403 if published location limit reached
     """
-    await billing_service.check_usage(session, user.id, "locations")
+    from fastapi import HTTPException, status
+
+    account_type = getattr(user, "account_type", None)
+
+    # Only breeders and service providers can manage locations
+    if account_type not in ("breeder", "service") and not user.is_breeder:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Breeder or service provider account required"
+        )
+
+    if account_type == "service":
+        # Service providers have a fixed limit of 10 active locations
+        from sqlalchemy import select, func as sa_func
+        from app.models.location import Location
+        count_result = await session.execute(
+            select(sa_func.count()).select_from(Location).where(
+                Location.user_id == user.id,
+                Location.is_published == True,
+            )
+        )
+        count = count_result.scalar_one()
+        if count >= 10:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Location limit reached. Service providers may have a maximum of 10 active locations."
+            )
+    else:
+        # Breeders use billing plan limits
+        await billing_service.check_usage(session, user.id, "locations")
+
     return user
 
 

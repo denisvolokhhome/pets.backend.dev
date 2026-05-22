@@ -20,6 +20,8 @@ from app.models.invoice import Invoice
 from app.models.billing_audit_log import BillingAuditLog
 from app.models.breeder_review import BreederReview
 from app.models.breeding_application_form import BreedingApplicationForm
+from app.models.service_category import ServiceCategory, user_service_categories
+from app.models.service import Service, ServiceImage, service_locations
 
 __all__ = [
     "User",
@@ -44,4 +46,9 @@ __all__ = [
     "BillingAuditLog",
     "BreederReview",
     "BreedingApplicationForm",
+    "ServiceCategory",
+    "user_service_categories",
+    "Service",
+    "ServiceImage",
+    "service_locations",
 ]

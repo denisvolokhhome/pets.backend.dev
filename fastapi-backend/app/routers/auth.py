@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings
 from app.database import get_async_session
 from app.dependencies import auth_backend, fastapi_users, get_user_manager
-from app.schemas.user import UserRead, UserCreate, UserUpdate, PetSeekerCreate, GuestToAccountCreate
+from app.schemas.user import UserRead, UserCreate, UserUpdate, PetSeekerCreate, GuestToAccountCreate, ServiceProviderCreate
 from app.services.user_manager import UserManager
 from app.services.notification_service import NotificationService
 from app.schemas.notification import NotificationCreate
@@ -664,6 +664,156 @@ async def verify_user(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="VERIFY_USER_BAD_TOKEN")
     except UserAlreadyVerified:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="VERIFY_USER_ALREADY_VERIFIED")
+
+
+@router.post("/register/service-provider", tags=["auth"], status_code=status.HTTP_201_CREATED)
+async def register_service_provider(
+    service_provider_data: ServiceProviderCreate,
+    request: Request,
+    session: AsyncSession = Depends(get_async_session),
+    user_manager: UserManager = Depends(get_user_manager),
+):
+    """
+    Register a new service provider account.
+
+    Creates a user with account_type='service', is_breeder=False, and associates
+    the user with the provided service categories.
+
+    Args:
+        service_provider_data: Service provider registration data including
+            email, password, optional name, and at least one category_id
+        request: Request object for rate limiting
+        session: Database session
+        user_manager: User manager for user operations
+
+    Returns:
+        UserRead: The created user data
+
+    Raises:
+        HTTPException 400: If email is already registered
+        HTTPException 422: If category_ids is empty or contains invalid/inactive category IDs
+        HTTPException 429: If rate limit exceeded
+    """
+    from app.models.user import User
+    from app.models.service_category import ServiceCategory, user_service_categories
+    from app.middleware.rate_limiter import hash_ip
+    from sqlalchemy import select, insert
+    from sqlalchemy.exc import IntegrityError
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # Rate limiting: 3 registration attempts per IP per 10 minutes
+    client_ip = await get_client_ip(request)
+    hashed = hash_ip(client_ip)
+    await rate_limiter.check_rate_limit(
+        key=f"register:{hashed}",
+        max_requests=3,
+        window_seconds=600,
+    )
+
+    # Explicit check: at least one category_id required
+    # (Pydantic min_length=1 already enforces this, but we add an explicit guard for clarity)
+    if not service_provider_data.category_ids or len(service_provider_data.category_ids) < 1:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At least one category_id is required for service provider registration",
+        )
+
+    # Check for duplicate email
+    stmt = select(User).where(User.email == service_provider_data.email)
+    result = await session.execute(stmt)
+    existing_user = result.scalar_one_or_none()
+
+    if existing_user:
+        if existing_user.oauth_provider:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="REGISTER_SSO_ACCOUNT_EXISTS",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="REGISTER_USER_ALREADY_EXISTS",
+        )
+
+    # Validate all category_ids exist and are active
+    category_ids = service_provider_data.category_ids
+    cat_stmt = select(ServiceCategory).where(
+        ServiceCategory.id.in_(category_ids),
+        ServiceCategory.is_active == True,
+    )
+    cat_result = await session.execute(cat_stmt)
+    valid_categories = cat_result.scalars().all()
+    valid_category_ids = {cat.id for cat in valid_categories}
+
+    invalid_ids = [cid for cid in category_ids if cid not in valid_category_ids]
+    if invalid_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid or inactive category_id(s): {invalid_ids}",
+        )
+
+    try:
+        # Create user via user_manager (handles password hashing and on_after_register hooks)
+        user_create = UserCreate(
+            email=service_provider_data.email,
+            password=service_provider_data.password,
+            is_breeder=False,  # Service providers are not breeders
+        )
+        user = await user_manager.create(user_create, request=request)
+
+        # Update account_type and name — user_manager.create sets is_breeder=False
+        # but we need to explicitly set account_type='service'
+        user.account_type = "service"
+        user.is_breeder = False
+        if service_provider_data.name:
+            user.name = service_provider_data.name
+
+        await session.commit()
+        await session.refresh(user)
+
+        # Insert user_service_categories associations
+        for category_id in category_ids:
+            await session.execute(
+                insert(user_service_categories).values(
+                    user_id=user.id,
+                    category_id=category_id,
+                )
+            )
+
+        await session.commit()
+        await session.refresh(user)
+
+        logger.info(
+            f"Service provider registered: user_id={user.id}, "
+            f"email={user.email}, categories={category_ids}"
+        )
+
+        return UserRead.model_validate(user, from_attributes=True)
+
+    except HTTPException:
+        raise
+    except IntegrityError as e:
+        logger.error(f"Service provider registration integrity error: {str(e)}")
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="REGISTER_USER_ALREADY_EXISTS",
+        )
+    except Exception as e:
+        logger.error(f"Service provider registration error: {str(e)}")
+        error_str = str(e).lower()
+        if "already exists" in error_str or "duplicate" in error_str or "unique constraint" in error_str:
+            await session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="REGISTER_USER_ALREADY_EXISTS",
+            )
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Registration failed: {str(e)}",
+        )
 
 
 @router.post("/convert-to-breeder", tags=["auth"])
