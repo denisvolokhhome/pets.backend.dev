@@ -1,10 +1,10 @@
 """User schemas for API request/response validation."""
 import uuid
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Literal
 
 from fastapi_users import schemas
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class UserRead(schemas.BaseUser[uuid.UUID]):
@@ -77,6 +77,15 @@ class UserUpdate(schemas.BaseUserUpdate):
         if len(v) > 50:
             raise ValueError("Phone number too long")
         return v
+
+
+class ServiceProviderCreate(BaseModel):
+    """Schema for registering a new service provider account."""
+    email: str
+    password: str
+    name: Optional[str] = None
+    account_type: Literal["service"] = "service"
+    category_ids: List[int] = Field(..., min_length=1)
 
 
 class ProfileImageResponse(BaseModel):

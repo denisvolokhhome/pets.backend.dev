@@ -870,3 +870,295 @@ class TestLocationManagementWorkflow:
         
         final_location_ids = [l["id"] for l in final_locations_list]
         assert location_id not in final_location_ids
+
+
+# ─── Service Provider Location Tests ─────────────────────────────────────────
+# These tests verify that service providers can manage locations (no longer
+# blocked by require_breeder) and that deleting a location linked to active
+# services is blocked with 409.
+#
+# Validates: Requirements 5.1, 5.2
+
+
+@pytest.fixture
+async def service_provider_user(async_session: AsyncSession) -> User:
+    """Create a service provider user for location tests."""
+    import uuid as _uuid
+    import bcrypt
+
+    hashed = bcrypt.hashpw(b"testpass123", bcrypt.gensalt()).decode()
+    user = User(
+        email=f"sp-loc-{_uuid.uuid4()}@example.com",
+        hashed_password=hashed,
+        name="Service Provider for Location Tests",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+        is_breeder=False,
+        account_type="service",
+    )
+    async_session.add(user)
+    await async_session.commit()
+    await async_session.refresh(user)
+    return user
+
+
+@pytest.fixture
+async def sp_authenticated_client(
+    async_session: AsyncSession, service_provider_user: User
+):
+    """Authenticated client acting as a service provider."""
+    from app.dependencies import current_active_user as _cau
+
+    async def override_session():
+        yield async_session
+
+    async def override_user():
+        user = _current_test_user.get()
+        return user if user is not None else service_provider_user
+
+    app.dependency_overrides[get_async_session] = override_session
+    app.dependency_overrides[_cau] = override_user
+
+    transport = ASGITransport(app=app)
+
+    class UserAwareClient(AsyncClient):
+        def __init__(self, *args, _user=None, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._user = _user
+
+        async def request(self, *args, **kwargs):
+            token = _current_test_user.set(self._user)
+            try:
+                return await super().request(*args, **kwargs)
+            finally:
+                _current_test_user.reset(token)
+
+    async with UserAwareClient(
+        transport=transport, base_url="http://test", _user=service_provider_user
+    ) as ac:
+        yield ac
+
+
+class TestServiceProviderLocationManagement:
+    """Service providers can create, update, and delete locations.
+
+    Validates: Requirements 5.1, 5.2
+    """
+
+    @pytest.mark.asyncio
+    async def test_service_provider_can_create_location(
+        self, sp_authenticated_client: AsyncClient
+    ):
+        """A service provider can create a location (not blocked by require_breeder).
+
+        Validates: Requirements 5.1
+        """
+        location_data = {
+            "name": "SP Main Office",
+            "address1": "10 Service St",
+            "city": "Serviceville",
+            "state": "SV",
+            "country": "US",
+            "zipcode": "30001",
+            "location_type": "service",
+        }
+        response = await sp_authenticated_client.post("/api/locations/", json=location_data)
+        assert response.status_code == 201
+        data = response.json()
+        assert data["name"] == location_data["name"]
+        assert "id" in data
+
+    @pytest.mark.asyncio
+    async def test_service_provider_can_update_location(
+        self, sp_authenticated_client: AsyncClient
+    ):
+        """A service provider can update their own location.
+
+        Validates: Requirements 5.1
+        """
+        # Create first
+        create_data = {
+            "name": "SP Update Test",
+            "address1": "11 Update Ave",
+            "city": "Updatetown",
+            "state": "UT",
+            "country": "US",
+            "zipcode": "30002",
+            "location_type": "service",
+        }
+        create_r = await sp_authenticated_client.post("/api/locations/", json=create_data)
+        assert create_r.status_code == 201
+        location_id = create_r.json()["id"]
+
+        # Update
+        update_r = await sp_authenticated_client.put(
+            f"/api/locations/{location_id}",
+            json={"name": "SP Updated Name"},
+        )
+        assert update_r.status_code == 200
+        assert update_r.json()["name"] == "SP Updated Name"
+
+    @pytest.mark.asyncio
+    async def test_service_provider_can_delete_location_without_services(
+        self, sp_authenticated_client: AsyncClient
+    ):
+        """A service provider can delete a location that has no linked services.
+
+        Validates: Requirements 5.1
+        """
+        create_data = {
+            "name": "SP Delete Test",
+            "address1": "12 Delete Blvd",
+            "city": "Deleteville",
+            "state": "DV",
+            "country": "US",
+            "zipcode": "30003",
+            "location_type": "service",
+        }
+        create_r = await sp_authenticated_client.post("/api/locations/", json=create_data)
+        assert create_r.status_code == 201
+        location_id = create_r.json()["id"]
+
+        delete_r = await sp_authenticated_client.delete(f"/api/locations/{location_id}")
+        assert delete_r.status_code == 204
+
+        # Verify it's gone
+        get_r = await sp_authenticated_client.get(f"/api/locations/{location_id}")
+        assert get_r.status_code == 404
+
+
+class TestDeleteLocationBlockedByActiveServices:
+    """Deleting a location linked to active services returns 409.
+
+    Validates: Requirements 5.1 (location deletion guard)
+    """
+
+    @pytest.mark.asyncio
+    async def test_delete_location_with_active_service_returns_409(
+        self,
+        sp_authenticated_client: AsyncClient,
+        async_session: AsyncSession,
+        service_provider_user: User,
+    ):
+        """DELETE /api/locations/{id} returns 409 when location is linked to an active service.
+
+        Validates: Requirements 5.1
+        """
+        from app.models.service import Service, service_locations as _sl
+        from app.models.service_category import ServiceCategory
+        from sqlalchemy import insert
+
+        # Create a location via the API
+        create_data = {
+            "name": "Linked Location",
+            "address1": "99 Linked St",
+            "city": "Linkedtown",
+            "state": "LT",
+            "country": "US",
+            "zipcode": "40001",
+            "location_type": "service",
+        }
+        create_r = await sp_authenticated_client.post("/api/locations/", json=create_data)
+        assert create_r.status_code == 201
+        location_id = create_r.json()["id"]
+
+        # Seed a category
+        cat = ServiceCategory(
+            name=f"Linked Cat {location_id}",
+            slug=f"linked-cat-{location_id}",
+            is_active=True,
+        )
+        async_session.add(cat)
+        await async_session.flush()
+
+        # Create an active service linked to this location directly in the DB
+        import uuid as _uuid
+        svc = Service(
+            id=_uuid.uuid4(),
+            user_id=service_provider_user.id,
+            category_id=cat.id,
+            title="Active Linked Service",
+            is_active=True,
+            is_deleted=False,
+        )
+        async_session.add(svc)
+        await async_session.flush()
+
+        # Link service → location
+        await async_session.execute(
+            insert(_sl).values(service_id=svc.id, location_id=location_id)
+        )
+        await async_session.commit()
+
+        # Attempt to delete the location — should be blocked
+        delete_r = await sp_authenticated_client.delete(f"/api/locations/{location_id}")
+        assert delete_r.status_code == 409
+
+        detail = delete_r.json().get("detail", "")
+        detail_str = str(detail).lower()
+        assert "service" in detail_str or "cannot" in detail_str
+
+        # Verify the location still exists
+        get_r = await sp_authenticated_client.get(f"/api/locations/{location_id}")
+        assert get_r.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_delete_location_with_soft_deleted_service_succeeds(
+        self,
+        sp_authenticated_client: AsyncClient,
+        async_session: AsyncSession,
+        service_provider_user: User,
+    ):
+        """DELETE /api/locations/{id} succeeds when the only linked service is soft-deleted.
+
+        A soft-deleted service should not block location deletion.
+        """
+        from app.models.service import Service, service_locations as _sl
+        from app.models.service_category import ServiceCategory
+        from sqlalchemy import insert
+
+        # Create a location
+        create_data = {
+            "name": "Soft-Deleted Service Location",
+            "address1": "100 Soft St",
+            "city": "Softtown",
+            "state": "ST",
+            "country": "US",
+            "zipcode": "40002",
+            "location_type": "service",
+        }
+        create_r = await sp_authenticated_client.post("/api/locations/", json=create_data)
+        assert create_r.status_code == 201
+        location_id = create_r.json()["id"]
+
+        # Seed a category
+        cat = ServiceCategory(
+            name=f"Soft Cat {location_id}",
+            slug=f"soft-cat-{location_id}",
+            is_active=True,
+        )
+        async_session.add(cat)
+        await async_session.flush()
+
+        # Create a SOFT-DELETED service linked to this location
+        import uuid as _uuid
+        svc = Service(
+            id=_uuid.uuid4(),
+            user_id=service_provider_user.id,
+            category_id=cat.id,
+            title="Soft-Deleted Service",
+            is_active=True,
+            is_deleted=True,  # <-- soft-deleted
+        )
+        async_session.add(svc)
+        await async_session.flush()
+
+        await async_session.execute(
+            insert(_sl).values(service_id=svc.id, location_id=location_id)
+        )
+        await async_session.commit()
+
+        # Deletion should succeed because the service is soft-deleted
+        delete_r = await sp_authenticated_client.delete(f"/api/locations/{location_id}")
+        assert delete_r.status_code == 204

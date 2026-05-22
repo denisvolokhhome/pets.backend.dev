@@ -311,3 +311,51 @@ async def test_indexes_exist(async_session: AsyncSession):
     assert ("locations", "ix_locations_user_id") in index_set, (
         "Index on locations.user_id missing"
     )
+
+
+# ── Property 4: account_type derivation from is_breeder ──────────────────────
+
+def _import_derive_account_type():
+    """Import the derive_account_type helper from the migration module."""
+    import importlib.util
+    import pathlib
+
+    versions_dir = pathlib.Path(__file__).parent.parent.parent / "alembic" / "versions"
+    migration_file = versions_dir / "p3q4r5s6t7u8_add_service_account.py"
+    spec = importlib.util.spec_from_file_location("migration_add_service_account", migration_file)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.derive_account_type
+
+
+def test_derive_account_type_breeder():
+    """
+    derive_account_type(True) must return 'breeder'.
+
+    **Validates: Requirements 1.5**
+    """
+    derive_account_type = _import_derive_account_type()
+    assert derive_account_type(True) == "breeder"
+
+
+def test_derive_account_type_pet_seeker():
+    """
+    derive_account_type(False) must return 'pet_seeker'.
+
+    **Validates: Requirements 1.6**
+    """
+    derive_account_type = _import_derive_account_type()
+    assert derive_account_type(False) == "pet_seeker"
+
+
+def test_derive_account_type_result_in_valid_set():
+    """
+    The result of derive_account_type for any bool must be in the valid account_type set.
+
+    **Validates: Requirements 1.5, 1.6**
+    Property 4: account_type derivation from is_breeder
+    """
+    derive_account_type = _import_derive_account_type()
+    valid_account_types = {"breeder", "pet_seeker", "service"}
+    assert derive_account_type(True) in valid_account_types
+    assert derive_account_type(False) in valid_account_types
