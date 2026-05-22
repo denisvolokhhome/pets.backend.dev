@@ -56,7 +56,8 @@ services:
   seed:
     image: 192.168.68.110:80/breedly/breedly-backend:latest
     container_name: breedly-seed
-    command: python db/seed_breeds.py
+    command: >
+      sh -c "python db/seed_breeds.py && python scripts/seed_service_categories.py"
     environment:
       DATABASE_URL: postgresql+asyncpg://breedly_user:${POSTGRES_PASSWORD}@postgres:5432/breedly_db
       SECRET_KEY: ${SECRET_KEY}
