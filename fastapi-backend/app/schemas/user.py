@@ -99,7 +99,7 @@ class ServiceProviderCreate(BaseModel):
     password: str
     name: Optional[str] = None
     account_type: Literal["service"] = "service"
-    category_ids: List[int] = Field(..., min_length=1)
+    category_ids: List[int] = Field(default_factory=list)
 
 
 class ProfileImageResponse(BaseModel):

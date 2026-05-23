@@ -712,13 +712,9 @@ async def register_service_provider(
         window_seconds=600,
     )
 
-    # Explicit check: at least one category_id required
-    # (Pydantic min_length=1 already enforces this, but we add an explicit guard for clarity)
-    if not service_provider_data.category_ids or len(service_provider_data.category_ids) < 1:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="At least one category_id is required for service provider registration",
-        )
+    # category_ids is now optional — service providers can add categories later
+    # from Settings → My Service Categories
+    category_ids = service_provider_data.category_ids
 
     # Check for duplicate email
     stmt = select(User).where(User.email == service_provider_data.email)
@@ -736,22 +732,8 @@ async def register_service_provider(
             detail="REGISTER_USER_ALREADY_EXISTS",
         )
 
-    # Validate all category_ids exist and are active
+    # category_ids is optional — only insert if provided
     category_ids = service_provider_data.category_ids
-    cat_stmt = select(ServiceCategory).where(
-        ServiceCategory.id.in_(category_ids),
-        ServiceCategory.is_active == True,
-    )
-    cat_result = await session.execute(cat_stmt)
-    valid_categories = cat_result.scalars().all()
-    valid_category_ids = {cat.id for cat in valid_categories}
-
-    invalid_ids = [cid for cid in category_ids if cid not in valid_category_ids]
-    if invalid_ids:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Invalid or inactive category_id(s): {invalid_ids}",
-        )
 
     try:
         # Create user via user_manager (handles password hashing and on_after_register hooks)
@@ -762,8 +744,7 @@ async def register_service_provider(
         )
         user = await user_manager.create(user_create, request=request)
 
-        # Update account_type and name — user_manager.create sets is_breeder=False
-        # but we need to explicitly set account_type='service'
+        # Update account_type and name
         user.account_type = "service"
         user.is_breeder = False
         if service_provider_data.name:
@@ -772,7 +753,7 @@ async def register_service_provider(
         await session.commit()
         await session.refresh(user)
 
-        # Insert user_service_categories associations
+        # Insert user_service_categories associations (if any provided)
         for category_id in category_ids:
             await session.execute(
                 insert(user_service_categories).values(
