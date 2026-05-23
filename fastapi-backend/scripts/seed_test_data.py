@@ -40,11 +40,11 @@ BREEDERS = [
         "account_type": "breeder",
         "location": {
             "name": "Golden Paws Kennel",
-            "address1": "1234 Maple Drive",
-            "city": "Rockville",
+            "address1": "1234 Rosemont Avenue",
+            "city": "Frederick",
             "state": "MD",
             "country": "USA",
-            "zipcode": "20850",
+            "zipcode": "21701",
             "location_type": "user",
             "is_published": True,
             "is_default": True,
@@ -73,11 +73,11 @@ BREEDERS = [
         "account_type": "breeder",
         "location": {
             "name": "Silk Road Cattery",
-            "address1": "88 Cherry Blossom Lane",
-            "city": "Bethesda",
+            "address1": "88 West Patrick Street",
+            "city": "Frederick",
             "state": "MD",
             "country": "USA",
-            "zipcode": "20814",
+            "zipcode": "21701",
             "location_type": "user",
             "is_published": True,
             "is_default": True,
@@ -106,11 +106,11 @@ BREEDERS = [
         "account_type": "breeder",
         "location": {
             "name": "Blue Ridge Labs",
-            "address1": "500 Ridge Road",
-            "city": "Gaithersburg",
+            "address1": "500 Shookstown Road",
+            "city": "Frederick",
             "state": "MD",
             "country": "USA",
-            "zipcode": "20877",
+            "zipcode": "21702",
             "location_type": "user",
             "is_published": True,
             "is_default": True,
@@ -144,11 +144,11 @@ SERVICE_PROVIDERS = [
         "categories": ["grooming", "pet-sitting"],
         "location": {
             "name": "Amy's Mobile Grooming",
-            "address1": "22 Oak Street",
-            "city": "Silver Spring",
+            "address1": "210 North Market Street",
+            "city": "Frederick",
             "state": "MD",
             "country": "USA",
-            "zipcode": "20901",
+            "zipcode": "21701",
             "location_type": "service",
             "is_published": True,
             "is_default": True,
@@ -183,16 +183,16 @@ SERVICE_PROVIDERS = [
     {
         "email": "carlos.walker@breedly.test",
         "name": "Carlos Rivera",
-        "breedery_description": "Certified dog trainer and professional dog walker. Serving the DC metro area.",
+        "breedery_description": "Certified dog trainer and professional dog walker. Serving the Frederick area.",
         "account_type": "service",
         "categories": ["dog-walking", "pet-training"],
         "location": {
             "name": "Carlos Dog Services",
-            "address1": "15 Park Avenue",
-            "city": "Rockville",
+            "address1": "125 East Church Street",
+            "city": "Frederick",
             "state": "MD",
             "country": "USA",
-            "zipcode": "20852",
+            "zipcode": "21701",
             "location_type": "service",
             "is_published": True,
             "is_default": True,
@@ -232,11 +232,11 @@ SERVICE_PROVIDERS = [
         "categories": ["pet-boarding", "pet-daycare", "cat-sitting"],
         "location": {
             "name": "Lisa's Pet Haven",
-            "address1": "77 Willow Court",
-            "city": "Potomac",
+            "address1": "77 Willowdale Drive",
+            "city": "Frederick",
             "state": "MD",
             "country": "USA",
-            "zipcode": "20854",
+            "zipcode": "21703",
             "location_type": "service",
             "is_published": True,
             "is_default": True,
@@ -310,6 +310,14 @@ async def get_or_create_location(session, user_id, loc_data: dict) -> Location:
     )
     loc = result.scalar_one_or_none()
     if loc:
+        # Update address to new Frederick location
+        loc.address1 = loc_data["address1"]
+        loc.city = loc_data["city"]
+        loc.state = loc_data["state"]
+        loc.country = loc_data["country"]
+        loc.zipcode = loc_data["zipcode"]
+        loc.location_type = loc_data.get("location_type", "user")
+        await session.flush()
         return loc
 
     loc = Location(
