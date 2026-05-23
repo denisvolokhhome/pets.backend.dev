@@ -15,6 +15,7 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
     is_superuser: bool
     is_verified: bool
     is_breeder: bool
+    account_type: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
     
@@ -26,6 +27,9 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
     profile_image_path: Optional[str] = None
     breedery_description: Optional[str] = None
     search_tags: Optional[List[str]] = None
+
+    # Service provider categories (list of {id, name, slug} dicts)
+    service_categories: Optional[List[dict]] = None
 
 
 class UserCreate(schemas.BaseUserCreate):

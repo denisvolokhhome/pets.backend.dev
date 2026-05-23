@@ -259,3 +259,70 @@ async def delete_service_image(
         db=session,
         file_service=file_service,
     )
+
+
+# ── Service Provider Categories Management ────────────────────────────────────
+
+from pydantic import BaseModel, Field
+from typing import List
+
+
+class UpdateCategoriesRequest(BaseModel):
+    category_ids: List[int] = Field(..., min_length=1)
+
+
+@router.put("/me/categories", status_code=status.HTTP_200_OK)
+async def update_my_categories(
+    payload: UpdateCategoriesRequest,
+    user: User = Depends(require_service_provider),
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    """
+    Replace the authenticated service provider's category associations.
+
+    Requires a service provider account. Validates that all provided
+    category_ids exist and are active. Replaces existing associations.
+    """
+    from sqlalchemy import select, delete, insert
+    from app.models.service_category import ServiceCategory, user_service_categories
+
+    # Validate all category_ids exist and are active
+    cat_result = await session.execute(
+        select(ServiceCategory).where(
+            ServiceCategory.id.in_(payload.category_ids),
+            ServiceCategory.is_active == True,
+        )
+    )
+    valid_categories = cat_result.scalars().all()
+    valid_ids = {cat.id for cat in valid_categories}
+    invalid_ids = [cid for cid in payload.category_ids if cid not in valid_ids]
+
+    if invalid_ids:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid or inactive category_id(s): {invalid_ids}",
+        )
+
+    # Delete existing associations for this user
+    await session.execute(
+        delete(user_service_categories).where(
+            user_service_categories.c.user_id == user.id
+        )
+    )
+
+    # Insert new associations
+    for category_id in payload.category_ids:
+        await session.execute(
+            insert(user_service_categories).values(
+                user_id=user.id,
+                category_id=category_id,
+            )
+        )
+
+    await session.commit()
+
+    return {
+        "message": "Categories updated successfully",
+        "category_ids": list(valid_ids),
+    }
