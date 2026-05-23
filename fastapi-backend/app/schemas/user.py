@@ -1,10 +1,18 @@
 """User schemas for API request/response validation."""
 import uuid
 from datetime import datetime
-from typing import Optional, List, Literal
+from typing import Optional, List, Literal, Any
 
 from fastapi_users import schemas
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
+
+
+class ServiceCategoryBrief(BaseModel):
+    """Minimal service category info embedded in UserRead."""
+    id: int
+    name: str
+    slug: str
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserRead(schemas.BaseUser[uuid.UUID]):
@@ -28,8 +36,10 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
     breedery_description: Optional[str] = None
     search_tags: Optional[List[str]] = None
 
-    # Service provider categories (list of {id, name, slug} dicts)
-    service_categories: Optional[List[dict]] = None
+    # Service provider categories
+    service_categories: Optional[List[ServiceCategoryBrief]] = None
+
+    model_config = {"from_attributes": True}
 
 
 class UserCreate(schemas.BaseUserCreate):
