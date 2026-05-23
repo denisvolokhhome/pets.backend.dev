@@ -152,6 +152,8 @@ class ServiceSearchResult(BaseModel):
     categories: List[ServiceCategoryRead]
     distance_km: Optional[float] = None
     active_services_count: int
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
     model_config = ConfigDict(from_attributes=True)
 

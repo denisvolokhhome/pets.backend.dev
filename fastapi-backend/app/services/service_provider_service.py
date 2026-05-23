@@ -510,6 +510,8 @@ async def search_services(
         User.breedery_description.label("service_description"),
         User.profile_image_path.label("profile_image_url"),
         func.coalesce(active_svc_subq.c.active_count, 0).label("active_services_count"),
+        func.ST_Y(func.ST_Centroid(func.ST_Collect(Location.coordinates))).label("latitude"),
+        func.ST_X(func.ST_Centroid(func.ST_Collect(Location.coordinates))).label("longitude"),
     ]
 
     if use_geo:
@@ -570,7 +572,7 @@ async def search_services(
         active_svc_subq.c.active_count,
     ]
     if use_geo:
-        group_by_cols.append(Location.coordinates)
+        group_by_cols.append(distance_expr)
 
     query = query.group_by(*group_by_cols)
 
@@ -619,6 +621,8 @@ async def search_services(
                 categories=categories,
                 distance_km=round(row.distance_km, 2) if use_geo else None,
                 active_services_count=row.active_services_count,
+                latitude=round(float(row.latitude), 6) if row.latitude is not None else None,
+                longitude=round(float(row.longitude), 6) if row.longitude is not None else None,
             )
         )
 
