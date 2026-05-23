@@ -89,8 +89,8 @@ async def list_breeds(
     limit: int = 100,
     kind: Optional[str] = Query(
         None,
-        description="Filter breeds by pet type: 'dog', 'cat', 'cow', or 'horse'",
-        pattern="^(dog|cat|cow|horse)$",
+        description="Filter breeds by pet type: 'dog' or 'cat'",
+        pattern="^(dog|cat)$",
     ),
 ) -> List[Breed]:
     """
@@ -120,7 +120,7 @@ async def list_breeds(
 @router.get("/autocomplete", response_model=List[BreedRead])
 async def autocomplete_breeds(
     search_term: str = Query(..., min_length=2, max_length=100, description="Search term for breed name (minimum 2 characters)"),
-    kind: Optional[str] = Query(None, pattern="^(dog|cat|cow|horse)$", description="Filter by animal kind"),
+    kind: Optional[str] = Query(None, pattern="^(dog|cat)$", description="Filter by animal kind"),
     session: AsyncSession = Depends(get_async_session),
 ) -> List[Breed]:
     """

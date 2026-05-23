@@ -564,8 +564,8 @@ async def create_breed(
     kind = breed.get("kind", "dog").strip().lower()
     if not name:
         raise HTTPException(status_code=400, detail="Breed name is required")
-    if kind not in ("dog", "cat", "cow", "horse"):
-        raise HTTPException(status_code=400, detail="Kind must be dog, cat, cow, or horse")
+    if kind not in ("dog", "cat"):
+        raise HTTPException(status_code=400, detail="Kind must be dog or cat")
 
     existing = await session.execute(select(Breed).where(Breed.name == name))
     if existing.scalar_one_or_none():
@@ -602,8 +602,8 @@ async def update_breed(
             raise HTTPException(status_code=400, detail=f"Breed '{breed['name']}' already exists")
         existing.name = breed["name"].strip()
     if "kind" in breed:
-        if breed["kind"] not in ("dog", "cat", "cow", "horse"):
-            raise HTTPException(status_code=400, detail="Kind must be dog, cat, cow, or horse")
+        if breed["kind"] not in ("dog", "cat"):
+            raise HTTPException(status_code=400, detail="Kind must be dog or cat")
         existing.kind = breed["kind"]
 
     await session.commit()
@@ -655,7 +655,7 @@ async def bulk_import_breeds(
         if not name:
             errors.append(f"Row {i+1}: empty name")
             continue
-        if kind not in ("dog", "cat", "cow", "horse"):
+        if kind not in ("dog", "cat"):
             errors.append(f"Row {i+1}: invalid kind '{kind}'")
             continue
         if name.lower() in existing_names:
