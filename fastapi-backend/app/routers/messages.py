@@ -48,6 +48,80 @@ router = APIRouter(
 )
 
 
+# ── Direct message endpoint (authenticated users only) ────────────────────────
+
+from pydantic import BaseModel, Field
+
+
+class DirectMessageCreate(BaseModel):
+    receiver_id: UUID
+    message: str = Field(..., min_length=1, max_length=2000)
+
+
+@router.post("/direct", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
+async def send_direct_message(
+    message_data: DirectMessageCreate,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> Message:
+    """
+    Send a direct message from the authenticated user to any other user.
+
+    Used for service provider contact, breeder contact, and general messaging.
+    Requires authentication — no guest messaging.
+    """
+    # Verify receiver exists
+    receiver_result = await session.execute(
+        select(User).where(User.id == message_data.receiver_id, User.is_active == True)
+    )
+    receiver = receiver_result.scalar_one_or_none()
+    if receiver is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recipient not found")
+
+    # Cannot message yourself
+    if message_data.receiver_id == user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot send a message to yourself")
+
+    thread_id = str(uuid.uuid4())
+
+    message = Message(
+        sender_id=user.id,
+        receiver_id=message_data.receiver_id,
+        thread_id=thread_id,
+        content=message_data.message,
+        is_read=False,
+    )
+    session.add(message)
+    await session.flush()
+
+    # Send notification to receiver
+    try:
+        should_notify = await notification_preference_service.should_send_notification(
+            db=session,
+            user_id=message_data.receiver_id,
+            notification_type="message_received",
+        )
+        if should_notify:
+            sender_name = user.name or user.email
+            await notification_service.create_notification(
+                db=session,
+                notification_data=NotificationCreate(
+                    user_id=message_data.receiver_id,
+                    type="message_received",
+                    title="New message",
+                    message=f"You have a new message from {sender_name}",
+                ),
+            )
+    except Exception as e:
+        logger.warning(f"Failed to send notification for direct message: {e}")
+
+    await session.commit()
+    await session.refresh(message)
+
+    logger.info(f"Direct message {message.id} sent from {user.id} to {message_data.receiver_id}")
+    return message
+
+
 # DEPRECATED: This endpoint is for anonymous messaging which is not supported in the new Message model
 # The new model requires authenticated users (sender_id must be a valid user UUID)
 # If anonymous messaging is needed, consider creating a separate AnonymousMessage model
