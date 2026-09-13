@@ -11,6 +11,10 @@ os.environ['TESTING'] = '1'
 os.environ['DATABASE_URL'] = 'postgresql+asyncpg://test:test@localhost:5432/test_db'
 os.environ['SECRET_KEY'] = 'test_secret_key_at_least_32_characters_long_for_security'
 os.environ['DEBUG'] = 'true'
+# Service providers are feature-flagged off by default (pre-launch); keep the
+# existing test suite exercising the real behavior by enabling it here. The
+# flag-disabled behavior itself is covered by dedicated tests.
+os.environ['ENABLE_SERVICE_PROVIDERS'] = 'true'
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy import text

@@ -358,6 +358,35 @@ DEBUG=False
 
 ---
 
+### Feature Flags
+
+#### `ENABLE_SERVICE_PROVIDERS`
+
+Enables the service provider account type (registration, service listings/CRUD,
+and the public service search + provider profile endpoints).
+
+**Format:** Boolean (`True` or `False`)
+
+**Default:** `False`
+
+**Example:**
+```bash
+ENABLE_SERVICE_PROVIDERS=False
+```
+
+**Notes:**
+- Pre-launch, this stays `False` so the entire service-provider surface is hidden.
+- While disabled: `/api/auth/register/service-provider` returns 404, the whole
+  `/api/services/*` router (including the public `/search` and
+  `/provider/{user_id}/public` endpoints) returns 404, and existing
+  service-provider accounts are locked out of provider-only actions (including
+  the shared location-creation endpoint's service-provider branch).
+- Must match `enableServiceProviders` in `pets.frontend.dev`'s
+  `src/environments/environment*.ts` — keep both flags in sync so the UI and
+  API agree on whether the feature is live.
+
+---
+
 ### Server Configuration
 
 #### `HOST`

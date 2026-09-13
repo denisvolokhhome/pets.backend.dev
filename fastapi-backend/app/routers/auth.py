@@ -703,6 +703,9 @@ async def register_service_provider(
 
     logger = logging.getLogger(__name__)
 
+    if not settings.enable_service_providers:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+
     # Rate limiting: 3 registration attempts per IP per 10 minutes
     client_ip = await get_client_ip(request)
     hashed = hash_ip(client_ip)

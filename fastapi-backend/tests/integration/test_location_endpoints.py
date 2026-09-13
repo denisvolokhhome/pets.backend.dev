@@ -1027,6 +1027,29 @@ class TestServiceProviderLocationManagement:
         get_r = await sp_authenticated_client.get(f"/api/locations/{location_id}")
         assert get_r.status_code == 404
 
+    @pytest.mark.asyncio
+    async def test_service_provider_blocked_when_feature_flag_disabled(
+        self, sp_authenticated_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ):
+        """A service-provider account is locked out of location creation while
+        ENABLE_SERVICE_PROVIDERS is off, even though this endpoint is shared
+        with breeders.
+        """
+        monkeypatch.setattr(
+            "app.dependencies.settings.enable_service_providers", False
+        )
+        location_data = {
+            "name": "SP Flag Off",
+            "address1": "13 Flag Ave",
+            "city": "Flagville",
+            "state": "FV",
+            "country": "US",
+            "zipcode": "30004",
+            "location_type": "service",
+        }
+        response = await sp_authenticated_client.post("/api/locations/", json=location_data)
+        assert response.status_code == 404
+
 
 class TestDeleteLocationBlockedByActiveServices:
     """Deleting a location linked to active services returns 409.

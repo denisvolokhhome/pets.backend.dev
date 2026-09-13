@@ -342,3 +342,29 @@ class TestServiceProviderRegistrationErrors:
         }
         response = await client.post("/api/auth/register/service-provider", json=payload)
         assert response.status_code == 422
+
+
+class TestServiceProviderRegistrationFeatureFlagDisabled:
+    """Registration 404s when ENABLE_SERVICE_PROVIDERS is off.
+
+    The rest of this file exercises the endpoint with the flag enabled (see
+    tests/conftest.py, which sets ENABLE_SERVICE_PROVIDERS=true for the suite).
+    """
+
+    @pytest.mark.asyncio
+    async def test_register_returns_404_when_disabled(
+        self,
+        client: AsyncClient,
+        grooming_category: ServiceCategory,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        monkeypatch.setattr(
+            "app.routers.auth.settings.enable_service_providers", False
+        )
+        payload = {
+            "email": "flag_disabled_provider@example.com",
+            "password": "SecurePass123!",
+            "category_ids": [grooming_category.id],
+        }
+        response = await client.post("/api/auth/register/service-provider", json=payload)
+        assert response.status_code == 404

@@ -175,21 +175,48 @@ def require_pet_seeker(user: User = Depends(current_active_user)) -> User:
     return user
 
 
+def require_service_providers_enabled() -> None:
+    """
+    Dependency that 404s any route it's attached to while the
+    ENABLE_SERVICE_PROVIDERS feature flag is off.
+
+    Intended for router-level use (e.g. `APIRouter(dependencies=[Depends(...)])`)
+    so an entire router — including public, unauthenticated routes like
+    service search — disappears when the feature is disabled, rather than
+    needing the check threaded into every individual endpoint.
+
+    Raises:
+        HTTPException: 404 Not Found if the feature flag is disabled
+    """
+    from fastapi import HTTPException, status
+
+    if not settings.enable_service_providers:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+
+
 def require_service_provider(user: User = Depends(current_active_user)) -> User:
     """
     Dependency that ensures the current user is a service provider.
-    
+
+    Gated by the ENABLE_SERVICE_PROVIDERS feature flag: while the feature is
+    disabled, this rejects everyone (including existing service-provider
+    accounts) so the provider-only surface stays fully locked down.
+
     Args:
         user: Current authenticated user
-        
+
     Returns:
         User: The authenticated service provider user
-        
+
     Raises:
+        HTTPException: 404 Not Found if the feature flag is disabled
         HTTPException: 403 Forbidden if user is not a service provider
     """
     from fastapi import HTTPException, status
-    
+
+    if not settings.enable_service_providers:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+
     if getattr(user, "account_type", None) != "service":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -249,6 +276,11 @@ async def check_location_limit(
     from fastapi import HTTPException, status
 
     account_type = getattr(user, "account_type", None)
+
+    if account_type == "service" and not settings.enable_service_providers:
+        # Feature flag off: service-provider accounts are fully locked out,
+        # even for endpoints (like this one) shared with breeders.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
 
     # Only breeders and service providers can manage locations
     if account_type not in ("breeder", "service") and not user.is_breeder:

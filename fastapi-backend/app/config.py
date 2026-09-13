@@ -198,12 +198,30 @@ class Settings(BaseSettings):
         description="Use TLS for SMTP connection"
     )
 
+    # Feature Flags
+    enable_service_providers: bool = Field(
+        default=False,
+        description="Enable the service provider account type (registration, service listings, "
+                     "public search/profile). Disabled pre-launch; existing service-provider "
+                     "accounts are locked out of provider-only endpoints while this is off."
+    )
+
     @field_validator("smtp_tls", mode="before")
     @classmethod
     def parse_smtp_tls(cls, v):
         """Handle empty string for smtp_tls."""
         if v == "" or v is None:
             return True
+        if isinstance(v, str):
+            return v.lower() in ("true", "1", "yes")
+        return bool(v)
+
+    @field_validator("enable_service_providers", mode="before")
+    @classmethod
+    def parse_enable_service_providers(cls, v):
+        """Handle empty string for enable_service_providers (falls back to default: False)."""
+        if v == "" or v is None:
+            return False
         if isinstance(v, str):
             return v.lower() in ("true", "1", "yes")
         return bool(v)

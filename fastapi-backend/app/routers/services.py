@@ -12,7 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.database import get_async_session
-from app.dependencies import current_active_user, require_service_provider
+from app.dependencies import (
+    current_active_user,
+    require_service_provider,
+    require_service_providers_enabled,
+)
 from app.models.user import User
 from app.schemas.service import (
     PublicProviderProfile,
@@ -29,6 +33,7 @@ from app.services.file_service import FileService
 router = APIRouter(
     prefix="/api/services",
     tags=["services"],
+    dependencies=[Depends(require_service_providers_enabled)],
     responses={
         401: {"description": "Not authenticated"},
         403: {"description": "Not authorized to access this resource"},

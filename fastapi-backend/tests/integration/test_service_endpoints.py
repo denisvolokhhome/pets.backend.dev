@@ -788,3 +788,69 @@ class TestPublicProviderProfile:
         assert response.status_code in (200, 404)
         assert response.status_code != 401
         assert response.status_code != 403
+
+
+# ─── ENABLE_SERVICE_PROVIDERS feature flag ───────────────────────────────────
+
+
+class TestServiceProviderFeatureFlagDisabled:
+    """The whole /api/services router 404s when the feature flag is off.
+
+    The rest of this file exercises the feature with the flag enabled (see
+    tests/conftest.py, which sets ENABLE_SERVICE_PROVIDERS=true for the suite).
+    These tests flip it off for a single request to verify the lockout.
+    """
+
+    @pytest.mark.asyncio
+    async def test_public_search_returns_404_when_disabled(
+        self, public_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr(
+            "app.dependencies.settings.enable_service_providers", False
+        )
+        response = await public_client.get("/api/services/search")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_public_provider_profile_returns_404_when_disabled(
+        self,
+        public_client: AsyncClient,
+        service_provider: User,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        monkeypatch.setattr(
+            "app.dependencies.settings.enable_service_providers", False
+        )
+        response = await public_client.get(
+            f"/api/services/provider/{service_provider.id}/public"
+        )
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_list_services_returns_404_when_disabled(
+        self, sp_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr(
+            "app.dependencies.settings.enable_service_providers", False
+        )
+        response = await sp_client.get("/api/services")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_create_service_returns_404_when_disabled(
+        self,
+        sp_client: AsyncClient,
+        grooming_category: ServiceCategory,
+        provider_location: Location,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        monkeypatch.setattr(
+            "app.dependencies.settings.enable_service_providers", False
+        )
+        payload = {
+            "category_id": grooming_category.id,
+            "title": "Should Not Be Created",
+            "location_ids": [provider_location.id],
+        }
+        response = await sp_client.post("/api/services", json=payload)
+        assert response.status_code == 404
