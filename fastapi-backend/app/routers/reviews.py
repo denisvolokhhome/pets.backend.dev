@@ -2,11 +2,11 @@
 import uuid
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_async_session
-from app.dependencies import current_active_user
+from app.dependencies import require_pet_seeker
 from app.middleware.rate_limiter import rate_limiter
 from app.models.user import User
 from app.schemas.breeder_review import (
@@ -22,15 +22,6 @@ from app.services.review_service import review_service
 router = APIRouter(prefix="/api/reviews", tags=["reviews"])
 
 
-def _require_pet_seeker(user: User) -> None:
-    """Raise 403 if the user is a breeder."""
-    if user.is_breeder:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only pet seekers can submit reviews",
-        )
-
-
 @router.post(
     "/",
     response_model=ReviewRead,
@@ -42,10 +33,8 @@ def _require_pet_seeker(user: User) -> None:
 async def create_review(
     data: ReviewCreate,
     db: AsyncSession = Depends(get_async_session),
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(require_pet_seeker),
 ) -> ReviewRead:
-    _require_pet_seeker(current_user)
-
     # Rate limit: 10 reviews per hour per user
     await rate_limiter.check_rate_limit(
         key=f"review:{current_user.id}",
@@ -92,10 +81,8 @@ async def check_eligibility(
     breeder_id: uuid.UUID = Query(..., description="Breeder user ID"),
     thread_id: uuid.UUID = Query(..., description="Message thread ID"),
     db: AsyncSession = Depends(get_async_session),
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(require_pet_seeker),
 ) -> ReviewEligibility:
-    _require_pet_seeker(current_user)
-
     return await review_service.check_eligibility(
         db=db,
         reviewer_id=current_user.id,

@@ -2,20 +2,14 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.validators import NonWhitespaceStr, OptionalNonWhitespaceStr
 
 
 class BreedColourBase(BaseModel):
     """Base schema for breed colour data."""
-    name: str = Field(..., min_length=1, max_length=255)
-    
-    @field_validator('name')
-    @classmethod
-    def validate_not_whitespace(cls, v: str) -> str:
-        """Ensure fields are not empty or whitespace-only."""
-        if not v or not v.strip():
-            raise ValueError('Field cannot be empty or whitespace-only')
-        return v
+    name: NonWhitespaceStr = Field(..., min_length=1, max_length=255)
 
 
 class BreedColourCreate(BreedColourBase):
@@ -25,15 +19,7 @@ class BreedColourCreate(BreedColourBase):
 
 class BreedColourUpdate(BaseModel):
     """Schema for updating a breed colour."""
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    
-    @field_validator('name')
-    @classmethod
-    def validate_not_whitespace(cls, v: Optional[str]) -> Optional[str]:
-        """Ensure fields are not empty or whitespace-only."""
-        if v is not None and (not v or not v.strip()):
-            raise ValueError('Field cannot be empty or whitespace-only')
-        return v
+    name: OptionalNonWhitespaceStr = Field(None, min_length=1, max_length=255)
 
 
 class BreedColourRead(BreedColourBase):
@@ -48,16 +34,8 @@ class BreedColourRead(BreedColourBase):
 
 class BreedBase(BaseModel):
     """Base schema for breed data."""
-    name: str = Field(..., min_length=1, max_length=255)
+    name: NonWhitespaceStr = Field(..., min_length=1, max_length=255)
     kind: str = Field(..., pattern="^(dog|cat)$")
-    
-    @field_validator('name')
-    @classmethod
-    def validate_name_not_whitespace(cls, v: str) -> str:
-        """Ensure name is not empty or whitespace-only."""
-        if not v or not v.strip():
-            raise ValueError('Name cannot be empty or whitespace-only')
-        return v
 
 
 class BreedCreate(BreedBase):
@@ -67,16 +45,8 @@ class BreedCreate(BreedBase):
 
 class BreedUpdate(BaseModel):
     """Schema for updating a breed."""
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    name: OptionalNonWhitespaceStr = Field(None, min_length=1, max_length=255)
     kind: Optional[str] = Field(None, pattern="^(dog|cat)$")
-    
-    @field_validator('name')
-    @classmethod
-    def validate_name_not_whitespace(cls, v: Optional[str]) -> Optional[str]:
-        """Ensure name is not empty or whitespace-only."""
-        if v is not None and (not v or not v.strip()):
-            raise ValueError('Name cannot be empty or whitespace-only')
-        return v
 
 
 class BreedRead(BreedBase):

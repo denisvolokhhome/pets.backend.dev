@@ -2,11 +2,11 @@
 from typing import List
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_async_session
-from app.dependencies import current_active_user
+from app.dependencies import require_pet_seeker
 from app.models.user import User
 from app.schemas.offspring_favorite import OffspringFavoriteRead
 from app.services.favorite_service import favorite_service
@@ -14,15 +14,6 @@ from app.services.notification_service import notification_service
 
 
 router = APIRouter(prefix="/api/favorites", tags=["favorites"])
-
-
-def _require_pet_seeker(user: User) -> None:
-    """Raise 403 if the user is a breeder."""
-    if user.is_breeder:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Favorites are only available to pet seekers",
-        )
 
 
 @router.post(
@@ -35,7 +26,7 @@ def _require_pet_seeker(user: User) -> None:
 async def add_favorite(
     offspring_id: uuid.UUID,
     db: AsyncSession = Depends(get_async_session),
-    current_user: User = Depends(current_active_user)
+    current_user: User = Depends(require_pet_seeker)
 ) -> OffspringFavoriteRead:
     """
     Add an offspring to favorites.
@@ -52,7 +43,6 @@ async def add_favorite(
         HTTPException: 404 if offspring not found or archived
         HTTPException: 400 if already favorited
     """
-    _require_pet_seeker(current_user)
     favorite = await favorite_service.add_favorite(
         db=db,
         offspring_id=offspring_id,
@@ -98,7 +88,7 @@ async def add_favorite(
 async def remove_favorite(
     offspring_id: uuid.UUID,
     db: AsyncSession = Depends(get_async_session),
-    current_user: User = Depends(current_active_user)
+    current_user: User = Depends(require_pet_seeker)
 ) -> None:
     """
     Remove an offspring from favorites.
@@ -111,7 +101,6 @@ async def remove_favorite(
     Raises:
         HTTPException: 404 if favorite not found
     """
-    _require_pet_seeker(current_user)
     await favorite_service.remove_favorite(
         db=db,
         offspring_id=offspring_id,
@@ -129,7 +118,7 @@ async def list_favorites(
     limit: int = 50,
     offset: int = 0,
     db: AsyncSession = Depends(get_async_session),
-    current_user: User = Depends(current_active_user)
+    current_user: User = Depends(require_pet_seeker)
 ) -> List[OffspringFavoriteRead]:
     """
     List user's favorited offsprings.
@@ -143,7 +132,6 @@ async def list_favorites(
     Returns:
         List of favorites with offspring details
     """
-    _require_pet_seeker(current_user)
     favorites = await favorite_service.list_user_favorites(
         db=db,
         user_id=current_user.id,
@@ -163,7 +151,7 @@ async def list_favorites(
 async def check_favorite_status(
     offspring_id: uuid.UUID,
     db: AsyncSession = Depends(get_async_session),
-    current_user: User = Depends(current_active_user)
+    current_user: User = Depends(require_pet_seeker)
 ) -> dict:
     """
     Check if an offspring is favorited by the user.
@@ -176,7 +164,6 @@ async def check_favorite_status(
     Returns:
         Dictionary with is_favorited boolean
     """
-    _require_pet_seeker(current_user)
     is_favorited = await favorite_service.check_favorite_status(
         db=db,
         offspring_id=offspring_id,

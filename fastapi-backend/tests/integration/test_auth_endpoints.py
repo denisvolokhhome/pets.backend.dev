@@ -426,3 +426,68 @@ async def test_update_current_user(client: AsyncClient):
     
     new_login_response = await client.post("/api/auth/jwt/login", data=new_login_data)
     assert new_login_response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_pet_seeker_registration_sets_consistent_account_type(client: AsyncClient):
+    """
+    Regression test: pet-seeker registration must not leave account_type at
+    the 'breeder' DB default while is_breeder=False. That mismatch hides the
+    frontend's "Convert to Breeder" option entirely (isPetSeeker requires
+    account_type == 'pet_seeker'), leaving the user stuck in no category.
+    """
+    registration_data = {
+        "email": "petseeker-consistency@example.com",
+        "password": "SecurePassword123!",
+    }
+
+    response = await client.post("/api/auth/register/pet-seeker", json=registration_data)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["user"]["is_breeder"] is False
+
+    login_response = await client.post(
+        "/api/auth/jwt/login",
+        data={
+            "username": registration_data["email"],
+            "password": registration_data["password"],
+        },
+    )
+    headers = {"Authorization": f"Bearer {login_response.json()['access_token']}"}
+
+    me_response = await client.get("/api/users/me", headers=headers)
+    assert me_response.status_code == 200
+    assert me_response.json()["account_type"] == "pet_seeker"
+
+
+@pytest.mark.asyncio
+async def test_convert_to_breeder_sets_account_type_breeder(client: AsyncClient):
+    """
+    Regression test: converting a pet seeker to a breeder must also fix up
+    account_type, not just is_breeder, so account_type/is_breeder never
+    disagree after conversion.
+    """
+    registration_data = {
+        "email": "convert-consistency@example.com",
+        "password": "SecurePassword123!",
+    }
+    await client.post("/api/auth/register/pet-seeker", json=registration_data)
+
+    login_response = await client.post(
+        "/api/auth/jwt/login",
+        data={
+            "username": registration_data["email"],
+            "password": registration_data["password"],
+        },
+    )
+    headers = {"Authorization": f"Bearer {login_response.json()['access_token']}"}
+
+    convert_response = await client.post("/api/auth/convert-to-breeder", headers=headers)
+    assert convert_response.status_code == 200
+
+    me_response = await client.get("/api/users/me", headers=headers)
+    assert me_response.status_code == 200
+    me_data = me_response.json()
+    assert me_data["is_breeder"] is True
+    assert me_data["account_type"] == "breeder"

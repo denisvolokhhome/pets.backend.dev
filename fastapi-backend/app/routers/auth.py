@@ -199,10 +199,11 @@ async def google_callback(
             
             # Create user through user manager
             user = await user_manager.create(user_create)
-            
+
             # Set OAuth fields
             user.oauth_provider = "google"
             user.oauth_id = oauth_id
+            user.account_type = "pet_seeker"
             await session.commit()
             await session.refresh(user)
         
@@ -360,13 +361,14 @@ async def register_pet_seeker(
         
         # Create user through user manager (handles password hashing)
         user = await user_manager.create(user_create)
-        
+
         # Set name if provided
+        user.account_type = "pet_seeker"
         if pet_seeker_data.name:
             user.name = pet_seeker_data.name
-            await session.commit()
-            await session.refresh(user)
-        
+        await session.commit()
+        await session.refresh(user)
+
         # Link any existing guest messages to this account
         linking_service = MessageLinkingService()
         linking_result = await linking_service.link_messages_to_account(
@@ -505,13 +507,14 @@ async def register_from_message(
         
         # Create user through user manager (handles password hashing)
         user = await user_manager.create(user_create)
-        
+
         # Set name if provided
+        user.account_type = "pet_seeker"
         if guest_data.name:
             user.name = guest_data.name
-            await session.commit()
-            await session.refresh(user)
-        
+        await session.commit()
+        await session.refresh(user)
+
         # Link messages to the new account using MessageLinkingService
         linking_service = MessageLinkingService()
         linking_result = await linking_service.link_messages_to_account(
@@ -830,6 +833,7 @@ async def convert_to_breeder(
 
     # Flip the flag
     user.is_breeder = True
+    user.account_type = "breeder"
     await session.commit()
     await session.refresh(user)
 

@@ -5,6 +5,8 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.validators import OptionalNonWhitespaceStr
+
 
 VALID_REVIEW_TAGS = [
     "Communication",
@@ -24,7 +26,7 @@ class ReviewCreate(BaseModel):
     thread_id: uuid.UUID
     rating: int = Field(..., ge=1, le=5)
     tags: list[str] = Field(default_factory=list)
-    comment: Optional[str] = Field(None, max_length=2000)
+    comment: OptionalNonWhitespaceStr = Field(None, max_length=2000)
 
     @field_validator("tags")
     @classmethod
@@ -33,14 +35,6 @@ class ReviewCreate(BaseModel):
         invalid = set(v) - set(VALID_REVIEW_TAGS)
         if invalid:
             raise ValueError(f"Invalid tags: {invalid}")
-        return v
-
-    @field_validator("comment")
-    @classmethod
-    def validate_not_whitespace(cls, v: Optional[str]) -> Optional[str]:
-        """Ensure comment is not empty or whitespace-only."""
-        if v is not None and (not v or not v.strip()):
-            raise ValueError("Comment cannot be empty or whitespace-only")
         return v
 
 

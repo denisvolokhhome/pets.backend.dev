@@ -6,6 +6,8 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.validators import OptionalNonWhitespaceStr
+
 if TYPE_CHECKING:
     from app.schemas.breeding import LitterRead
     from app.schemas.breed import BreedRead
@@ -15,7 +17,7 @@ if TYPE_CHECKING:
 
 class OffspringBase(BaseModel):
     """Base schema for offspring data."""
-    name: Optional[str] = Field(None, max_length=255)
+    name: OptionalNonWhitespaceStr = Field(None, max_length=255)
     gender: str = Field(..., pattern="^(Male|Female)$")
     date_of_birth: date
     status: str = Field(
@@ -54,7 +56,7 @@ class OffspringCreate(OffspringBase):
 
 class OffspringUpdate(BaseModel):
     """Schema for updating an offspring."""
-    name: Optional[str] = Field(None, max_length=255)
+    name: OptionalNonWhitespaceStr = Field(None, max_length=255)
     status: Optional[str] = Field(
         None,
         pattern="^(Available|Reserved|Sold|Archived)$"

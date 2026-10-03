@@ -6,20 +6,13 @@ from typing import Optional, List
 from pydantic import BaseModel, ConfigDict, Field, field_validator, computed_field
 
 from app.schemas.pet_image import PetImageRead
+from app.schemas.validators import NonWhitespaceStr, OptionalNonWhitespaceStr
 
 
 class PetBase(BaseModel):
     """Base schema for pet data."""
-    name: str = Field(..., min_length=1, max_length=255)
-    
-    @field_validator('name')
-    @classmethod
-    def validate_name_not_whitespace(cls, v: str) -> str:
-        """Ensure name is not empty or whitespace-only."""
-        if not v or not v.strip():
-            raise ValueError('Name cannot be empty or whitespace-only')
-        return v
-    
+    name: NonWhitespaceStr = Field(..., min_length=1, max_length=255)
+
     breed_id: Optional[int] = None
     breeding_id: Optional[int] = None
     location_id: Optional[int] = None
@@ -59,15 +52,7 @@ class PetCreate(PetBase):
 
 class PetUpdate(BaseModel):
     """Schema for updating a pet."""
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    
-    @field_validator('name')
-    @classmethod
-    def validate_name_not_whitespace(cls, v: Optional[str]) -> Optional[str]:
-        """Ensure name is not empty or whitespace-only."""
-        if v is not None and (not v or not v.strip()):
-            raise ValueError('Name cannot be empty or whitespace-only')
-        return v
+    name: OptionalNonWhitespaceStr = Field(None, min_length=1, max_length=255)
     
     breed_id: Optional[int] = None
     breeding_id: Optional[int] = None

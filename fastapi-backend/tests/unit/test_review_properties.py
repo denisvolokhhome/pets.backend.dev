@@ -497,7 +497,10 @@ def test_html_sanitization_strips_all_tags(text_with_html: str):
 # ---------------------------------------------------------------------------
 # Feature: breeder-reviews, Property 3: Only pet seekers can submit reviews
 
-from app.routers.reviews import _require_pet_seeker
+# The reviews router now enforces the pet-seeker requirement via the shared
+# require_pet_seeker dependency (app/dependencies.py) instead of a local helper,
+# so the property is validated against that canonical implementation.
+from app.dependencies import require_pet_seeker
 from fastapi import HTTPException as _HTTPException
 from types import SimpleNamespace
 
@@ -509,20 +512,20 @@ def test_only_pet_seekers_can_submit(is_breeder: bool):
 
     For any authenticated user, the user can submit a review if and only if
     is_breeder=False. Users with is_breeder=True should receive a 403
-    rejection with the message "Only pet seekers can submit reviews".
+    rejection.
     """
     user = SimpleNamespace(is_breeder=is_breeder)
 
     if is_breeder:
         # Breeders must be rejected with 403
         with pytest.raises(_HTTPException) as exc_info:
-            _require_pet_seeker(user)
+            require_pet_seeker(user)
         assert exc_info.value.status_code == 403
-        assert exc_info.value.detail == "Only pet seekers can submit reviews"
+        assert exc_info.value.detail == "Pet seeker access required"
     else:
-        # Pet seekers pass through without exception
-        result = _require_pet_seeker(user)
-        assert result is None
+        # Pet seekers pass through, receiving their own user object back
+        result = require_pet_seeker(user)
+        assert result is user
 
 
 # ---------------------------------------------------------------------------
