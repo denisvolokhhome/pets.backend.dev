@@ -250,16 +250,7 @@ app = FastAPI(
     ],
 )
 
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.get_allowed_origins_list(),
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Add billing security headers middleware (outermost → runs last on response)
+# Add billing security headers middleware
 from app.middleware.billing_security_headers import BillingSecurityHeadersMiddleware
 app.add_middleware(BillingSecurityHeadersMiddleware)
 
@@ -269,6 +260,18 @@ app.add_middleware(BillingRateLimiterMiddleware)
 
 # Add logging middleware
 app.add_middleware(LoggingMiddleware)
+
+# CORS is added last so it is the OUTERMOST middleware (Starlette wraps in
+# reverse order of registration). That way responses produced by inner
+# middleware — e.g. the billing rate limiter's 429 — still carry CORS headers;
+# otherwise browsers surface them as opaque "status 0" network errors.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.get_allowed_origins_list(),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # Mount static files for image serving
