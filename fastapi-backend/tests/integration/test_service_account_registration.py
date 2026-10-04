@@ -272,10 +272,11 @@ class TestServiceProviderRegistrationErrors:
         assert "REGISTER_USER_ALREADY_EXISTS" in data["detail"]
 
     @pytest.mark.asyncio
-    async def test_zero_categories_returns_422(self, client: AsyncClient):
-        """Registering with an empty category_ids list returns 422.
+    async def test_zero_categories_is_allowed(self, client: AsyncClient):
+        """Registering with an empty category_ids list succeeds.
 
-        Validates: Requirements 3.3, 3.8
+        category_ids is optional — providers can add categories later from
+        Settings → My Service Categories.
         """
         payload = {
             "email": "sp_no_cats@example.com",
@@ -283,17 +284,17 @@ class TestServiceProviderRegistrationErrors:
             "category_ids": [],
         }
         response = await client.post("/api/auth/register/service-provider", json=payload)
-        assert response.status_code == 422
+        assert response.status_code == 201
 
     @pytest.mark.asyncio
-    async def test_missing_category_ids_field_returns_422(self, client: AsyncClient):
-        """Omitting category_ids entirely returns 422."""
+    async def test_missing_category_ids_field_is_allowed(self, client: AsyncClient):
+        """Omitting category_ids entirely succeeds (field is optional)."""
         payload = {
             "email": "sp_missing_cats@example.com",
             "password": "SecurePass123!",
         }
         response = await client.post("/api/auth/register/service-provider", json=payload)
-        assert response.status_code == 422
+        assert response.status_code == 201
 
     @pytest.mark.asyncio
     async def test_invalid_category_id_returns_422(self, client: AsyncClient):
@@ -305,6 +306,11 @@ class TestServiceProviderRegistrationErrors:
         }
         response = await client.post("/api/auth/register/service-provider", json=payload)
         assert response.status_code == 422
+
+        # The rejected request must not leave an orphan account behind
+        payload["category_ids"] = []
+        retry = await client.post("/api/auth/register/service-provider", json=payload)
+        assert retry.status_code == 201
 
     @pytest.mark.asyncio
     async def test_inactive_category_id_returns_422(

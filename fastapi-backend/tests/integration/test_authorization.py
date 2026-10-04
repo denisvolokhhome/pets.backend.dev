@@ -149,7 +149,8 @@ class TestAuthorizationFlow:
             is_active=True,
             is_superuser=False,
             is_verified=False,
-            is_breeder=False
+            is_breeder=False,
+            account_type="pet_seeker",  # server_default is "breeder"
         )
         async_session.add(pet_seeker)
         await async_session.commit()
@@ -174,9 +175,13 @@ class TestAuthorizationFlow:
         async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=True) as client:
             # Attempt to create a location
             location_data = {
-                "address": "123 Test St",
+                "name": "Seeker Location",
+                "address1": "123 Test St",
                 "city": "Test City",
-                "zip": "12345"
+                "state": "TX",
+                "country": "US",
+                "zipcode": "12345",
+                "location_type": "home",
             }
             
             response = await client.post("/api/locations", json=location_data)

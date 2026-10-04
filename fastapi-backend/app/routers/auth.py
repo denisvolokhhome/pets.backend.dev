@@ -694,7 +694,7 @@ async def register_service_provider(
 
     Raises:
         HTTPException 400: If email is already registered
-        HTTPException 422: If category_ids is empty or contains invalid/inactive category IDs
+        HTTPException 422: If category_ids contains invalid/inactive category IDs
         HTTPException 429: If rate limit exceeded
     """
     from app.models.user import User
@@ -738,8 +738,21 @@ async def register_service_provider(
             detail="REGISTER_USER_ALREADY_EXISTS",
         )
 
-    # category_ids is optional — only insert if provided
-    category_ids = service_provider_data.category_ids
+    # category_ids is optional — but any provided must exist and be active.
+    # Validate before creating the user so bad input leaves no orphan account.
+    if category_ids:
+        valid_ids_result = await session.execute(
+            select(ServiceCategory.id).where(
+                ServiceCategory.id.in_(category_ids),
+                ServiceCategory.is_active == True,  # noqa: E712
+            )
+        )
+        invalid_ids = set(category_ids) - set(valid_ids_result.scalars().all())
+        if invalid_ids:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid or inactive service category IDs: {sorted(invalid_ids)}",
+            )
 
     try:
         # Create user via user_manager (handles password hashing and on_after_register hooks)

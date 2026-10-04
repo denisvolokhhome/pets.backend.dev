@@ -6,6 +6,7 @@ import logging
 import time
 
 from fastapi import FastAPI, Request, HTTPException
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -405,7 +406,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     return JSONResponse(
         status_code=422,
         content={
-            "detail": exc.errors(),
+            # jsonable_encoder: custom validators put the raised exception object
+            # in each error's ctx, which JSONResponse can't serialize as-is.
+            "detail": jsonable_encoder(exc.errors()),
             "error_code": "VALIDATION_ERROR",
         },
     )

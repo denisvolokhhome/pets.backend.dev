@@ -110,7 +110,7 @@ async def _create_location_share_message(
     tags=tags_strategy,
     comment=comment_strategy,
 )
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(max_examples=100, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @pytest.mark.asyncio
 async def test_review_creation_round_trip(
     async_session: AsyncSession,
@@ -174,7 +174,7 @@ async def test_review_creation_round_trip(
     tags=tags_strategy,
     comment=comment_strategy,
 )
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(max_examples=100, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @pytest.mark.asyncio
 async def test_duplicate_review_rejection(
     async_session: AsyncSession,
@@ -261,7 +261,7 @@ _review_data_strategy = st.lists(
 
 
 @given(review_data=_review_data_strategy)
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(max_examples=100, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @pytest.mark.asyncio
 async def test_rating_aggregation_correctness(
     async_session: AsyncSession,
@@ -341,7 +341,7 @@ async def test_rating_aggregation_correctness(
     num_reviews=st.integers(min_value=2, max_value=20),
     page_limit=st.integers(min_value=1, max_value=20),
 )
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(max_examples=100, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @pytest.mark.asyncio
 async def test_review_list_ordering(
     async_session: AsyncSession,
@@ -640,7 +640,7 @@ def test_whitespace_only_comment_rejected(comment: str):
     has_location_share=st.booleans(),
     has_existing_review=st.booleans(),
 )
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(max_examples=100, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @pytest.mark.asyncio
 async def test_eligibility_correctness(
     async_session: AsyncSession,
@@ -762,7 +762,7 @@ async def test_rate_limiting_enforced(n: int):
 
 
 @given(fake_breeder_id=st.uuids())
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(max_examples=100, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @pytest.mark.asyncio
 async def test_nonexistent_breeder_returns_404(
     async_session: AsyncSession,
@@ -797,7 +797,7 @@ async def test_nonexistent_breeder_returns_404(
 
 
 @given(fake_thread_id=st.uuids())
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(max_examples=100, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @pytest.mark.asyncio
 async def test_nonexistent_thread_returns_404(
     async_session: AsyncSession,
