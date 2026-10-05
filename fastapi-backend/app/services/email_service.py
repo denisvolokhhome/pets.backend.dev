@@ -1,3 +1,4 @@
+from html import escape
 """Reusable email service for sending transactional emails via SMTP."""
 import logging
 import ssl
@@ -120,6 +121,18 @@ class EmailService:
             text=f"Verify your email: {verify_url}",
         )
 
+    async def send_activity_notification(
+        self, to: str, title: str, body: str, action_url: str, action_label: str
+    ) -> bool:
+        """Email a copy of an in-app notification (new message, new favorite)."""
+        html = _render_activity(title, body, action_url, action_label)
+        return await self.send_email(
+            to=to,
+            subject=f"{title} — Breedly",
+            html=html,
+            text=f"{title}\n\n{body}\n\n{action_label}: {action_url}",
+        )
+
 
 # ── Simple HTML templates ──────────────────────────────────────────
 
@@ -166,6 +179,7 @@ def _render_password_reset(reset_url: str) -> str:
 
 
 def _render_welcome(name: str) -> str:
+    name = escape(name)
     return _base_wrapper(f"""
       <h3 style="font-size: 18px; font-weight: 600;">Welcome, {name}!</h3>
       <p style="font-size: 14px; line-height: 1.6; color: #4b5563;">
@@ -176,6 +190,7 @@ def _render_welcome(name: str) -> str:
 
 
 def _render_verification(name: str, verify_url: str) -> str:
+    name = escape(name)
     return _base_wrapper(f"""
       <h3 style="font-size: 18px; font-weight: 600;">Verify your email, {name}</h3>
       <p style="font-size: 14px; line-height: 1.6; color: #4b5563;">
@@ -190,4 +205,24 @@ def _render_verification(name: str, verify_url: str) -> str:
         </a>
       </div>
       <p style="font-size: 12px; color: #9ca3af;">If you didn't create an account, you can safely ignore this email.</p>
+    """)
+
+
+def _render_activity(title: str, body: str, action_url: str, action_label: str) -> str:
+    # body comes from other users (names, offspring names) — always escape
+    title, body, action_label = escape(title), escape(body), escape(action_label)
+    action_url = escape(action_url, quote=True)
+    return _base_wrapper(f"""
+      <h3 style="font-size: 18px; font-weight: 600;">{title}</h3>
+      <p style="font-size: 14px; line-height: 1.6; color: #4b5563;">{body}</p>
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="{action_url}"
+           style="display: inline-block; padding: 12px 32px; background: linear-gradient(135deg, #ff6b6b, #ff5252);
+                  color: white; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px;">
+          {action_label}
+        </a>
+      </div>
+      <p style="font-size: 12px; color: #9ca3af;">
+        You can turn these emails off in Settings → Notifications.
+      </p>
     """)

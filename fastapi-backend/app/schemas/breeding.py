@@ -86,6 +86,8 @@ class LitterRead(LitterBase):
     status: str = "Started"
     created_at: datetime
     updated_at: Optional[datetime] = None
+    # Nested in offspring responses so pet seekers get the form before contacting
+    application_form: Optional["ApplicationFormRead"] = None
     
     model_config = ConfigDict(from_attributes=True)
 

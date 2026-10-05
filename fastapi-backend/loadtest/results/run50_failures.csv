@@ -1,0 +1,2 @@
+Method,Name,Error,Occurrences,First Seen,Last Seen
+GET,GET /api/favorites/offsprings,"ConnectionResetError(54, 'Connection reset by peer')",1,2026-10-04T22:34:13Z,2026-10-04T22:34:13Z

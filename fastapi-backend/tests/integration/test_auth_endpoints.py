@@ -59,6 +59,40 @@ async def test_user_registration_flow(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_registration_ignores_privileged_fields(client: AsyncClient):
+    """A client must not be able to self-register as superuser or pre-verified.
+
+    Regression: /api/auth/register passed the request body to
+    user_manager.create() without safe=True.
+    """
+    response = await client.post("/api/auth/register", json={
+        "email": "attacker@example.com",
+        "password": "SecurePassword123!",
+        "is_superuser": True,
+        "is_verified": True,
+        "is_active": True,
+    })
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["is_superuser"] is False
+    assert data["is_verified"] is False
+
+
+@pytest.mark.asyncio
+async def test_registration_saves_name(client: AsyncClient):
+    """The name entered at breeder sign-up is stored on the account."""
+    response = await client.post("/api/auth/register", json={
+        "email": "named.breeder@example.com",
+        "password": "SecurePassword123!",
+        "name": "Ellie Harper",
+    })
+
+    assert response.status_code == 201
+    assert response.json()["name"] == "Ellie Harper"
+
+
+@pytest.mark.asyncio
 async def test_user_registration_duplicate_email(client: AsyncClient):
     """
     Test that registering with duplicate email fails.

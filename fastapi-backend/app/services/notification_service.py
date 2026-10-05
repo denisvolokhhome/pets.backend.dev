@@ -1,4 +1,5 @@
 """Notification service for managing breeder notifications."""
+import asyncio
 from typing import List, Optional
 import uuid
 
@@ -8,6 +9,16 @@ from fastapi import HTTPException, status
 
 from app.models.notification import Notification
 from app.schemas.notification import NotificationCreate
+from app.config import Settings
+from app.models.user import User
+from app.services.email_service import EmailService
+
+# Notification types that also go out by email (see Settings → Notifications)
+_EMAILED_TYPES = {"message_received", "favorite_added"}
+_pending_emails: set = set()
+settings = Settings()
+email_service = EmailService(settings)
+
 
 
 class NotificationService:
@@ -40,8 +51,36 @@ class NotificationService:
         db.add(notification)
         await db.commit()
         await db.refresh(notification)
-        
+
+        if notification.type in _EMAILED_TYPES:
+            await self._queue_email(db, notification)
+
         return notification
+
+    async def _queue_email(self, db: AsyncSession, notification: Notification) -> None:
+        """
+        Email a copy of the notification. Callers have already checked the user's
+        notification preferences. Sent in the background so a slow SMTP server
+        never delays the request; failures are logged by EmailService.
+        """
+        user = await db.get(User, notification.user_id)
+        if not user or not user.email:
+            return
+        frontend = settings.frontend_url.rstrip("/")
+        if notification.type == "message_received":
+            url, label = f"{frontend}/messages?messageId={notification.related_id}", "Read message"
+        else:  # favorite_added
+            url, label = f"{frontend}/offsprings/{notification.related_id}", "View offspring"
+        task = asyncio.create_task(email_service.send_activity_notification(
+            to=user.email,
+            title=notification.title,
+            body=notification.message or "",
+            action_url=url,
+            action_label=label,
+        ))
+        # Keep a reference until done so the task isn't garbage-collected mid-send
+        _pending_emails.add(task)
+        task.add_done_callback(_pending_emails.discard)
     
     async def list_notifications(
         self,

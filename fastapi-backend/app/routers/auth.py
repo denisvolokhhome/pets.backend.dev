@@ -1,5 +1,5 @@
 """Authentication routes using fastapi-users."""
-from typing import Optional
+from typing import AsyncGenerator, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from httpx_oauth.clients.google import GoogleOAuth2
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +11,7 @@ from app.schemas.user import UserRead, UserCreate, UserUpdate, PetSeekerCreate, 
 from app.services.user_manager import UserManager
 from app.services.notification_service import NotificationService
 from app.schemas.notification import NotificationCreate
-from app.middleware.rate_limiter import rate_limiter, get_client_ip
+from app.middleware.rate_limiter import rate_limiter, get_client_ip, client_ip
 from app.dependencies import current_active_user
 from app.models.user import User
 
@@ -29,11 +29,40 @@ google_oauth_client = GoogleOAuth2(
 # Create router for authentication endpoints
 router = APIRouter()
 
+# Brute-force protection for password sign-in: failed attempts are counted per client IP
+# and per account; successful sign-ins never count towards the limit.
+LOGIN_FAILURES_PER_IP = (20, 900)       # (max failures, window seconds)
+LOGIN_FAILURES_PER_ACCOUNT = (10, 900)
+LOGIN_RATE_LIMIT_DETAIL = "Too many sign-in attempts. Please wait 15 minutes and try again."
+
+
+async def login_attempt_guard(request: Request) -> AsyncGenerator[None, None]:
+    if not request.url.path.endswith("/login"):
+        yield
+        return
+    form = await request.form()  # already parsed (and cached) for the login endpoint
+    email = str(form.get("username", "")).strip().lower()
+    keys = [
+        (f"login_fail_ip:{client_ip(request)}", LOGIN_FAILURES_PER_IP),
+        (f"login_fail_account:{email}", LOGIN_FAILURES_PER_ACCOUNT),
+    ]
+    for key, (max_failures, window) in keys:
+        await rate_limiter.ensure_below(key, max_failures, window, LOGIN_RATE_LIMIT_DETAIL)
+    try:
+        yield
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_400_BAD_REQUEST:  # bad credentials / inactive user
+            for key, _ in keys:
+                await rate_limiter.record(key)
+        raise
+
+
 # Include auth router for JWT login/logout
 router.include_router(
     fastapi_users.get_auth_router(auth_backend),
     prefix="/jwt",
     tags=["auth"],
+    dependencies=[Depends(login_attempt_guard)],
 )
 
 # NOTE: We do NOT include the default fastapi-users register router.
@@ -273,7 +302,9 @@ async def register_breeder(
         )
 
     try:
-        user = await user_manager.create(user_data, request=request)
+        # safe=True: the body comes from the client, so is_superuser /
+        # is_verified / is_active must never be taken from it.
+        user = await user_manager.create(user_data, safe=True, request=request)
     except Exception as e:
         error_str = str(e).lower()
         if "already exists" in error_str or "duplicate" in error_str:

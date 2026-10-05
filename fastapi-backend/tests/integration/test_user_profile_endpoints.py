@@ -426,3 +426,76 @@ async def test_profile_update_preserves_other_fields(authenticated_client: Async
     assert updated_data["email"] == initial_email
     assert updated_data["id"] == initial_id
     assert updated_data["is_active"] == initial_data["is_active"]
+
+
+@pytest.mark.asyncio
+async def test_profile_update_cannot_escalate_privileges(authenticated_client: AsyncClient):
+    """PATCH /users/me must ignore account-control flags (regression: self-made superuser)."""
+    response = await authenticated_client.patch("/api/users/me", json={
+        "name": "Still A User",
+        "is_superuser": True,
+        "is_verified": True,
+        "is_active": False,
+    })
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "Still A User"
+    assert data["is_superuser"] is False
+    assert data["is_verified"] is False
+    assert data["is_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_change_password_requires_current_password(authenticated_client: AsyncClient):
+    """Wrong current password is rejected and the password stays unchanged."""
+    response = await authenticated_client.post("/api/users/me/change-password", json={
+        "current_password": "WrongPassword123!",
+        "new_password": "BrandNewPassword456!",
+    })
+    assert response.status_code == 400
+    assert response.json()["detail"] == "CURRENT_PASSWORD_INCORRECT"
+
+    login = await authenticated_client.post("/api/auth/jwt/login", data={
+        "username": "profileuser@example.com", "password": "SecurePassword123!",
+    })
+    assert login.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_change_password_success(authenticated_client: AsyncClient):
+    """With the right current password the new password takes effect."""
+    response = await authenticated_client.post("/api/users/me/change-password", json={
+        "current_password": "SecurePassword123!",
+        "new_password": "BrandNewPassword456!",
+    })
+    assert response.status_code == 204
+
+    old = await authenticated_client.post("/api/auth/jwt/login", data={
+        "username": "profileuser@example.com", "password": "SecurePassword123!",
+    })
+    new = await authenticated_client.post("/api/auth/jwt/login", data={
+        "username": "profileuser@example.com", "password": "BrandNewPassword456!",
+    })
+    assert old.status_code == 400
+    assert new.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_change_password_rejects_weak_password(authenticated_client: AsyncClient):
+    """New passwords go through the same rules as registration."""
+    response = await authenticated_client.post("/api/users/me/change-password", json={
+        "current_password": "SecurePassword123!",
+        "new_password": "short",
+    })
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_change_password_missing_current_rejected(authenticated_client: AsyncClient):
+    """Email/password accounts can't skip the current password."""
+    response = await authenticated_client.post("/api/users/me/change-password", json={
+        "new_password": "BrandNewPassword456!",
+    })
+    assert response.status_code == 400
+    assert response.json()["detail"] == "CURRENT_PASSWORD_INCORRECT"

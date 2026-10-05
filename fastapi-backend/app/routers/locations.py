@@ -157,8 +157,16 @@ async def create_location(
     
     **Returns:** The created location record with generated ID and coordinates
     """
+    # A breeder's first location is always the default (used to prefill new pets)
+    make_default = location_data.is_default
+    if not make_default:
+        existing = await session.execute(
+            sa.select(sa.func.count()).select_from(Location).where(Location.user_id == user.id)
+        )
+        make_default = existing.scalar_one() == 0
+
     # If this location is being set as default, unset all others first
-    if location_data.is_default:
+    if make_default:
         await session.execute(
             sa.update(Location)
             .where(Location.user_id == user.id)
@@ -177,7 +185,7 @@ async def create_location(
         zipcode=location_data.zipcode,
         location_type=location_data.location_type,
         is_published=location_data.is_published,
-        is_default=location_data.is_default,
+        is_default=make_default,
     )
     
     # Add to session first to get an ID

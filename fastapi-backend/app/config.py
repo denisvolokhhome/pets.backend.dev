@@ -47,6 +47,25 @@ class Settings(BaseSettings):
         default=False,
         description="Enable debug mode"
     )
+    environment: str = Field(
+        default="development",
+        description="Deployment environment: development, staging or production. "
+                    "Production enables strict email validation (no reserved domains such as .test)."
+    )
+
+    # Client IP resolution (rate limiting). The app sits behind Cloudflare Tunnel + nginx,
+    # so the socket peer is a proxy and X-Forwarded-For's leftmost entry is client-controlled.
+    client_ip_header: str = Field(
+        default="",
+        description="Header set by the edge that carries the real client IP and cannot be "
+                    "forged by clients, e.g. CF-Connecting-IP behind Cloudflare. Empty = unused."
+    )
+    trusted_proxy_hops: int = Field(
+        default=1,
+        description="Number of reverse proxies in front of the app that append to "
+                    "X-Forwarded-For. The client IP is taken that many entries from the right; "
+                    "0 ignores X-Forwarded-For entirely."
+    )
     allowed_origins: str = Field(
         default="http://localhost:3000",
         description="Comma-separated list of allowed CORS origins"
@@ -252,6 +271,10 @@ class Settings(BaseSettings):
                 "SECRET_KEY must be at least 32 characters long for security"
             )
         return v
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment.strip().lower() == "production"
 
     def get_allowed_origins_list(self) -> List[str]:
         """Parse allowed origins from comma-separated string."""

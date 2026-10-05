@@ -99,6 +99,10 @@ services:
       # Environment
       DEBUG: false
       TESTING: false
+      # "production" rejects reserved email domains (.test etc.) at sign-up; dev keeps them for QA
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      # Real client IP for rate limiting — set by Cloudflare, cannot be forged through the tunnel
+      CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-CF-Connecting-IP}
       
       # Server Configuration
       HOST: 0.0.0.0

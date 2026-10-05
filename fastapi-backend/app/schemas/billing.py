@@ -24,6 +24,13 @@ class PlanRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class UsageRead(BaseModel):
+    """Current usage of the plan-limited resources."""
+    pets: int
+    published_locations: int
+    offsprings: int  # Available + Reserved, the ones counted against the plan
+
+
 class SubscriptionRead(BaseModel):
     """Schema for reading subscription data with nested plan."""
     id: uuid.UUID
@@ -40,6 +47,7 @@ class SubscriptionRead(BaseModel):
     pending_plan_id: Optional[uuid.UUID] = None
     pending_plan_effective_date: Optional[datetime] = None
     pending_plan: Optional[PlanRead] = None
+    usage: Optional[UsageRead] = None
 
     model_config = ConfigDict(from_attributes=True)
 

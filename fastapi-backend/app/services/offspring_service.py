@@ -125,7 +125,8 @@ class OffspringService:
             status=offspring_data.status,
             price=offspring_data.price,
             description=offspring_data.description,
-            color_markings=offspring_data.color_markings
+            color_markings=offspring_data.color_markings,
+            is_published=offspring_data.is_published,
         )
         
         db.add(offspring)

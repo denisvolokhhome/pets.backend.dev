@@ -187,7 +187,9 @@ async def list_litters(
                 "name": offspring.name,
                 "gender": offspring.gender,
                 "birth_date": offspring.date_of_birth.isoformat() if offspring.date_of_birth else None,
-                "microchip": None  # Offsprings don't have microchip field
+                "microchip": None,  # Offsprings don't have microchip field
+                "status": offspring.status,
+                "price": float(offspring.price) if offspring.price is not None else None,
             })
         
         response_litters.append({
@@ -271,7 +273,9 @@ async def get_litter(
             "name": offspring.name,
             "gender": offspring.gender,
             "birth_date": offspring.date_of_birth.isoformat() if offspring.date_of_birth else None,
-            "microchip": None  # Offsprings don't have microchip field
+            "microchip": None,  # Offsprings don't have microchip field
+            "status": offspring.status,
+            "price": float(offspring.price) if offspring.price is not None else None,
         })
     
     # Return LitterResponse format

@@ -358,6 +358,45 @@ DEBUG=False
 
 ---
 
+#### `ENVIRONMENT`
+
+Deployment environment: `development`, `staging` or `production`.
+
+**Default:** `development`
+
+**Notes:**
+- `production` validates sign-up emails with the same strict rules as forgot-password
+  (pydantic `EmailStr`), rejecting reserved/special-use domains such as `.test`, `.local`
+  and `.invalid`, so every account that can register can also reset its password.
+- Any other value keeps sign-up permissive and lets `EmailStr` accept `.test` domains, so
+  QA accounts like `tester@example.test` work end-to-end (including password reset).
+
+---
+
+#### `CLIENT_IP_HEADER` / `TRUSTED_PROXY_HOPS`
+
+How the real client IP is determined for rate limiting (sign-in, registration, messaging,
+billing). The leftmost `X-Forwarded-For` entry is written by the client and is never trusted.
+
+**Defaults:** `CLIENT_IP_HEADER=` (unused), `TRUSTED_PROXY_HOPS=1`
+
+**Example (Cloudflare Tunnel → nginx → backend):**
+```bash
+CLIENT_IP_HEADER=CF-Connecting-IP
+```
+
+**Notes:**
+- When `CLIENT_IP_HEADER` is set and present on the request, its value is used. Only use a
+  header your edge always overwrites (Cloudflare does for `CF-Connecting-IP`), and make sure
+  the backend port is not reachable directly from the internet.
+- Otherwise the client IP is the entry `TRUSTED_PROXY_HOPS` positions from the right of
+  `X-Forwarded-For` (each proxy appends the address it saw). `0` ignores the header and uses
+  the socket peer.
+- Misconfiguration symptom: every user shares one IP (the proxy's), so limits such as
+  "3 registrations per 10 minutes" apply site-wide. Check the `client` field in request logs.
+
+---
+
 ### Feature Flags
 
 #### `ENABLE_SERVICE_PROVIDERS`

@@ -3,16 +3,16 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.database import get_async_session
-from app.dependencies import current_active_user
+from app.dependencies import current_active_user, get_user_manager
 from app.models.user import User
-from app.schemas.user import UserRead, UserUpdate, ProfileImageResponse
+from app.schemas.user import UserRead, UserUpdate, ProfileImageResponse, PasswordChange
 from app.services.file_service import FileService
 
 
@@ -36,6 +36,9 @@ async def get_current_user_profile(
     return user
 
 
+PROFILE_FIELDS = {"name", "phone_number", "breedery_name", "breedery_description", "search_tags"}
+
+
 @router.patch("/me", response_model=UserRead)
 async def update_current_user_profile(
     user_update: UserUpdate,
@@ -53,8 +56,10 @@ async def update_current_user_profile(
     Returns:
         User: Updated user profile data
     """
-    # Update only provided fields
-    update_data = user_update.model_dump(exclude_unset=True, exclude={"password", "email"})
+    # Explicit allow-list: UserUpdate inherits is_superuser / is_verified /
+    # is_active from fastapi-users, which must never be self-service.
+    # Password changes go through POST /me/change-password.
+    update_data = user_update.model_dump(include=PROFILE_FIELDS, exclude_unset=True)
     
     for field, value in update_data.items():
         setattr(user, field, value)
@@ -65,6 +70,39 @@ async def update_current_user_profile(
     await session.refresh(user)
     
     return user
+
+
+@router.post("/me/change-password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    payload: PasswordChange,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+    user_manager=Depends(get_user_manager),
+) -> Response:
+    """
+    Change the current user's password.
+
+    Requires the current password (except for Google sign-in accounts, which
+    never had one). The new password goes through the same
+    rules as registration. Errors: 400 CURRENT_PASSWORD_INCORRECT, or 400 with
+    the password-rule message.
+    """
+    if not user.oauth_provider:
+        verified, _ = user_manager.password_helper.verify_and_update(
+            payload.current_password or "", user.hashed_password
+        )
+        if not verified:
+            raise HTTPException(status_code=400, detail="CURRENT_PASSWORD_INCORRECT")
+
+    try:
+        await user_manager.validate_password(payload.new_password, user)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    user.hashed_password = user_manager.password_helper.hash(payload.new_password)
+    session.add(user)
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/me/profile-image", response_model=ProfileImageResponse)

@@ -16,6 +16,7 @@ from sqlalchemy.exc import NoResultFound
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config import Settings
+from app.utils.email_policy import apply_email_validator_environment
 from app.routers import auth, pets, breeds, breedings, locations, users, geocoding, search, messages, offsprings, favorites, notifications, notification_preferences, admin_stats, admin_users, support, genealogy, billing, reviews, pet_import
 from app.routers.service_categories import router as service_categories_router
 from app.routers.services import router as services_router
@@ -97,6 +98,7 @@ class LoggingMiddleware:
 
 # Create settings instance for the application
 settings = Settings()
+apply_email_validator_environment()
 
 
 @asynccontextmanager

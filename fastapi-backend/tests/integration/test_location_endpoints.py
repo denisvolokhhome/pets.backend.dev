@@ -183,6 +183,20 @@ class TestLocationCreation:
         assert "updated_at" in data
 
     @pytest.mark.asyncio
+    async def test_first_location_becomes_default(self, authenticated_client: AsyncClient):
+        """A breeder's first location is the default automatically; later ones are not."""
+        base = {
+            "address1": "123 Main Street", "city": "Springfield", "state": "Illinois",
+            "country": "USA", "zipcode": "62701", "location_type": "user",
+        }
+        first = await authenticated_client.post("/api/locations/", json={**base, "name": "First"})
+        second = await authenticated_client.post("/api/locations/", json={**base, "name": "Second"})
+
+        assert first.status_code == 201 and second.status_code == 201
+        assert first.json()["is_default"] is True
+        assert second.json()["is_default"] is False
+
+    @pytest.mark.asyncio
     async def test_create_location_without_address2(self, authenticated_client: AsyncClient):
         """
         Test creating a location without optional address2 field.

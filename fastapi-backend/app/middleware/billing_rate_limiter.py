@@ -7,6 +7,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from app.config import Settings
+from app.middleware.rate_limiter import client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -50,12 +51,7 @@ def _get_client_identifier(request: Request) -> str:
             return f"user:{request.state.user.id}"
     except Exception:
         pass
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        ip = forwarded.split(",")[0].strip()
-    else:
-        ip = request.client.host if request.client else "unknown"
-    return f"ip:{ip}"
+    return f"ip:{client_ip(request)}"
 
 
 class BillingRateLimiterMiddleware:

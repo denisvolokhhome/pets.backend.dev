@@ -6,6 +6,8 @@ from typing import Optional, List, Literal, Any
 from fastapi_users import schemas
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 
+from app.utils.email_policy import validate_signup_email
+
 
 class ServiceCategoryBrief(BaseModel):
     """Minimal service category info embedded in UserRead."""
@@ -46,7 +48,13 @@ class UserCreate(schemas.BaseUserCreate):
     """Schema for creating a new user."""
     email: str
     password: str
+    name: Optional[str] = None
     is_breeder: bool = True  # Default to breeder for backward compatibility
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        return validate_signup_email(v)
 
 
 class PetSeekerCreate(BaseModel):
@@ -55,12 +63,32 @@ class PetSeekerCreate(BaseModel):
     password: str
     name: Optional[str] = None
 
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        return validate_signup_email(v)
+
 
 class GuestToAccountCreate(BaseModel):
     """Schema for converting guest message sender to account."""
     email: str  # Pre-filled from message
     password: str
     name: Optional[str] = None
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        return validate_signup_email(v)
+
+
+class PasswordChange(BaseModel):
+    """Self-service password change.
+
+    current_password is required unless the account was created with Google
+    sign-in (those users never chose a password and can set one here).
+    """
+    current_password: Optional[str] = None
+    new_password: str
 
 
 class UserUpdate(schemas.BaseUserUpdate):
@@ -100,6 +128,11 @@ class ServiceProviderCreate(BaseModel):
     name: Optional[str] = None
     account_type: Literal["service"] = "service"
     category_ids: List[int] = Field(default_factory=list)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        return validate_signup_email(v)
 
 
 class ProfileImageResponse(BaseModel):

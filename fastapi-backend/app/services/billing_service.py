@@ -429,42 +429,16 @@ class BillingService:
                 # No default plan configured — allow the operation
                 return
 
-        # Count current usage and compare against limit
+        current_count = await self._count_usage(session, user_id, resource_type)
         if resource_type == "pets":
-            count_result = await session.execute(
-                select(func.count(Pet.id)).where(
-                    Pet.user_id == user_id,
-                    Pet.is_deleted == False,  # noqa: E712
-                )
-            )
-            current_count = count_result.scalar_one()
             limit = plan.max_pets
             message = f"Pet limit reached. Your plan allows {limit} pets."
-
         elif resource_type == "locations":
-            count_result = await session.execute(
-                select(func.count(Location.id)).where(
-                    Location.user_id == user_id,
-                    Location.is_published == True,  # noqa: E712
-                )
-            )
-            current_count = count_result.scalar_one()
             limit = plan.max_published_locations
             message = f"Published location limit reached. Your plan allows {limit} locations."
-
-        elif resource_type == "offsprings":
-            count_result = await session.execute(
-                select(func.count(Offspring.id)).where(
-                    Offspring.user_id == user_id,
-                    Offspring.status.in_(["Available", "Reserved"]),
-                )
-            )
-            current_count = count_result.scalar_one()
+        else:
             limit = plan.max_simultaneous_offsprings
             message = f"Offspring limit reached. Your plan allows {limit} simultaneous offsprings."
-
-        else:
-            raise ValueError(f"Unknown resource type: {resource_type}")
 
         if current_count >= limit:
             raise HTTPException(
@@ -473,6 +447,37 @@ class BillingService:
                 headers={"X-Error-Code": "USAGE_LIMIT_EXCEEDED"},
             )
 
+
+    async def _count_usage(
+        self, session: AsyncSession, user_id: uuid.UUID, resource_type: str
+    ) -> int:
+        """Current count of a plan-limited resource, measured the way check_usage enforces it."""
+        if resource_type == "pets":
+            stmt = select(func.count(Pet.id)).where(
+                Pet.user_id == user_id,
+                Pet.is_deleted == False,  # noqa: E712
+            )
+        elif resource_type == "locations":
+            stmt = select(func.count(Location.id)).where(
+                Location.user_id == user_id,
+                Location.is_published == True,  # noqa: E712
+            )
+        elif resource_type == "offsprings":
+            stmt = select(func.count(Offspring.id)).where(
+                Offspring.user_id == user_id,
+                Offspring.status.in_(["Available", "Reserved"]),
+            )
+        else:
+            raise ValueError(f"Unknown resource type: {resource_type}")
+        return (await session.execute(stmt)).scalar_one()
+
+    async def get_usage(self, session: AsyncSession, user_id: uuid.UUID) -> dict:
+        """Current usage of every plan-limited resource (for the Subscription page)."""
+        return {
+            "pets": await self._count_usage(session, user_id, "pets"),
+            "published_locations": await self._count_usage(session, user_id, "locations"),
+            "offsprings": await self._count_usage(session, user_id, "offsprings"),
+        }
 
 # Singleton instance
 billing_service = BillingService()

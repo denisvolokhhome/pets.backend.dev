@@ -20,6 +20,7 @@ from app.schemas.billing import (
     PortalSessionResponse,
     SubscribeRequest,
     SubscriptionRead,
+    UsageRead,
 )
 from app.models.invoice import Invoice
 from app.services.billing_service import billing_service
@@ -49,9 +50,11 @@ async def get_subscription(
     user: User = Depends(require_breeder),
     session: AsyncSession = Depends(get_async_session),
 ) -> SubscriptionRead:
-    """Return the authenticated breeder's current subscription with plan details."""
+    """Return the authenticated breeder's current subscription with plan details and usage."""
     subscription = await billing_service.get_subscription(session, user.id)
-    return subscription
+    result = SubscriptionRead.model_validate(subscription)
+    result.usage = UsageRead(**await billing_service.get_usage(session, user.id))
+    return result
 
 
 @router.post("/subscribe", response_model=SubscriptionRead)
