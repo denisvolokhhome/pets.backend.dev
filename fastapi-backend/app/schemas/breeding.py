@@ -75,6 +75,9 @@ class LitterResponse(LitterBase):
     parent_pets: Optional[List[dict]] = None
     puppies: Optional[List[dict]] = None
     application_form: Optional["ApplicationFormRead"] = None
+    # Breeding planner
+    stage: Optional[str] = None
+    due_date: Optional[date] = None
     
     model_config = ConfigDict(from_attributes=True)
 

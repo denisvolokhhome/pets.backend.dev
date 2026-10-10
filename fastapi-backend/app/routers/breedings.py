@@ -22,7 +22,14 @@ from app.models.breeding_pet import BreedingPet
 from app.models.pet import Pet
 from app.models.breed import Breed
 from app.models.location import Location
+from app.services.breeding_planner_service import breeding_planner_service
 from app.schemas.breeding import LitterCreate, LitterRead, LitterUpdate, LitterResponse, LitterStatus, PetAssignment, PuppyBatch
+
+
+def _planner_fields(breeding: Breeding) -> dict:
+    """Planner stage and computed due date for breeding responses."""
+    stage, due_date = breeding_planner_service.summary(breeding)
+    return {"stage": stage, "due_date": due_date}
 
 
 router = APIRouter(
@@ -199,7 +206,8 @@ async def list_litters(
             "created_at": breeding.created_at,
             "updated_at": breeding.updated_at,
             "parent_pets": parent_pets if parent_pets else None,
-            "puppies": puppies if puppies else None
+            "puppies": puppies if puppies else None,
+            **_planner_fields(breeding),
         })
     
     # Apply pagination
@@ -288,6 +296,7 @@ async def get_litter(
         "parent_pets": parent_pets if parent_pets else None,
         "puppies": puppies if puppies else None,
         "application_form": breeding.application_form,
+        **_planner_fields(breeding),
     }
 
 
@@ -616,8 +625,9 @@ async def add_puppies_to_litter(
         session.add(puppy)
         created_puppies.append(puppy)
     
-    # Update breeding status to "Done"
+    # Update breeding status to "Done"; the planner stage moves to Whelped
     breeding.status = LitterStatus.DONE.value
+    breeding_planner_service.mark_whelped(breeding, puppy_batch.puppies[0].birth_date)
     
     # Commit changes (updated_at will be automatically updated)
     await session.commit()
@@ -676,7 +686,8 @@ async def add_puppies_to_litter(
         "created_at": breeding.created_at,
         "updated_at": breeding.updated_at,
         "parent_pets": parent_pets_list if parent_pets_list else None,
-        "puppies": puppies if puppies else None
+        "puppies": puppies if puppies else None,
+        **_planner_fields(breeding),
     }
 
 
