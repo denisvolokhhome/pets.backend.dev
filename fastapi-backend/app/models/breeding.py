@@ -14,6 +14,9 @@ if TYPE_CHECKING:
     from app.models.litter_pet import BreedingPet
     from app.models.user import User
     from app.models.breeding_application_form import BreedingApplicationForm
+    from app.models.breeding_mating import BreedingMating
+    from app.models.breeding_milestone import BreedingMilestone
+    from app.models.breeding_progesterone_test import BreedingProgesteroneTest
 
 
 class Breeding(Base):
@@ -61,6 +64,14 @@ class Breeding(Base):
         nullable=False,
         default="Started"
     )
+    # Biological stage, separate from the record `status` (see breeding_planner_rules.Stage)
+    stage: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="Planned",
+        server_default="Planned",
+    )
+    ovulation_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -103,6 +114,29 @@ class Breeding(Base):
         uselist=False,
         lazy="selectin",
         cascade="all, delete-orphan",
+    )
+
+    # Breeding planner
+    matings: Mapped[list["BreedingMating"]] = relationship(
+        "BreedingMating",
+        back_populates="breeding",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+        order_by="BreedingMating.mated_on",
+    )
+    progesterone_tests: Mapped[list["BreedingProgesteroneTest"]] = relationship(
+        "BreedingProgesteroneTest",
+        back_populates="breeding",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+        order_by="BreedingProgesteroneTest.tested_on",
+    )
+    milestones: Mapped[list["BreedingMilestone"]] = relationship(
+        "BreedingMilestone",
+        back_populates="breeding",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+        order_by="BreedingMilestone.due_on",
     )
     
     def __repr__(self) -> str:

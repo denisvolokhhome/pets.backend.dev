@@ -9,6 +9,7 @@ class NotificationPreferenceBase(BaseModel):
     """Base schema for notification preferences."""
     message_received: bool = True
     favorite_added: bool = False
+    breeding_reminder: bool = True
 
 
 class NotificationPreferenceCreate(NotificationPreferenceBase):
@@ -20,6 +21,7 @@ class NotificationPreferenceUpdate(BaseModel):
     """Schema for updating notification preferences."""
     message_received: bool | None = None
     favorite_added: bool | None = None
+    breeding_reminder: bool | None = None
 
 
 class NotificationPreferenceRead(NotificationPreferenceBase):

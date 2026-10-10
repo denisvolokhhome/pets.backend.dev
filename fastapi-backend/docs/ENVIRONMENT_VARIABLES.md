@@ -544,6 +544,38 @@ IMAGE_QUALITY=85
 
 ---
 
+### Breeding Planner Reminders
+
+#### `PLANNER_REMINDERS_ENABLED`
+
+Runs the in-process sweep that sends breeding milestone reminders (in-app notification + email). Never runs when `TESTING=1`. Each milestone is claimed atomically, so running several workers is safe.
+
+**Format:** Boolean
+
+**Default:** `true`
+
+**Example:**
+```bash
+PLANNER_REMINDERS_ENABLED=true
+```
+
+---
+
+#### `PLANNER_REMINDER_INTERVAL_SECONDS`
+
+Seconds between reminder sweeps. Reminders are day-granular, so the default is plenty.
+
+**Format:** Integer (≥ 60)
+
+**Default:** `3600`
+
+**Example:**
+```bash
+PLANNER_REMINDER_INTERVAL_SECONDS=3600
+```
+
+---
+
 ## Environment-Specific Examples
 
 ### Development Environment

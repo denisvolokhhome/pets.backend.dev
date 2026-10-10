@@ -159,6 +159,17 @@ class Settings(BaseSettings):
         description="Frontend URL for OAuth redirects"
     )
 
+    # Breeding planner reminders
+    planner_reminders_enabled: bool = Field(
+        default=True,
+        description="Run the hourly breeding milestone reminder sweep"
+    )
+    planner_reminder_interval_seconds: int = Field(
+        default=3600,
+        ge=60,
+        description="Seconds between breeding milestone reminder sweeps"
+    )
+
     # Admin Dashboard Configuration
     admin_api_key: str = Field(
         default="",
