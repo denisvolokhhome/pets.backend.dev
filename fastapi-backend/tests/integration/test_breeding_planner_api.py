@@ -100,3 +100,19 @@ async def test_pet_seeker_forbidden(unauthenticated_client, async_session, test_
     h = await _auth(unauthenticated_client, test_pet_seeker)
     r = await unauthenticated_client.get(f"/api/breedings/{test_breeding.id}/planner", headers=h)
     assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_creating_offspring_marks_whelped(unauthenticated_client, test_breeder, test_breeding, parents):
+    """Offspring added from the breeding detail page end the pregnancy (regression: stayed Mated)."""
+    h = await _auth(unauthenticated_client, test_breeder)
+    mated = (date.today() - timedelta(days=63)).isoformat()
+    await unauthenticated_client.post(f"/api/breedings/{test_breeding.id}/matings",
+                                      json={"mated_on": mated, "method": "Natural"}, headers=h)
+    r = await unauthenticated_client.post("/api/offsprings/", json={
+        "breeding_id": test_breeding.id, "name": "Pup", "gender": "Female",
+        "date_of_birth": date.today().isoformat(), "status": "Available",
+    }, headers=h)
+    assert r.status_code == 201
+    r = await unauthenticated_client.get(f"/api/breedings/{test_breeding.id}/planner", headers=h)
+    assert r.json()["stage"] == "Whelped"

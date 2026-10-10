@@ -10,7 +10,7 @@ from the FastAPI lifespan.
 import asyncio
 import logging
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +29,11 @@ from app.services.notification_service import notification_service
 logger = logging.getLogger(__name__)
 
 NOTIFICATION_TYPE = "breeding_milestone"
+TITLE_MAX = 255  # NotificationCreate.title
+# Milestones whose date passed longer ago than this are consumed without a reminder,
+# so backdated pregnancies, edited dates or un-missing a breeding don't send a burst of
+# "was due" emails. The one-day grace covers a sweep missed during downtime.
+STALE_AFTER = timedelta(days=1)
 
 
 def _when(due_on: date, today: date) -> str:
@@ -40,6 +45,10 @@ def _when(due_on: date, today: date) -> str:
     if days > 1:
         return f"Due in {days} days ({due_on:%b} {due_on.day})"
     return f"Was due {due_on:%b} {due_on.day}"
+
+
+def _truncate(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 async def _notify(db: AsyncSession, milestone_id: uuid.UUID, today: date) -> bool:
@@ -54,6 +63,8 @@ async def _notify(db: AsyncSession, milestone_id: uuid.UUID, today: date) -> boo
         )
     )).scalar_one()
     breeding = milestone.breeding
+    if milestone.due_on < today - STALE_AFTER:
+        return False
     if not await notification_preference_service.should_send_notification(
         db, breeding.user_id, NOTIFICATION_TYPE
     ):
@@ -61,7 +72,7 @@ async def _notify(db: AsyncSession, milestone_id: uuid.UUID, today: date) -> boo
     await notification_service.create_notification(db, NotificationCreate(
         user_id=breeding.user_id,
         type=NOTIFICATION_TYPE,
-        title=f"{milestone.title} — {breeding_label(breeding)}",
+        title=_truncate(f"{milestone.title} — {breeding_label(breeding)}", TITLE_MAX),
         message=_when(milestone.due_on, today),
         related_id=milestone.id,
         related_type=NOTIFICATION_TYPE,
@@ -102,7 +113,23 @@ async def run_sweep(db: AsyncSession, today: date) -> int:
         except Exception:
             await db.rollback()
             logger.exception("Breeding reminder failed for milestone %s", milestone_id)
+            await _release_claim(db, milestone_id)
     return sent
+
+
+async def _release_claim(db: AsyncSession, milestone_id: uuid.UUID) -> None:
+    """Un-claim a milestone whose reminder failed so the next sweep retries it."""
+    try:
+        await db.execute(
+            update(BreedingMilestone)
+            .where(BreedingMilestone.id == milestone_id)
+            .values(reminded_at=None)
+            .execution_options(synchronize_session=False)
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception("Could not release reminder claim for milestone %s", milestone_id)
 
 
 async def _loop(interval_seconds: int) -> None:

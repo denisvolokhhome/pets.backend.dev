@@ -10,6 +10,7 @@ from fastapi import HTTPException, status
 from app.models.offspring import Offspring
 from app.models.breeding import Breeding
 from app.schemas.offspring import OffspringCreate, OffspringUpdate
+from app.services.breeding_planner_service import breeding_planner_service
 
 
 class OffspringService:
@@ -130,8 +131,11 @@ class OffspringService:
         )
         
         db.add(offspring)
+        # A recorded offspring means the litter was born: end the pregnancy planner
+        breeding_planner_service.mark_whelped(breeding, offspring_data.date_of_birth)
         await db.commit()
         await db.refresh(offspring)
+        await db.refresh(breeding)  # server-side updated_at changed; callers read it
         
         return offspring
     
