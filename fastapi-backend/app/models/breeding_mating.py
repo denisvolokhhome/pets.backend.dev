@@ -1,7 +1,7 @@
 """A logged mating for a breeding (planner)."""
-from datetime import date, datetime
-from typing import Optional, TYPE_CHECKING
 import uuid
+from datetime import date, datetime
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID

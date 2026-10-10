@@ -1,7 +1,7 @@
 """A dated pregnancy milestone for a breeding; template-generated or breeder-added."""
-from datetime import date, datetime
-from typing import Optional, TYPE_CHECKING
 import uuid
+from datetime import date, datetime
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, String, func, text
 from sqlalchemy.dialects.postgresql import UUID

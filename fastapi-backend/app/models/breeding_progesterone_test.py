@@ -1,8 +1,8 @@
 """A progesterone test result logged for a breeding (planner)."""
+import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
-import uuid
 
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, func
 from sqlalchemy.dialects.postgresql import UUID
