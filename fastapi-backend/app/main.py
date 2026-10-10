@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 import logging
+import os
 import time
 
 from fastapi import FastAPI, Request, HTTPException
@@ -116,10 +117,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     print(f"✓ Storage directory created/verified at: {storage_path.absolute()}")
     print(f"✓ Application started: {settings.app_name}")
     print(f"✓ Debug mode: {settings.debug}")
-    
+
+    # Breeding milestone reminders (never under tests)
+    from app.services.breeding_reminder_service import start_reminder_loop, stop_reminder_loop
+    reminder_task = None
+    if settings.planner_reminders_enabled and os.environ.get("TESTING") != "1":
+        reminder_task = start_reminder_loop(settings.planner_reminder_interval_seconds)
+
     yield
-    
+
     # Shutdown
+    if reminder_task is not None:
+        await stop_reminder_loop(reminder_task)
     print(f"✓ Application shutdown: {settings.app_name}")
 
 
