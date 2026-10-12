@@ -236,6 +236,12 @@ class Settings(BaseSettings):
                      "accounts are locked out of provider-only endpoints while this is off."
     )
 
+    enable_waitlist: bool = Field(
+        default=False,
+        description="Enable breeder waitlists & manually tracked deposits. Off by default; "
+                    "must match the frontend's environment.enableWaitlist."
+    )
+
     @field_validator("smtp_tls", mode="before")
     @classmethod
     def parse_smtp_tls(cls, v):
@@ -250,6 +256,16 @@ class Settings(BaseSettings):
     @classmethod
     def parse_enable_service_providers(cls, v):
         """Handle empty string for enable_service_providers (falls back to default: False)."""
+        if v == "" or v is None:
+            return False
+        if isinstance(v, str):
+            return v.lower() in ("true", "1", "yes")
+        return bool(v)
+
+    @field_validator("enable_waitlist", mode="before")
+    @classmethod
+    def parse_enable_waitlist(cls, v):
+        """Handle empty string for enable_waitlist (falls back to default: False)."""
         if v == "" or v is None:
             return False
         if isinstance(v, str):

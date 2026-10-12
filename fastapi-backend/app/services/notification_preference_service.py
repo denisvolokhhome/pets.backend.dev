@@ -73,6 +73,8 @@ class NotificationPreferenceService:
             preferences.favorite_added = preference_data.favorite_added
         if preference_data.breeding_reminder is not None:
             preferences.breeding_reminder = preference_data.breeding_reminder
+        if preference_data.waitlist_update is not None:
+            preferences.waitlist_update = preference_data.waitlist_update
         
         await db.commit()
         await db.refresh(preferences)
@@ -105,6 +107,8 @@ class NotificationPreferenceService:
             return preferences.favorite_added
         elif notification_type == "breeding_milestone":
             return preferences.breeding_reminder
+        elif notification_type in ("waitlist_request", "waitlist_update"):
+            return preferences.waitlist_update
         
         # Default to True for unknown types (backward compatibility)
         return True

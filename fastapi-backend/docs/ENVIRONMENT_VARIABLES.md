@@ -426,6 +426,26 @@ ENABLE_SERVICE_PROVIDERS=False
 
 ---
 
+#### `ENABLE_WAITLIST`
+
+Enables breeder waitlists and manually tracked deposits (the `/api/waitlist/*`
+routes and waitlist notifications).
+
+**Format:** Boolean (`True` or `False`)
+
+**Default:** `False`
+
+**Example:**
+```bash
+ENABLE_WAITLIST=false
+```
+
+**Notes:**
+- While disabled, every waitlist route returns 404. The tables always exist
+  (created by the migration), so enabling later needs no migration.
+- Must match `enableWaitlist` in `pets.frontend.dev`'s
+  `src/environments/environment*.ts` — keep both flags in sync.
+
 ### Server Configuration
 
 #### `HOST`

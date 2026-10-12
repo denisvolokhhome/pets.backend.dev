@@ -1,10 +1,11 @@
 """User model for authentication and user management."""
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Optional
 
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID
-from sqlalchemy import String, Boolean, DateTime, Text, JSON, func, CheckConstraint
+from sqlalchemy import String, Boolean, DateTime, Numeric, Text, JSON, func, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -60,6 +61,10 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         nullable=False
     )
     
+    # Waitlist deposit settings (shown to seekers before they request)
+    waitlist_deposit_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
+    waitlist_deposit_policy: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     # User type classification
     is_breeder: Mapped[bool] = mapped_column(
         Boolean,
