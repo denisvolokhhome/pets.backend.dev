@@ -213,7 +213,10 @@ class WaitlistService:
             .execution_options(populate_existing=True)
         )
         linked: list[WaitlistEntry] = []
+        linked_breeders: set[uuid.UUID] = set()  # autoflush may be off, so DB checks can't see these
         for entry in result.scalars().all():
+            if entry.breeder_id in linked_breeders:
+                continue
             existing = await db.execute(
                 select(func.count()).select_from(WaitlistEntry).where(
                     *_active_entry_filter(entry.breeder_id), WaitlistEntry.user_id == user.id)
@@ -221,6 +224,7 @@ class WaitlistService:
             if existing.scalar_one() > 0:
                 continue
             entry.user_id = user.id
+            linked_breeders.add(entry.breeder_id)
             _log(entry, "linked", user.id)
             linked.append(entry)
         if not linked:

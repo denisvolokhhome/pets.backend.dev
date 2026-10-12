@@ -4,6 +4,7 @@ from datetime import date
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.models.notification import Notification
 from app.models.user import User
@@ -67,3 +68,24 @@ async def test_request_notifies_breeder_by_email(async_session, test_breeder, te
     notes = (await async_session.execute(select(Notification))).scalars().all()
     assert [n.type for n in notes] == ["waitlist_request"]
     assert sent_emails and "/waitlist" in sent_emails[0]["html"]
+
+
+@pytest.mark.asyncio
+async def test_linking_links_at_most_one_entry_per_breeder(async_session, test_breeder, sent_emails):
+    # Two unlinked entries for one breeder with the same email (legacy data / case variants).
+    for email in ("jane@example.com", "Jane@Example.com"):
+        async_session.add(WaitlistEntry(breeder_id=test_breeder.id, source="manual", contact_name="Jane",
+                                        contact_email=email, status="active", sex_preference="Any",
+                                        deposit_status="none", queue_date=TODAY))
+    await async_session.commit()
+    jane = await _user(async_session, "jane@example.com")
+    # The login hook's session (app.database.async_session_maker) has autoflush=False; mirror it,
+    # since the default test session autoflushes and would mask the bug.
+    hook_maker = async_sessionmaker(async_session.bind, expire_on_commit=False, autoflush=False)
+    async with hook_maker() as hook_session:
+        assert await svc.link_by_email(hook_session, jane) == 1
+    entries = (await async_session.execute(
+        select(WaitlistEntry).execution_options(populate_existing=True))).scalars().all()
+    assert sorted(e.user_id is None for e in entries) == [False, True]
+    lists = await svc.list_breeder(async_session, test_breeder)
+    assert sum(e.possible_duplicate for e in lists.general) == 1
