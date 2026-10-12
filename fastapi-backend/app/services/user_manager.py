@@ -63,9 +63,18 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     ) -> None:
         await self._link_waitlist_entries(user)
 
+    async def on_after_verify(
+        self, user: User, request: Optional[Request] = None
+    ) -> None:
+        await self._link_waitlist_entries(user)
+
     async def _link_waitlist_entries(self, user: User) -> None:
-        """Attach manual waitlist entries to this account; never breaks registration or login."""
-        if not self.settings.enable_waitlist:
+        """Attach manual waitlist entries to this account once its email is verified.
+
+        Shared by register, password login, Google login and email verification; never
+        breaks any of them.
+        """
+        if not self.settings.enable_waitlist or not user.is_verified:
             return
         try:
             from app.database import async_session_maker

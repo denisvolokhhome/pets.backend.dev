@@ -43,6 +43,7 @@ from app.services.notification_preference_service import notification_preference
 from app.services.notification_service import notification_service
 from app.services.waitlist_rules import (
     ACTIVE_STATUSES,
+    SETTLED_DEPOSIT_STATUSES,
     can_transition,
     clamp_position,
     order_entries,
@@ -165,9 +166,9 @@ class WaitlistService:
             await db.rollback()
             raise _duplicate()
 
-    async def _positions(self, db: AsyncSession, breeder_id: uuid.UUID,
-                         breeding_id: Optional[int]) -> dict[uuid.UUID, int]:
-        """1-based pick order of the active entries on one list (general or a breeding)."""
+    async def _ordered(self, db: AsyncSession, breeder_id: uuid.UUID,
+                       breeding_id: Optional[int]) -> list[WaitlistEntry]:
+        """The active entries on one list (general or a breeding), in pick order."""
         list_filter = (WaitlistEntry.breeding_id.is_(None) if breeding_id is None
                        else WaitlistEntry.breeding_id == breeding_id)
         result = await db.execute(
@@ -175,7 +176,12 @@ class WaitlistService:
             .where(WaitlistEntry.breeder_id == breeder_id, WaitlistEntry.status == "active", list_filter)
             .execution_options(populate_existing=True)
         )
-        ordered = order_entries(list(result.scalars().all()))
+        return order_entries(list(result.scalars().all()))
+
+    async def _positions(self, db: AsyncSession, breeder_id: uuid.UUID,
+                         breeding_id: Optional[int]) -> dict[uuid.UUID, int]:
+        """1-based pick order of the active entries on one list (general or a breeding)."""
+        ordered = await self._ordered(db, breeder_id, breeding_id)
         return {e.id: i for i, e in enumerate(ordered, start=1)}
 
     async def _notify(self, db: AsyncSession, entry: WaitlistEntry, *, to_breeder: bool,
@@ -303,8 +309,18 @@ class WaitlistService:
             if f.get("required") and not (answers.get(f["id"]) or "").strip():
                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                                     detail=f"Please answer: {f.get('label', f['id'])}")
-        known = {f["id"] for f in fields}
-        return {k: v for k, v in answers.items() if k in known} or None
+        # Snapshot answers under the question label (field ids are opaque); unknown ids are dropped.
+        by_label: dict[str, str] = {}
+        for f in fields:
+            if f["id"] not in answers:
+                continue
+            base = f.get("label") or f["id"]
+            label, n = base, 1
+            while label in by_label:
+                n += 1
+                label = f"{base} ({n})"
+            by_label[label] = answers[f["id"]]
+        return by_label or None
 
     async def request_spot(self, db: AsyncSession, breeder_id: uuid.UUID, seeker: User,
                            data: WaitlistRequestCreate, today: date) -> SeekerEntryRead:
@@ -396,7 +412,11 @@ class WaitlistService:
     async def update_deposit(self, db: AsyncSession, breeder: User, entry_id: uuid.UUID,
                              data: DepositUpdate) -> EntryRead:
         entry = await self._load_owned(db, breeder, entry_id)
-        if not can_transition(entry.status, "deposit", entry.breeding_id is not None):
+        if can_transition(entry.status, "settle_deposit", entry.breeding_id is not None):
+            if data.deposit_status not in SETTLED_DEPOSIT_STATUSES:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                                    detail="A withdrawn entry's deposit can only be refunded or forfeited")
+        elif not can_transition(entry.status, "deposit", entry.breeding_id is not None):
             raise _invalid_transition("updated")
         was_received = entry.deposit_status == "received"
         recorded_before = any(e.type == "deposit_recorded" for e in entry.events)
@@ -428,6 +448,14 @@ class WaitlistService:
             .options(*_entry_options()).execution_options(populate_existing=True)
         )
         entries = list(result.scalars().all())
+        settle_result = await db.execute(
+            select(WaitlistEntry)
+            .where(WaitlistEntry.breeder_id == breeder.id, WaitlistEntry.status == "withdrawn",
+                   WaitlistEntry.deposit_status == "received")
+            .options(*_entry_options()).execution_options(populate_existing=True)
+            .order_by(WaitlistEntry.created_at)
+        )
+        to_settle = list(settle_result.scalars().all())
         linked_emails = {e.user.email.strip().lower() for e in entries if e.user is not None}
         pending = sorted((e for e in entries if e.status == "pending"), key=lambda e: e.created_at)
         general = order_entries([e for e in entries if e.status == "active" and e.breeding_id is None])
@@ -439,6 +467,7 @@ class WaitlistService:
         return BreederWaitlistRead(
             pending=[_entry_read(e, None, dup(e)) for e in pending],
             general=[_entry_read(e, i, dup(e)) for i, e in enumerate(general, start=1)],
+            deposits_to_settle=[_entry_read(e) for e in to_settle],
         )
 
     async def list_mine(self, db: AsyncSession, seeker: User) -> list[SeekerEntryRead]:
@@ -524,9 +553,16 @@ class WaitlistService:
         entry = await self._load_owned(db, breeder, entry_id)
         if not can_transition(entry.status, "reorder", entry.breeding_id is not None):
             raise _invalid_transition("reordered")
-        current = await self._positions(db, breeder.id, entry.breeding_id)
-        previous = current.get(entry.id)
+        current = await self._ordered(db, breeder.id, entry.breeding_id)
+        previous = current.index(entry) + 1
         target = clamp_position(position, len(current))
+        # Relocate the moved entry, then re-pin every already-pinned entry to its new slot
+        # so the displayed order is exactly "current order with this entry moved".
+        reordered = [e for e in current if e is not entry]
+        reordered.insert(target - 1, entry)
+        for i, e in enumerate(reordered, start=1):
+            if e is not entry and e.position_override is not None:
+                e.position_override = i
         entry.position_override = target
         entry.override_set_at = datetime.now(timezone.utc)
         entry.override_note = note
@@ -535,6 +571,8 @@ class WaitlistService:
         return await self._read(db, entry.id)
 
     async def reset_order(self, db: AsyncSession, breeder: User, breeding_id: Optional[int]) -> None:
+        if breeding_id is not None:
+            await self._owned_breeding(db, breeder, breeding_id)
         list_filter = (WaitlistEntry.breeding_id.is_(None) if breeding_id is None
                        else WaitlistEntry.breeding_id == breeding_id)
         result = await db.execute(
@@ -625,9 +663,11 @@ class WaitlistService:
             raise _not_found()
         entry = await self._withdraw(db, entry, seeker, "seeker", None)
         name = seeker.name or seeker.email
+        message = f"{name} withdrew from your waitlist"
+        if entry.deposit_status == "received":
+            message += " — record whether the deposit was refunded or kept"
         await self._notify(db, entry, to_breeder=True, type="waitlist_update",
-                           title=f"Waitlist update — {name}",
-                           message=f"{name} withdrew from your waitlist.")
+                           title=f"Waitlist update — {name}", message=f"{message}.")
         return _seeker_read(entry, None)
 
     async def list_events(self, db: AsyncSession, breeder: User, entry_id: uuid.UUID) -> list[EventRead]:

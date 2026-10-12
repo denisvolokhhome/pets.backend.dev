@@ -89,3 +89,100 @@ async def test_linking_links_at_most_one_entry_per_breeder(async_session, test_b
     assert sorted(e.user_id is None for e in entries) == [False, True]
     lists = await svc.list_breeder(async_session, test_breeder)
     assert sum(e.possible_duplicate for e in lists.general) == 1
+
+
+# ── account hooks: only verified emails are linked ───────────────────────
+
+@pytest.fixture
+def hook_sessions(async_session, monkeypatch):
+    """Point the hooks' own session factory at the test database and turn the flag on."""
+    from app import database, dependencies
+    monkeypatch.setattr(database, "async_session_maker",
+                        async_sessionmaker(async_session.bind, expire_on_commit=False, autoflush=False))
+    monkeypatch.setattr(dependencies.settings, "enable_waitlist", True)
+
+
+def _manager(async_session):
+    from fastapi_users.db import SQLAlchemyUserDatabase
+
+    from app import dependencies
+    from app.services.user_manager import UserManager
+    return UserManager(SQLAlchemyUserDatabase(async_session, User), dependencies.settings)
+
+
+async def _linked_user_id(db):
+    entry = (await db.execute(
+        select(WaitlistEntry).execution_options(populate_existing=True))).scalar_one()
+    return entry.user_id
+
+
+@pytest.mark.asyncio
+async def test_unverified_login_does_not_link_until_email_verified(
+        async_session, test_breeder, sent_emails, hook_sessions, monkeypatch):
+    from app.services.user_manager import UserManager
+    await svc.add_manual(async_session, test_breeder, ManualEntryCreate(
+        contact_name="Jane", contact_email="jane@example.com"), TODAY)
+    jane = await _user(async_session, "jane@example.com")  # is_verified defaults to False
+    manager = _manager(async_session)
+    await manager.on_after_login(jane)
+    assert await _linked_user_id(async_session) is None
+
+    tokens = []
+
+    async def capture(self, user, token, request=None):
+        tokens.append(token)
+
+    monkeypatch.setattr(UserManager, "on_after_request_verify", capture)
+    await manager.request_verify(jane)
+    verified = await manager.verify(tokens[0])
+    assert verified.is_verified
+    assert await _linked_user_id(async_session) == jane.id
+
+
+def _google(email, oauth_id="g-123"):
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app.config import Settings
+    settings = Settings(google_oauth_client_id="id", google_oauth_client_secret="secret",
+                        google_oauth_redirect_uri="http://test/api/auth/google/callback")
+    oauth = MagicMock()
+    oauth.get_access_token = AsyncMock(return_value={"access_token": "tok"})
+    userinfo = MagicMock()
+    userinfo.json.return_value = {"email": email, "id": oauth_id}
+    http = MagicMock()
+    http.get = AsyncMock(return_value=userinfo)
+    http_cls = MagicMock()
+    http_cls.return_value.__aenter__ = AsyncMock(return_value=http)
+    http_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    return settings, oauth, http_cls
+
+
+@pytest.mark.asyncio
+async def test_google_sign_in_of_existing_user_links_entries(
+        unauthenticated_client, async_session, test_breeder, test_pet_seeker, sent_emails, hook_sessions):
+    from unittest.mock import patch
+    await svc.add_manual(async_session, test_breeder, ManualEntryCreate(
+        contact_name="Pat", contact_email=test_pet_seeker.email), TODAY)
+    settings, oauth, http_cls = _google(test_pet_seeker.email)
+    with patch("app.routers.auth.settings", settings), patch("app.routers.auth.google_oauth_client", oauth), \
+            patch("httpx.AsyncClient", http_cls):
+        r = await unauthenticated_client.get("/api/auth/google/callback?code=c", follow_redirects=False)
+    assert "/auth/callback?token=" in r.headers["location"]
+    assert await _linked_user_id(async_session) == test_pet_seeker.id
+
+
+@pytest.mark.asyncio
+async def test_google_sign_up_links_entries(
+        unauthenticated_client, async_session, test_breeder, sent_emails, hook_sessions):
+    from unittest.mock import patch
+    await svc.add_manual(async_session, test_breeder, ManualEntryCreate(
+        contact_name="New", contact_email="new.google@example.com"), TODAY)
+    settings, oauth, http_cls = _google("new.google@example.com")
+    with patch("app.routers.auth.settings", settings), patch("app.routers.auth.google_oauth_client", oauth), \
+            patch("httpx.AsyncClient", http_cls):
+        r = await unauthenticated_client.get("/api/auth/google/callback?code=c", follow_redirects=False)
+    assert "/auth/callback?token=" in r.headers["location"]
+    new_user = (await async_session.execute(
+        select(User).where(User.email == "new.google@example.com"))).scalar_one()
+    assert new_user.is_verified
+    assert await _linked_user_id(async_session) == new_user.id

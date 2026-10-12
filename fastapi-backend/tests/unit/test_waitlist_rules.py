@@ -84,3 +84,9 @@ def test_transitions():
     assert can_transition("active", "deposit", on_litter=True)
     assert can_transition("pending", "deposit", on_litter=False)
     assert not can_transition("declined", "deposit", on_litter=False)
+
+
+def test_settle_deposit_only_after_withdrawal():
+    assert can_transition("withdrawn", "settle_deposit", on_litter=False)
+    assert not can_transition("active", "settle_deposit", on_litter=False)
+    assert not can_transition("withdrawn", "deposit", on_litter=False)

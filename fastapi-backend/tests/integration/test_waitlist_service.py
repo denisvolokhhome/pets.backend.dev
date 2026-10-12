@@ -230,3 +230,111 @@ async def test_events_record_history(async_session, test_breeder, seeker, test_b
     await svc.move(async_session, test_breeder, a.id, test_breeding.id)
     events = await svc.list_events(async_session, test_breeder, a.id)
     assert [ev.type for ev in events] == ["requested", "approved", "moved_to_litter"]
+
+
+# ── final fix wave ───────────────────────────────────────────────────────
+
+async def _manual_list(db, breeder, names):
+    """Active manual entries on the general list, queued in the given order; returns name -> id."""
+    ids = {}
+    for i, name in enumerate(names, start=1):
+        e = await svc.add_manual(db, breeder, ManualEntryCreate(contact_name=name, contact_phone=f"555-000{i}"), date(2026, 9, i))
+        ids[name] = e.id
+    return ids
+
+
+async def _general_names(db, breeder):
+    return [e.display_name for e in (await svc.list_breeder(db, breeder)).general]
+
+
+@pytest.mark.asyncio
+async def test_reorder_keeps_requested_order_across_moves(async_session, test_breeder):
+    ids = await _manual_list(async_session, test_breeder, ["A", "B", "C", "D"])
+    await svc.reorder(async_session, test_breeder, ids["D"], 1, None)
+    await svc.reorder(async_session, test_breeder, ids["C"], 2, None)
+    assert await _general_names(async_session, test_breeder) == ["D", "C", "A", "B"]
+    await svc.reorder(async_session, test_breeder, ids["B"], 1, None)
+    assert await _general_names(async_session, test_breeder) == ["B", "D", "C", "A"]
+
+
+@pytest.mark.asyncio
+async def test_reorder_to_last_with_a_pinned_entry(async_session, test_breeder):
+    ids = await _manual_list(async_session, test_breeder, ["A", "B", "C"])
+    await svc.reorder(async_session, test_breeder, ids["C"], 2, None)
+    assert await _general_names(async_session, test_breeder) == ["A", "C", "B"]
+    await svc.reorder(async_session, test_breeder, ids["A"], 3, None)
+    assert await _general_names(async_session, test_breeder) == ["C", "B", "A"]
+
+
+@pytest.mark.asyncio
+async def test_any_single_reorder_relocates_only_the_moved_entry(async_session, test_breeder):
+    import random
+    names = ["A", "B", "C", "D", "E"]
+    ids = await _manual_list(async_session, test_breeder, names)
+    rng = random.Random(20261011)
+    for _ in range(25):
+        current = await _general_names(async_session, test_breeder)
+        moved = rng.choice(names)
+        position = rng.randint(-1, len(names) + 2)  # includes out-of-range targets (clamped)
+        expected = [n for n in current if n != moved]
+        expected.insert(max(1, min(position, len(names))) - 1, moved)
+        await svc.reorder(async_session, test_breeder, ids[moved], position, None)
+        assert await _general_names(async_session, test_breeder) == expected, (moved, position, current)
+
+
+@pytest.mark.asyncio
+async def test_breeder_settles_deposit_after_seeker_withdraws(async_session, test_breeder, seeker):
+    a = await _active(async_session, test_breeder, seeker, TODAY)
+    await svc.update_deposit(async_session, test_breeder, a.id, DepositUpdate(
+        deposit_status="received", deposit_amount=Decimal("300"), deposit_received_on=TODAY))
+    await svc.withdraw_by_seeker(async_session, seeker, a.id)
+    lists = await svc.list_breeder(async_session, test_breeder)
+    assert [e.id for e in lists.deposits_to_settle] == [a.id]
+    assert lists.general == []
+    with pytest.raises(HTTPException) as exc:
+        await svc.update_deposit(async_session, test_breeder, a.id, DepositUpdate(
+            deposit_status="received", deposit_received_on=TODAY))
+    assert exc.value.status_code == 422
+    e = await svc.update_deposit(async_session, test_breeder, a.id, DepositUpdate(
+        deposit_status="refunded", deposit_received_on=TODAY))
+    assert e.status == "withdrawn" and e.deposit_status == "refunded" and e.deposit_received_on == TODAY
+    assert (await svc.list_breeder(async_session, test_breeder)).deposits_to_settle == []
+
+
+@pytest.mark.asyncio
+async def test_seeker_withdrawal_with_received_deposit_asks_breeder_to_settle(async_session, test_breeder, seeker):
+    from sqlalchemy import select
+
+    from app.models.notification import Notification
+    a = await _active(async_session, test_breeder, seeker, TODAY)
+    await svc.update_deposit(async_session, test_breeder, a.id, DepositUpdate(
+        deposit_status="received", deposit_amount=Decimal("300"), deposit_received_on=TODAY))
+    await svc.withdraw_by_seeker(async_session, seeker, a.id)
+    notes = (await async_session.execute(
+        select(Notification).where(Notification.user_id == test_breeder.id))).scalars().all()
+    assert any("record whether the deposit was refunded or kept" in n.message for n in notes)
+
+
+@pytest.mark.asyncio
+async def test_application_answers_are_stored_by_question_label(async_session, test_breeder, seeker, test_breeding):
+    async_session.add(BreedingApplicationForm(breeding_id=test_breeding.id, user_id=test_breeder.id, form_fields=[
+        {"id": "x9k2", "type": "text", "label": "Fenced yard?", "required": True},
+        {"id": "q7zz", "type": "text", "label": "Other pets", "required": False},
+        {"id": "r1aa", "type": "text", "label": "Other pets", "required": False}]))
+    await async_session.commit()
+    await svc.request_spot(async_session, test_breeder.id, seeker, WaitlistRequestCreate(
+        request_breeding_id=test_breeding.id,
+        application_answers={"x9k2": "Yes", "q7zz": "A cat", "r1aa": "A parrot", "junk": "x"}), TODAY)
+    pending = (await svc.list_breeder(async_session, test_breeder)).pending
+    assert pending[0].application_answers == {
+        "Fenced yard?": "Yes", "Other pets": "A cat", "Other pets (2)": "A parrot"}
+
+
+@pytest.mark.asyncio
+async def test_reset_order_on_someone_elses_breeding_is_404(async_session, test_breeding):
+    intruder = User(email="intruder2@example.com", hashed_password="x", name="I", is_active=True, is_breeder=True)
+    async_session.add(intruder)
+    await async_session.commit()
+    with pytest.raises(HTTPException) as exc:
+        await svc.reset_order(async_session, intruder, test_breeding.id)
+    assert exc.value.status_code == 404

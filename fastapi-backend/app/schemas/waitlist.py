@@ -119,6 +119,7 @@ class SeekerEntryRead(BaseModel):
 class BreederWaitlistRead(BaseModel):
     pending: list[EntryRead]
     general: list[EntryRead]
+    deposits_to_settle: list[EntryRead] = []  # withdrawn entries still holding a received deposit
 
 
 class LitterWaitlistRead(BaseModel):

@@ -28,6 +28,7 @@ class DepositStatus(str, Enum):
 
 
 ACTIVE_STATUSES = frozenset({Status.PENDING.value, Status.ACTIVE.value})
+SETTLED_DEPOSIT_STATUSES = frozenset({DepositStatus.REFUNDED.value, DepositStatus.FORFEITED.value})
 
 
 class Orderable(Protocol):
@@ -81,6 +82,8 @@ _ALLOWED: dict[str, set[str]] = {
     "move": {Status.ACTIVE.value},
     "reorder": {Status.ACTIVE.value},
     "deposit": {Status.PENDING.value, Status.ACTIVE.value},
+    # after a withdrawal the breeder can still record a received deposit as refunded/forfeited
+    "settle_deposit": {Status.WITHDRAWN.value},
     "match": {Status.ACTIVE.value},
     "pass": {Status.ACTIVE.value},
 }
