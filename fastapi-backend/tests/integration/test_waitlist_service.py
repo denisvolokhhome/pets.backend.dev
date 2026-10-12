@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.models.breeding_application_form import BreedingApplicationForm
+from app.models.offspring import Offspring
 from app.models.user import User
 from app.schemas.waitlist import (
     DepositUpdate,
@@ -110,3 +111,122 @@ async def test_other_breeder_cannot_touch_entry(async_session, test_breeder, see
     with pytest.raises(HTTPException) as exc:
         await svc.approve(async_session, intruder, a.id, TODAY)
     assert exc.value.status_code == 404
+
+async def _active(db, breeder, seeker, day):
+    e = await svc.request_spot(db, breeder.id, seeker, WaitlistRequestCreate(), day)
+    await svc.approve(db, breeder, e.id, day)
+    return e
+
+
+async def _offspring(db, breeder, breeding, status="Available", name="Pup"):
+    o = Offspring(breeding_id=breeding.id, user_id=breeder.id, name=name, gender="Female",
+                  date_of_birth=date(2026, 10, 1), status=status)
+    db.add(o)
+    await db.commit()
+    return o
+
+
+@pytest.mark.asyncio
+async def test_move_reorder_and_reset(async_session, test_breeder, seeker, test_breeding):
+    second = await _other_seeker(async_session)
+    a = await _active(async_session, test_breeder, seeker, date(2026, 10, 1))
+    b = await _active(async_session, test_breeder, second, date(2026, 10, 2))
+    await svc.move(async_session, test_breeder, a.id, test_breeding.id)
+    await svc.move(async_session, test_breeder, b.id, test_breeding.id)
+    litter = await svc.list_litter(async_session, test_breeder, test_breeding.id)
+    assert [e.display_name for e in litter.entries] == ["Test Seeker", "Second Seeker"]
+    await svc.reorder(async_session, test_breeder, b.id, 1, "returning family")
+    litter = await svc.list_litter(async_session, test_breeder, test_breeding.id)
+    assert [e.display_name for e in litter.entries] == ["Second Seeker", "Test Seeker"]
+    assert litter.entries[0].override_note == "returning family"
+    await svc.reset_order(async_session, test_breeder, test_breeding.id)
+    litter = await svc.list_litter(async_session, test_breeder, test_breeding.id)
+    assert [e.display_name for e in litter.entries] == ["Test Seeker", "Second Seeker"]
+
+
+@pytest.mark.asyncio
+async def test_reorder_position_is_clamped(async_session, test_breeder, seeker):
+    a = await _active(async_session, test_breeder, seeker, TODAY)
+    e = await svc.reorder(async_session, test_breeder, a.id, 50, None)
+    assert e.position == 1 and e.position_override == 1
+
+
+@pytest.mark.asyncio
+async def test_match_reserves_offspring_and_applies_deposit(async_session, test_breeder, seeker, test_breeding):
+    a = await _active(async_session, test_breeder, seeker, TODAY)
+    await svc.update_deposit(async_session, test_breeder, a.id, DepositUpdate(
+        deposit_status="received", deposit_amount=Decimal("300"), deposit_received_on=TODAY))
+    await svc.move(async_session, test_breeder, a.id, test_breeding.id)
+    pup = await _offspring(async_session, test_breeder, test_breeding)
+    e = await svc.match(async_session, test_breeder, a.id, pup.id)
+    await async_session.refresh(pup)
+    assert e.status == "matched" and e.deposit_status == "applied" and pup.status == "Reserved"
+
+
+@pytest.mark.asyncio
+async def test_match_rejects_foreign_or_unavailable_offspring(async_session, test_breeder, seeker, test_breeding):
+    a = await _active(async_session, test_breeder, seeker, TODAY)
+    await svc.move(async_session, test_breeder, a.id, test_breeding.id)
+    sold = await _offspring(async_session, test_breeder, test_breeding, status="Sold", name="Gone")
+    with pytest.raises(HTTPException) as exc:
+        await svc.match(async_session, test_breeder, a.id, sold.id)
+    assert exc.value.status_code == 422
+    await async_session.refresh(sold)
+    assert sold.status == "Sold"
+    from app.models.breeding import Breeding
+    other = Breeding(user_id=test_breeder.id, status="Started", is_active=True)
+    async_session.add(other)
+    await async_session.commit()
+    foreign = await _offspring(async_session, test_breeder, other, name="Elsewhere")
+    with pytest.raises(HTTPException) as exc:
+        await svc.match(async_session, test_breeder, a.id, foreign.id)
+    assert exc.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_pass_returns_to_general_keeping_queue_date(async_session, test_breeder, seeker, test_breeding):
+    a = await _active(async_session, test_breeder, seeker, date(2026, 9, 1))
+    await svc.move(async_session, test_breeder, a.id, test_breeding.id)
+    e = await svc.pass_entry(async_session, test_breeder, a.id)
+    assert e.breeding_id is None and e.queue_date == date(2026, 9, 1) and e.status == "active"
+
+
+@pytest.mark.asyncio
+async def test_match_on_general_list_is_409(async_session, test_breeder, seeker, test_breeding):
+    a = await _active(async_session, test_breeder, seeker, TODAY)
+    pup = await _offspring(async_session, test_breeder, test_breeding)
+    with pytest.raises(HTTPException) as exc:
+        await svc.match(async_session, test_breeder, a.id, pup.id)
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_withdraw_with_forfeit_and_by_seeker(async_session, test_breeder, seeker):
+    second = await _other_seeker(async_session)
+    a = await _active(async_session, test_breeder, seeker, TODAY)
+    await svc.update_deposit(async_session, test_breeder, a.id, DepositUpdate(
+        deposit_status="received", deposit_amount=Decimal("300"), deposit_received_on=TODAY))
+    e = await svc.withdraw_by_breeder(async_session, test_breeder, a.id, "forfeited")
+    assert e.status == "withdrawn" and e.deposit_status == "forfeited"
+    b = await svc.request_spot(async_session, test_breeder.id, second, WaitlistRequestCreate(), TODAY)
+    mine = await svc.withdraw_by_seeker(async_session, second, b.id)
+    assert mine.status == "withdrawn"
+
+
+@pytest.mark.asyncio
+async def test_voiding_breeding_returns_entries_to_general(async_session, test_breeder, seeker, test_breeding, monkeypatch):
+    from app.services import waitlist_service as module
+    monkeypatch.setattr(module.settings, "enable_waitlist", True)
+    a = await _active(async_session, test_breeder, seeker, TODAY)
+    await svc.move(async_session, test_breeder, a.id, test_breeding.id)
+    await svc.on_breeding_voided(async_session, test_breeding)
+    await async_session.commit()
+    assert (await svc.list_breeder(async_session, test_breeder)).general[0].id == a.id
+
+
+@pytest.mark.asyncio
+async def test_events_record_history(async_session, test_breeder, seeker, test_breeding):
+    a = await _active(async_session, test_breeder, seeker, TODAY)
+    await svc.move(async_session, test_breeder, a.id, test_breeding.id)
+    events = await svc.list_events(async_session, test_breeder, a.id)
+    assert [ev.type for ev in events] == ["requested", "approved", "moved_to_litter"]

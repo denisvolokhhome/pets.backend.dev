@@ -7,7 +7,7 @@ Each change appends a `WaitlistEvent`, and the notification (if any) is sent
 after the commit.
 """
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any, Optional
 
 from fastapi import HTTPException, status
@@ -19,6 +19,7 @@ from sqlalchemy.orm import selectinload
 from app.config import Settings
 from app.models.breeding import Breeding
 from app.models.breeding_pet import BreedingPet
+from app.models.offspring import Offspring
 from app.models.user import User
 from app.models.waitlist_entry import WaitlistEntry
 from app.models.waitlist_event import WaitlistEvent
@@ -29,6 +30,8 @@ from app.schemas.waitlist import (
     BreederWaitlistRead,
     DepositUpdate,
     EntryRead,
+    EventRead,
+    LitterWaitlistRead,
     ManualEntryCreate,
     SeekerEntryRead,
     WaitlistRequestCreate,
@@ -38,7 +41,12 @@ from app.schemas.waitlist import (
 from app.services.breeding_planner_service import breeding_label
 from app.services.notification_preference_service import notification_preference_service
 from app.services.notification_service import notification_service
-from app.services.waitlist_rules import ACTIVE_STATUSES, can_transition, order_entries
+from app.services.waitlist_rules import (
+    ACTIVE_STATUSES,
+    can_transition,
+    clamp_position,
+    order_entries,
+)
 
 settings = Settings()
 
@@ -411,6 +419,195 @@ class WaitlistService:
                 position = cache[key].get(e.id)
             out.append(_seeker_read(e, position))
         return out
+
+
+    # ── ordering and litter lists ────────────────────────────────────────
+
+    async def _owned_breeding(self, db: AsyncSession, breeder: User, breeding_id: int) -> Breeding:
+        result = await db.execute(
+            select(Breeding).where(Breeding.id == breeding_id, Breeding.user_id == breeder.id)
+            .execution_options(populate_existing=True)
+        )
+        breeding = result.scalar_one_or_none()
+        if breeding is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Breeding not found")
+        return breeding
+
+    async def _read(self, db: AsyncSession, entry_id: uuid.UUID) -> EntryRead:
+        entry = await self._fetch(db, entry_id)
+        positions = await self._positions(db, entry.breeder_id, entry.breeding_id)
+        return _entry_read(entry, positions.get(entry.id))
+
+    async def list_litter(self, db: AsyncSession, breeder: User, breeding_id: int) -> LitterWaitlistRead:
+        await self._owned_breeding(db, breeder, breeding_id)
+        result = await db.execute(
+            select(WaitlistEntry)
+            .where(WaitlistEntry.breeder_id == breeder.id, WaitlistEntry.status == "active",
+                   WaitlistEntry.breeding_id == breeding_id)
+            .options(*_entry_options()).execution_options(populate_existing=True)
+        )
+        ordered = order_entries(list(result.scalars().all()))
+        return LitterWaitlistRead(breeding_id=breeding_id,
+                                  entries=[_entry_read(e, i) for i, e in enumerate(ordered, start=1)])
+
+    async def move(self, db: AsyncSession, breeder: User, entry_id: uuid.UUID,
+                   breeding_id: Optional[int]) -> EntryRead:
+        entry = await self._load_owned(db, breeder, entry_id)
+        if not can_transition(entry.status, "move", entry.breeding_id is not None):
+            raise _invalid_transition("moved")
+        if breeding_id is not None:
+            breeding = await self._owned_breeding(db, breeder, breeding_id)
+            if breeding.status == "Voided":
+                raise _error(status.HTTP_409_CONFLICT, "BREEDING_VOIDED", "This breeding was voided")
+        entry.breeding_id = breeding_id
+        entry.position_override = None
+        entry.override_set_at = None
+        entry.override_note = None
+        await db.flush()
+        positions = await self._positions(db, breeder.id, breeding_id)
+        if breeding_id is not None:
+            _log(entry, "moved_to_litter", breeder.id, breeding_id=breeding_id,
+                 position=positions.get(entry.id))
+        else:
+            _log(entry, "moved_to_general", breeder.id)
+        await self._commit(db)
+        entry = await self._fetch(db, entry.id)
+        if breeding_id is not None:
+            await self._notify(db, entry, to_breeder=False, type="waitlist_update",
+                               title=f"Waitlist update — {_breedery(breeder)}",
+                               message=f"You're #{positions.get(entry.id)} for {_list_label(entry)}.")
+        return _entry_read(entry, positions.get(entry.id))
+
+    async def reorder(self, db: AsyncSession, breeder: User, entry_id: uuid.UUID, position: int,
+                      note: Optional[str]) -> EntryRead:
+        entry = await self._load_owned(db, breeder, entry_id)
+        if not can_transition(entry.status, "reorder", entry.breeding_id is not None):
+            raise _invalid_transition("reordered")
+        current = await self._positions(db, breeder.id, entry.breeding_id)
+        previous = current.get(entry.id)
+        target = clamp_position(position, len(current))
+        entry.position_override = target
+        entry.override_set_at = datetime.now(timezone.utc)
+        entry.override_note = note
+        _log(entry, "reordered", breeder.id, **{"from": previous, "to": target, "note": note})
+        await self._commit(db)
+        return await self._read(db, entry.id)
+
+    async def reset_order(self, db: AsyncSession, breeder: User, breeding_id: Optional[int]) -> None:
+        list_filter = (WaitlistEntry.breeding_id.is_(None) if breeding_id is None
+                       else WaitlistEntry.breeding_id == breeding_id)
+        result = await db.execute(
+            select(WaitlistEntry)
+            .where(WaitlistEntry.breeder_id == breeder.id, WaitlistEntry.status == "active",
+                   WaitlistEntry.position_override.is_not(None), list_filter)
+            .execution_options(populate_existing=True)
+        )
+        for e in result.scalars().all():
+            e.position_override = None
+            e.override_set_at = None
+            e.override_note = None
+        await db.commit()
+
+    # ── outcomes ─────────────────────────────────────────────────────────
+
+    async def match(self, db: AsyncSession, breeder: User, entry_id: uuid.UUID,
+                    offspring_id: uuid.UUID) -> EntryRead:
+        entry = await self._load_owned(db, breeder, entry_id)
+        if not can_transition(entry.status, "match", entry.breeding_id is not None):
+            raise _invalid_transition("matched")
+        offspring = await db.get(Offspring, offspring_id, populate_existing=True)
+        if (offspring is None or offspring.breeding_id != entry.breeding_id
+                or offspring.user_id != breeder.id or offspring.status != "Available"):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                                detail="Choose an available offspring from this litter")
+        offspring.status = "Reserved"
+        entry.status = "matched"
+        entry.offspring_id = offspring.id
+        if entry.deposit_status == "received":
+            entry.deposit_status = "applied"
+        _log(entry, "matched", breeder.id, offspring_id=str(offspring.id))
+        await self._commit(db)
+        entry = await self._fetch(db, entry.id)
+        await self._notify(db, entry, to_breeder=False, type="waitlist_update",
+                           title=f"You've been matched — {_breedery(breeder)}",
+                           message=f"{_breedery(breeder)} matched you with {offspring.name or 'an offspring'}.")
+        return _entry_read(entry)
+
+    async def pass_entry(self, db: AsyncSession, breeder: User, entry_id: uuid.UUID) -> EntryRead:
+        entry = await self._load_owned(db, breeder, entry_id)
+        if not can_transition(entry.status, "pass", entry.breeding_id is not None):
+            raise _invalid_transition("passed")
+        entry.breeding_id = None
+        entry.position_override = None
+        entry.override_set_at = None
+        entry.override_note = None
+        _log(entry, "passed", breeder.id)
+        await self._commit(db)
+        entry = await self._fetch(db, entry.id)
+        await self._notify(db, entry, to_breeder=False, type="waitlist_update",
+                           title=f"Waitlist update — {_breedery(breeder)}",
+                           message=f"{_breedery(breeder)} moved you back to the general waitlist.")
+        return await self._read(db, entry.id)
+
+    async def _withdraw(self, db: AsyncSession, entry: WaitlistEntry, actor: User, by: str,
+                        deposit_outcome: Optional[str]) -> WaitlistEntry:
+        if not can_transition(entry.status, "withdraw", entry.breeding_id is not None):
+            raise _invalid_transition("withdrawn")
+        if entry.deposit_status == "received" and deposit_outcome is not None:
+            entry.deposit_status = deposit_outcome
+        entry.status = "withdrawn"
+        entry.position_override = None
+        entry.override_set_at = None
+        entry.override_note = None
+        _log(entry, "withdrawn", actor.id, by=by)
+        await self._commit(db)
+        return await self._fetch(db, entry.id)
+
+    async def withdraw_by_breeder(self, db: AsyncSession, breeder: User, entry_id: uuid.UUID,
+                                  deposit_outcome: Optional[str]) -> EntryRead:
+        entry = await self._load_owned(db, breeder, entry_id)
+        entry = await self._withdraw(db, entry, breeder, "breeder", deposit_outcome)
+        await self._notify(db, entry, to_breeder=False, type="waitlist_update",
+                           title=f"Waitlist update — {_breedery(breeder)}",
+                           message="Your waitlist spot was withdrawn.")
+        return _entry_read(entry)
+
+    async def withdraw_by_seeker(self, db: AsyncSession, seeker: User,
+                                 entry_id: uuid.UUID) -> SeekerEntryRead:
+        result = await db.execute(
+            select(WaitlistEntry)
+            .where(WaitlistEntry.id == entry_id, WaitlistEntry.user_id == seeker.id)
+            .options(*_entry_options()).execution_options(populate_existing=True)
+        )
+        entry = result.scalar_one_or_none()
+        if entry is None:
+            raise _not_found()
+        entry = await self._withdraw(db, entry, seeker, "seeker", None)
+        name = seeker.name or seeker.email
+        await self._notify(db, entry, to_breeder=True, type="waitlist_update",
+                           title=f"Waitlist update — {name}",
+                           message=f"{name} withdrew from your waitlist.")
+        return _seeker_read(entry, None)
+
+    async def list_events(self, db: AsyncSession, breeder: User, entry_id: uuid.UUID) -> list[EventRead]:
+        entry = await self._load_owned(db, breeder, entry_id)
+        return [EventRead.model_validate(e) for e in entry.events]
+
+    async def on_breeding_voided(self, db: AsyncSession, breeding: Breeding) -> None:
+        """Return the voided breeding's active entries to the general list (caller commits)."""
+        if not settings.enable_waitlist:
+            return
+        result = await db.execute(
+            select(WaitlistEntry)
+            .where(WaitlistEntry.breeding_id == breeding.id, WaitlistEntry.status == "active")
+            .options(selectinload(WaitlistEntry.events)).execution_options(populate_existing=True)
+        )
+        for e in result.scalars().all():
+            e.breeding_id = None
+            e.position_override = None
+            e.override_set_at = None
+            e.override_note = None
+            _log(e, "moved_to_general", None, reason="breeding_voided")
 
 
 waitlist_service = WaitlistService()
