@@ -3,7 +3,7 @@ import uuid
 import logging
 from typing import Optional
 
-from fastapi import Request
+from fastapi import Request, Response
 from fastapi_users import BaseUserManager, UUIDIDMixin
 
 from app.models.user import User
@@ -55,6 +55,27 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
                 logger.info("Default FREE subscription assigned to breeder %s", user.id)
             except Exception as e:
                 logger.error("Failed to assign default subscription for breeder %s: %s", user.id, e)
+
+        await self._link_waitlist_entries(user)
+
+    async def on_after_login(
+        self, user: User, request: Optional[Request] = None, response: Optional[Response] = None
+    ) -> None:
+        await self._link_waitlist_entries(user)
+
+    async def _link_waitlist_entries(self, user: User) -> None:
+        """Attach manual waitlist entries to this account; never breaks registration or login."""
+        if not self.settings.enable_waitlist:
+            return
+        try:
+            from app.database import async_session_maker
+            from app.services.waitlist_service import waitlist_service
+            async with async_session_maker() as session:
+                count = await waitlist_service.link_by_email(session, user)
+            if count:
+                logger.info("Linked %s waitlist entries to user %s", count, user.id)
+        except Exception:
+            logger.exception("Failed to link waitlist entries for user %s", user.id)
 
     async def on_after_forgot_password(
         self, user: User, token: str, request: Optional[Request] = None

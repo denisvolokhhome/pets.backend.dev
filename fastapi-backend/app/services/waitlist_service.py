@@ -195,6 +195,43 @@ class WaitlistService:
             related_type="waitlist_entry_breeder" if to_breeder else "waitlist_entry_seeker",
         ))
 
+    async def link_by_email(self, db: AsyncSession, user: User) -> int:
+        """Attach unlinked manual entries whose contact email matches the user; returns the count.
+
+        Skipped when the entry's breeder already has an active entry for this user (the
+        entry stays unlinked and is flagged as a possible duplicate).
+        """
+        email = (user.email or "").strip().lower()
+        if not email:
+            return 0
+        result = await db.execute(
+            select(WaitlistEntry)
+            .where(func.lower(func.trim(WaitlistEntry.contact_email)) == email,
+                   WaitlistEntry.user_id.is_(None),
+                   WaitlistEntry.status.in_(ACTIVE_STATUSES))
+            .options(*_entry_options(), selectinload(WaitlistEntry.events))
+            .execution_options(populate_existing=True)
+        )
+        linked: list[WaitlistEntry] = []
+        for entry in result.scalars().all():
+            existing = await db.execute(
+                select(func.count()).select_from(WaitlistEntry).where(
+                    *_active_entry_filter(entry.breeder_id), WaitlistEntry.user_id == user.id)
+            )
+            if existing.scalar_one() > 0:
+                continue
+            entry.user_id = user.id
+            _log(entry, "linked", user.id)
+            linked.append(entry)
+        if not linked:
+            return 0
+        await self._commit(db)
+        for entry in linked:
+            await self._notify(db, entry, to_breeder=False, type="waitlist_update",
+                               title=f"{_breedery(entry.breeder)} added you to their waitlist",
+                               message=f"{_breedery(entry.breeder)} added you to their waitlist.")
+        return len(linked)
+
     # ── public info / settings ───────────────────────────────────────────
 
     async def get_info(self, db: AsyncSession, breeder_id: uuid.UUID, breeding_id: Optional[int],
@@ -387,13 +424,13 @@ class WaitlistService:
             .options(*_entry_options()).execution_options(populate_existing=True)
         )
         entries = list(result.scalars().all())
-        linked_emails = {e.user.email.lower() for e in entries
-                         if e.status == "active" and e.user is not None}
+        linked_emails = {e.user.email.strip().lower() for e in entries if e.user is not None}
         pending = sorted((e for e in entries if e.status == "pending"), key=lambda e: e.created_at)
         general = order_entries([e for e in entries if e.status == "active" and e.breeding_id is None])
 
         def dup(e: WaitlistEntry) -> bool:
-            return e.user_id is None and e.contact_email is not None and e.contact_email in linked_emails
+            return e.user_id is None and e.contact_email is not None \
+                and e.contact_email.strip().lower() in linked_emails
 
         return BreederWaitlistRead(
             pending=[_entry_read(e, None, dup(e)) for e in pending],
