@@ -230,3 +230,21 @@ class TestConfigurationEdgeCases:
         os.environ["DEBUG"] = "0"
         settings = Settings()
         assert settings.debug is False
+
+
+def _required_env(monkeypatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/testdb")
+    monkeypatch.setenv("SECRET_KEY", "a" * 32)
+
+
+def test_enable_waitlist_defaults_off(clean_env, monkeypatch) -> None:
+    _required_env(monkeypatch)
+    assert Settings().enable_waitlist is False
+
+
+def test_enable_waitlist_empty_string_is_off(clean_env, monkeypatch) -> None:
+    _required_env(monkeypatch)
+    monkeypatch.setenv("ENABLE_WAITLIST", "")
+    assert Settings().enable_waitlist is False
+    monkeypatch.setenv("ENABLE_WAITLIST", "true")
+    assert Settings().enable_waitlist is True

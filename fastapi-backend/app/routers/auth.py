@@ -211,6 +211,7 @@ async def google_callback(
                 await session.commit()
                 await session.refresh(existing_user)
             user = existing_user
+            await user_manager.on_after_login(user)
         else:
             # Create new pet seeker user
             from app.schemas.user import UserCreate

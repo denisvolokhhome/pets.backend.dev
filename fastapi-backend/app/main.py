@@ -22,6 +22,7 @@ from app.routers import auth, pets, breeds, breedings, locations, users, geocodi
 from app.routers.service_categories import router as service_categories_router
 from app.routers.services import router as services_router
 from app.routers import breeding_planner
+from app.routers import waitlist
 
 # Configure logging
 logging.basicConfig(
@@ -316,6 +317,7 @@ app.include_router(pets.router, tags=["pets"])
 app.include_router(breeds.router, tags=["breeds"])
 # Planner first: its /api/breedings/milestones/... paths must not reach /{breeding_id} routes
 app.include_router(breeding_planner.router)
+app.include_router(waitlist.router)
 app.include_router(breedings.router, tags=["breedings"])
 app.include_router(locations.router, tags=["locations"])
 app.include_router(geocoding.router, tags=["geocoding"])

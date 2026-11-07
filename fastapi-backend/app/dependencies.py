@@ -194,6 +194,14 @@ def require_service_providers_enabled() -> None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
 
 
+def require_waitlist_enabled() -> None:
+    """404 every waitlist route while ENABLE_WAITLIST is off (router-level dependency)."""
+    from fastapi import HTTPException, status
+
+    if not settings.enable_waitlist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+
+
 def require_service_provider(user: User = Depends(current_active_user)) -> User:
     """
     Dependency that ensures the current user is a service provider.
