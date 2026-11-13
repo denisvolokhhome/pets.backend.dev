@@ -242,6 +242,13 @@ class Settings(BaseSettings):
                     "must match the frontend's environment.enableWaitlist."
     )
 
+    enable_billing: bool = Field(
+        default=False,
+        description="Enable paid plans: pricing, checkout, the Subscription page and plan usage "
+                    "limits. Off pre-launch: every breeder sits on the free plan with no limits. "
+                    "Must match the frontend's environment.enableBilling."
+    )
+
     @field_validator("smtp_tls", mode="before")
     @classmethod
     def parse_smtp_tls(cls, v):
@@ -266,6 +273,16 @@ class Settings(BaseSettings):
     @classmethod
     def parse_enable_waitlist(cls, v):
         """Handle empty string for enable_waitlist (falls back to default: False)."""
+        if v == "" or v is None:
+            return False
+        if isinstance(v, str):
+            return v.lower() in ("true", "1", "yes")
+        return bool(v)
+
+    @field_validator("enable_billing", mode="before")
+    @classmethod
+    def parse_enable_billing(cls, v):
+        """Handle empty string for enable_billing (falls back to default: False)."""
         if v == "" or v is None:
             return False
         if isinstance(v, str):
