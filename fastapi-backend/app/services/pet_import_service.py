@@ -11,6 +11,7 @@ from app.models.location import Location
 from app.models.pet import Pet
 from app.models.plan import Plan
 from app.models.subscription import Subscription
+from app.services.billing_service import billing_enabled
 from app.schemas.pet_import import ImportError as ImportErrorSchema
 from app.schemas.pet_import import ImportResult, PetImportRow
 from app.utils.sanitize import sanitize_string
@@ -95,6 +96,9 @@ class PetImportService:
         self, session: AsyncSession, user_id: uuid.UUID
     ) -> int:
         """Return the max_pets limit from the user's active plan (or free plan fallback)."""
+        if not billing_enabled():
+            return 999_999
+
         sub_result = await session.execute(
             select(Subscription)
             .options(selectinload(Subscription.plan))

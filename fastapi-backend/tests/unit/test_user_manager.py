@@ -144,3 +144,25 @@ class TestUserManagerConfiguration:
         assert manager.verification_token_secret == settings.secret_key
         assert manager.reset_password_token_lifetime_seconds == 3600
         assert manager.verification_token_lifetime_seconds == settings.jwt_lifetime_seconds
+
+
+class TestWaitlistLinkingHooks:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("enabled", [False, True])
+    async def test_hooks_link_only_when_flag_on(self, user_manager, test_user_obj, monkeypatch, enabled):
+        from app.services import user_manager as um
+        from app.services.waitlist_service import waitlist_service
+
+        calls = []
+
+        async def recorder(db, user):
+            calls.append(user.email)
+            return 0
+
+        monkeypatch.setattr(waitlist_service, "link_by_email", recorder)
+        user_manager.settings.enable_waitlist = enabled
+        user_manager.email_service = AsyncMock()
+        test_user_obj.is_verified = True
+        await user_manager.on_after_login(test_user_obj)
+        await user_manager.on_after_register(test_user_obj)
+        assert calls == (["test@example.com"] * 2 if enabled else [])

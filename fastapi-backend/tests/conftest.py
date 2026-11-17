@@ -15,6 +15,9 @@ os.environ['DEBUG'] = 'true'
 # existing test suite exercising the real behavior by enabling it here. The
 # flag-disabled behavior itself is covered by dedicated tests.
 os.environ['ENABLE_SERVICE_PROVIDERS'] = 'true'
+# Same for paid plans: the suite tests real limits/checkout; the flag-off
+# behavior is covered by tests/integration/test_billing_flag.py.
+os.environ['ENABLE_BILLING'] = 'true'
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy import text

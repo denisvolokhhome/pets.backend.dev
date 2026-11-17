@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_async_session
-from app.dependencies import require_breeder
+from app.dependencies import require_billing_enabled, require_breeder
 from app.models.subscription import Subscription
 from app.models.user import User
 from app.schemas.billing import (
@@ -35,8 +35,12 @@ router = APIRouter(
     tags=["billing"],
 )
 
+# Every route except the Stripe webhook 404s while ENABLE_BILLING is off.
+# The webhook stays reachable so Stripe events are still acknowledged.
+_billing_on = [Depends(require_billing_enabled)]
 
-@router.get("/plans", response_model=List[PlanRead])
+
+@router.get("/plans", response_model=List[PlanRead], dependencies=_billing_on)
 async def get_plans(
     session: AsyncSession = Depends(get_async_session),
 ) -> List[PlanRead]:
@@ -45,7 +49,7 @@ async def get_plans(
     return plans
 
 
-@router.get("/subscription", response_model=SubscriptionRead)
+@router.get("/subscription", response_model=SubscriptionRead, dependencies=_billing_on)
 async def get_subscription(
     user: User = Depends(require_breeder),
     session: AsyncSession = Depends(get_async_session),
@@ -57,7 +61,7 @@ async def get_subscription(
     return result
 
 
-@router.post("/subscribe", response_model=SubscriptionRead)
+@router.post("/subscribe", response_model=SubscriptionRead, dependencies=_billing_on)
 async def subscribe(
     body: SubscribeRequest,
     user: User = Depends(require_breeder),
@@ -68,7 +72,7 @@ async def subscribe(
     return subscription
 
 
-@router.get("/invoices", response_model=List[InvoiceRead])
+@router.get("/invoices", response_model=List[InvoiceRead], dependencies=_billing_on)
 async def get_invoices(
     user: User = Depends(require_breeder),
     session: AsyncSession = Depends(get_async_session),
@@ -78,7 +82,7 @@ async def get_invoices(
     return invoices
 
 
-@router.get("/invoices/{invoice_id}/download")
+@router.get("/invoices/{invoice_id}/download", dependencies=_billing_on)
 async def download_invoice(
     invoice_id: uuid.UUID,
     user: User = Depends(require_breeder),
@@ -129,7 +133,7 @@ async def download_invoice(
     }
 
 
-@router.post("/create-checkout-session", response_model=CheckoutSessionResponse)
+@router.post("/create-checkout-session", response_model=CheckoutSessionResponse, dependencies=_billing_on)
 async def create_checkout_session(
     body: SubscribeRequest,
     user: User = Depends(require_breeder),
@@ -165,7 +169,7 @@ async def create_checkout_session(
     return CheckoutSessionResponse(checkout_url=checkout_url)
 
 
-@router.post("/cancel-pending-downgrade", response_model=SubscriptionRead)
+@router.post("/cancel-pending-downgrade", response_model=SubscriptionRead, dependencies=_billing_on)
 async def cancel_pending_downgrade(
     user: User = Depends(require_breeder),
     session: AsyncSession = Depends(get_async_session),
@@ -200,7 +204,7 @@ async def cancel_pending_downgrade(
     return result.scalar_one()
 
 
-@router.post("/portal-session", response_model=PortalSessionResponse)
+@router.post("/portal-session", response_model=PortalSessionResponse, dependencies=_billing_on)
 async def create_portal_session(
     user: User = Depends(require_breeder),
     session: AsyncSession = Depends(get_async_session),
@@ -222,7 +226,7 @@ async def create_portal_session(
     return PortalSessionResponse(portal_url=portal_url)
 
 
-@router.get("/verify-session/{session_id}", response_model=SubscriptionRead)
+@router.get("/verify-session/{session_id}", response_model=SubscriptionRead, dependencies=_billing_on)
 async def verify_checkout_session(
     session_id: str,
     user: User = Depends(require_breeder),

@@ -23,6 +23,8 @@ from app.models.breeding_application_form import BreedingApplicationForm
 from app.models.breeding_mating import BreedingMating
 from app.models.breeding_progesterone_test import BreedingProgesteroneTest
 from app.models.breeding_milestone import BreedingMilestone
+from app.models.waitlist_entry import WaitlistEntry
+from app.models.waitlist_event import WaitlistEvent
 from app.models.service_category import ServiceCategory, user_service_categories
 from app.models.service import Service, ServiceImage, service_locations
 
@@ -52,6 +54,8 @@ __all__ = [
     "BreedingMating",
     "BreedingProgesteroneTest",
     "BreedingMilestone",
+    "WaitlistEntry",
+    "WaitlistEvent",
     "ServiceCategory",
     "user_service_categories",
     "Service",

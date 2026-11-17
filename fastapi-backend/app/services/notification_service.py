@@ -14,7 +14,9 @@ from app.models.user import User
 from app.services.email_service import EmailService
 
 # Notification types that also go out by email (see Settings → Notifications)
-_EMAILED_TYPES = {"message_received", "favorite_added", "breeding_milestone"}
+_EMAILED_TYPES = {
+    "message_received", "favorite_added", "breeding_milestone", "waitlist_request", "waitlist_update",
+}
 _pending_emails: set = set()
 settings = Settings()
 email_service = EmailService(settings)
@@ -71,6 +73,10 @@ class NotificationService:
             url, label = f"{frontend}/messages?messageId={notification.related_id}", "Read message"
         elif notification.type == "breeding_milestone":
             url, label = f"{frontend}/milestones/{notification.related_id}", "View breeding"
+        elif notification.type in ("waitlist_request", "waitlist_update"):
+            path = "/my-waitlists" if notification.related_type == "waitlist_entry_seeker" else "/waitlist"
+            label = "Review request" if notification.type == "waitlist_request" else "View waitlist"
+            url = f"{frontend}{path}"
         else:  # favorite_added
             url, label = f"{frontend}/offsprings/{notification.related_id}", "View offspring"
         task = asyncio.create_task(email_service.send_activity_notification(

@@ -10,6 +10,7 @@ class NotificationPreferenceBase(BaseModel):
     message_received: bool = True
     favorite_added: bool = False
     breeding_reminder: bool = True
+    waitlist_update: bool = True
 
 
 class NotificationPreferenceCreate(NotificationPreferenceBase):
@@ -22,6 +23,7 @@ class NotificationPreferenceUpdate(BaseModel):
     message_received: bool | None = None
     favorite_added: bool | None = None
     breeding_reminder: bool | None = None
+    waitlist_update: bool | None = None
 
 
 class NotificationPreferenceRead(NotificationPreferenceBase):

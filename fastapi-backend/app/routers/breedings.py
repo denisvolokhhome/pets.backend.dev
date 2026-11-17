@@ -23,6 +23,7 @@ from app.models.pet import Pet
 from app.models.breed import Breed
 from app.models.location import Location
 from app.services.breeding_planner_service import breeding_planner_service
+from app.services.waitlist_service import waitlist_service
 from app.schemas.breeding import LitterCreate, LitterRead, LitterUpdate, LitterResponse, LitterStatus, PetAssignment, PuppyBatch
 
 
@@ -730,6 +731,7 @@ async def delete_litter(
     
     # Update breeding status to "Voided" (soft delete)
     breeding.status = LitterStatus.VOIDED.value
+    await waitlist_service.on_breeding_voided(session, breeding)
     
     # Commit changes (updated_at will be automatically updated)
     await session.commit()

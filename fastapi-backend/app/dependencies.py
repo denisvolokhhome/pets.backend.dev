@@ -18,7 +18,7 @@ from app.database import get_async_session
 from app.models.user import User
 from app.services.user_manager import UserManager
 from app.services.geocoding_service import GeocodingService
-from app.services.billing_service import billing_service
+from app.services.billing_service import billing_enabled, billing_service
 
 
 # Initialize settings
@@ -191,6 +191,22 @@ def require_service_providers_enabled() -> None:
     from fastapi import HTTPException, status
 
     if not settings.enable_service_providers:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+
+
+def require_waitlist_enabled() -> None:
+    """404 every waitlist route while ENABLE_WAITLIST is off (router-level dependency)."""
+    from fastapi import HTTPException, status
+
+    if not settings.enable_waitlist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+
+
+def require_billing_enabled() -> None:
+    """404 the paid-plan billing routes while ENABLE_BILLING is off."""
+    from fastapi import HTTPException, status
+
+    if not billing_enabled():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
 
 
