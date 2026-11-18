@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from fastapi import UploadFile
-from PIL import Image
+from PIL import Image, ImageOps
 
 from app.config import Settings
 
@@ -83,6 +83,9 @@ class FileService:
         except Exception as e:
             raise ValueError(f"File is not a valid image: {str(e)}")
 
+        # Phone photos store rotation in EXIF, which is dropped on save: bake it in.
+        image = ImageOps.exif_transpose(image)
+
         # Generate unique filename
         ext = Path(file.filename).suffix if file.filename else ".jpg"
         if not ext:
@@ -112,6 +115,57 @@ class FileService:
         original_filename = file.filename or filename
 
         return relative_path, original_filename
+
+    # Clockwise degrees -> Pillow transpose (Pillow's ROTATE_* are counter-clockwise).
+    _ROTATIONS = {
+        90: Image.Transpose.ROTATE_270,
+        180: Image.Transpose.ROTATE_180,
+        270: Image.Transpose.ROTATE_90,
+    }
+
+    def _resolve_stored_path(self, image_path: str) -> Path:
+        """Absolute path of a stored file, refusing anything outside storage."""
+        root = self.storage_path.resolve()
+        path = (self.storage_path.parent / image_path).resolve()
+        if root not in path.parents:
+            raise ValueError("Invalid image path")
+        return path
+
+    async def rotate_image(self, image_path: str, degrees: int) -> str:
+        """
+        Rotate a stored image clockwise by 90, 180 or 270 degrees.
+
+        The result is written under a new file name so browsers and CDNs don't
+        keep showing the cached original; the old file is removed.
+
+        Returns:
+            New relative path of the rotated image.
+
+        Raises:
+            ValueError: unsupported angle or path outside storage
+            FileNotFoundError: the stored file is missing
+        """
+        degrees = degrees % 360
+        if degrees not in self._ROTATIONS:
+            raise ValueError("Rotation must be 90, 180 or 270 degrees")
+
+        src = self._resolve_stored_path(image_path)
+        if not src.exists():
+            raise FileNotFoundError(f"Image file not found: {image_path}")
+
+        with Image.open(src) as opened:
+            fmt = opened.format
+            image = ImageOps.exif_transpose(opened).transpose(self._ROTATIONS[degrees])
+
+        prefix = src.stem.rsplit("_", 1)[0] if "_" in src.stem else src.stem
+        dst = src.with_name(f"{prefix}_{uuid.uuid4()}{src.suffix}")
+        save_kwargs = {"optimize": True}
+        if fmt in ("JPEG", "WEBP"):
+            save_kwargs["quality"] = self.quality
+        image.save(dst, format=fmt, **save_kwargs)
+        src.unlink()
+
+        return str(dst.relative_to(self.storage_path.parent.resolve()))
 
     async def delete_image(self, image_path: str) -> None:
         """
@@ -199,6 +253,9 @@ class FileService:
             image = Image.open(io.BytesIO(contents))
         except Exception as e:
             raise ValueError(f"File is not a valid image: {str(e)}")
+
+        # Phone photos store rotation in EXIF, which is dropped on save: bake it in.
+        image = ImageOps.exif_transpose(image)
 
         # Generate unique filename for profile image
         ext = Path(file.filename).suffix if file.filename else ".jpg"

@@ -40,3 +40,8 @@ class PetImageUpdate(BaseModel):
     """Schema for updating pet image."""
     display_order: Optional[int] = None
     is_primary: Optional[bool] = None
+
+
+class ImageRotateRequest(BaseModel):
+    """Rotate a stored image clockwise. Use 270 (or -90) for counter-clockwise."""
+    degrees: int = Field(90, description="Clockwise rotation: 90, 180, 270 or -90")
