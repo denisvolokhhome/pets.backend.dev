@@ -216,6 +216,42 @@ class OffspringImageService:
         
         return image
     
+    async def rotate_image(
+        self,
+        db: AsyncSession,
+        offspring_id: uuid.UUID,
+        image_id: uuid.UUID,
+        user_id: uuid.UUID,
+        degrees: int,
+    ) -> OffspringImage:
+        """Rotate an offspring image clockwise; the file gets a new name."""
+        offspring = (await db.execute(
+            select(Offspring).where(Offspring.id == offspring_id, Offspring.user_id == user_id)
+        )).scalar_one_or_none()
+        if not offspring:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Offspring not found or access denied"
+            )
+        image = (await db.execute(
+            select(OffspringImage).where(
+                OffspringImage.id == image_id, OffspringImage.offspring_id == offspring_id
+            )
+        )).scalar_one_or_none()
+        if not image:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+
+        try:
+            image.image_path = await self.file_service.rotate_image(image.image_path, degrees)
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        except FileNotFoundError:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image file not found")
+
+        await db.commit()
+        await db.refresh(image)
+        return image
+
     async def reorder_images(
         self,
         db: AsyncSession,

@@ -20,6 +20,7 @@ from app.dependencies import current_active_user, require_breeder, optional_curr
 from app.models.user import User
 from app.schemas.offspring import OffspringCreate, OffspringRead, OffspringUpdate, OffspringListResponse
 from app.schemas.offspring_image import OffspringImageRead
+from app.schemas.pet_image import ImageRotateRequest
 from app.services.offspring_service import offspring_service
 from app.services.offspring_image_service import OffspringImageService
 from app.services.favorite_service import favorite_service
@@ -440,6 +441,22 @@ async def set_primary_offspring_image(
     )
     
     return offspring_image
+
+
+@router.post("/{offspring_id}/images/{image_id}/rotate", response_model=OffspringImageRead)
+async def rotate_offspring_image(
+    offspring_id: uuid.UUID,
+    image_id: uuid.UUID,
+    payload: ImageRotateRequest,
+    user: User = Depends(require_breeder),
+    session: AsyncSession = Depends(get_async_session),
+    image_service: OffspringImageService = Depends(get_offspring_image_service),
+) -> OffspringImageRead:
+    """Rotate one of the breeder's offspring images clockwise by 90/180/270 degrees."""
+    return await image_service.rotate_image(
+        db=session, offspring_id=offspring_id, image_id=image_id,
+        user_id=user.id, degrees=payload.degrees,
+    )
 
 
 @router.put("/{offspring_id}/images/reorder", response_model=List[OffspringImageRead])

@@ -10,6 +10,16 @@ from app.models.breeder_review import BreederReview
 from app.schemas.breeder import BreederSearchResult, BreedInfo
 
 
+# 2 decimal places ≈ 1.1 km of latitude: close enough for "near you", far enough
+# from the breeder's home address.
+PUBLIC_COORD_DECIMALS = 2
+
+
+def approximate_coordinate(value: float) -> float:
+    """Coarsen a coordinate for public display."""
+    return round(float(value), PUBLIC_COORD_DECIMALS)
+
+
 class BreederService:
     """Service for searching breeding locations with geospatial queries."""
     
@@ -172,9 +182,12 @@ class BreederService:
                 location_id=loc.location_id,
                 user_id=loc.user_id,
                 breeder_name=loc.breeder_name or "Breeder, who didn't named himself",
-                latitude=loc.latitude,
-                longitude=loc.longitude,
-                distance=round(loc.distance, 1),  # Round to 1 decimal place
+                # Public map shows an approximate spot, never the exact address:
+                # snap to a ~1 km grid and give distance in whole miles, so the
+                # point can't be recovered by searching from several centres.
+                latitude=approximate_coordinate(loc.latitude),
+                longitude=approximate_coordinate(loc.longitude),
+                distance=float(max(1, round(loc.distance))),
                 available_breeds=[
                     BreedInfo(
                         breed_id=b.breed_id,

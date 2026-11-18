@@ -14,6 +14,7 @@ from app.dependencies import current_active_user, get_user_manager
 from app.models.user import User
 from app.schemas.user import UserRead, UserUpdate, ProfileImageResponse, PasswordChange
 from app.services.file_service import FileService
+from app.schemas.pet_image import ImageRotateRequest
 
 
 # Initialize router
@@ -158,6 +159,29 @@ async def upload_profile_image(
             status_code=500,
             detail=f"Failed to upload profile image: {str(e)}"
         )
+
+
+@router.post("/me/profile-image/rotate", response_model=ProfileImageResponse)
+async def rotate_profile_image(
+    payload: ImageRotateRequest,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    """Rotate the current user's profile image clockwise by 90/180/270 degrees."""
+    if not user.profile_image_path:
+        raise HTTPException(status_code=404, detail="No profile image")
+    file_service = FileService(settings)
+    try:
+        new_path = await file_service.rotate_image(user.profile_image_path, payload.degrees)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Profile image file not found")
+
+    user.profile_image_path = new_path
+    session.add(user)
+    await session.commit()
+    return {"profile_image_path": new_path, "message": "Profile image rotated"}
 
 
 @router.get("/me/profile-image")

@@ -20,6 +20,7 @@ from app.dependencies import current_active_user, require_breeder, check_pet_lim
 from app.models.pet import Pet
 from app.models.user import User
 from app.schemas.pet import PetCreate, PetRead, PetUpdate
+from app.schemas.pet_image import ImageRotateRequest
 from app.services.file_service import FileService
 
 
@@ -479,6 +480,46 @@ async def delete_pet_image(
     await session.refresh(pet)
     
     return pet
+
+@router.post("/{pet_id}/image/{image_id}/rotate", response_model=PetRead)
+async def rotate_pet_image(
+    pet_id: uuid.UUID,
+    image_id: int,
+    payload: ImageRotateRequest,
+    user: User = Depends(require_breeder),
+    session: AsyncSession = Depends(get_async_session),
+    file_service: FileService = Depends(get_file_service),
+) -> Pet:
+    """Rotate one of the breeder's pet images clockwise by 90/180/270 degrees."""
+    from app.models.pet_image import PetImage
+
+    pet = (await session.execute(
+        select(Pet).where(Pet.id == pet_id, Pet.user_id == user.id)
+    )).scalar_one_or_none()
+    if pet is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pet not found")
+
+    pet_image = (await session.execute(
+        select(PetImage).where(PetImage.id == image_id, PetImage.pet_id == pet_id)
+    )).scalar_one_or_none()
+    if pet_image is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+
+    old_path = pet_image.image_path
+    try:
+        new_path = await file_service.rotate_image(old_path, payload.degrees)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image file not found")
+
+    pet_image.image_path = new_path
+    if pet.image_path == old_path:  # legacy single-image field mirrors the primary
+        pet.image_path = new_path
+    await session.commit()
+    await session.refresh(pet)
+    return pet
+
 
 # ─── Pet Documents ───────────────────────────────────────────────────────────
 
