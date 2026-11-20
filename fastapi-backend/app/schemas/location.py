@@ -3,9 +3,26 @@ import uuid
 from datetime import datetime
 from typing import Optional, List
 
-from pydantic import BaseModel, ConfigDict, Field
+import re
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.validators import NonWhitespaceStr, OptionalNonWhitespaceStr
+
+
+_PHONE_RE = re.compile(r"^[0-9+()\-. ]{3,32}$")
+
+
+def _clean_phone(value: Optional[str]) -> Optional[str]:
+    """Blank → None; otherwise digits, spaces and + ( ) - . only, max 32 chars."""
+    if value is None:
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    if not _PHONE_RE.match(value) or not any(ch.isdigit() for ch in value):
+        raise ValueError("Phone may contain only digits, spaces and + ( ) - . (max 32 characters)")
+    return value
 
 
 class LocationBase(BaseModel):
@@ -20,6 +37,10 @@ class LocationBase(BaseModel):
     location_type: NonWhitespaceStr = Field(..., min_length=1, max_length=50)
     is_published: bool = Field(default=True, description="Whether location is published and searchable on map")
     is_default: bool = Field(default=False, description="Whether this is the default location for new pets")
+    phone: Optional[str] = Field(None, description="Optional contact phone number")
+    show_phone: bool = Field(default=False, description="Whether the phone number is shown to seekers on the map")
+
+    _validate_phone = field_validator("phone", mode="before")(classmethod(lambda cls, v: _clean_phone(v)))
 
 
 class LocationCreate(LocationBase):
@@ -39,6 +60,10 @@ class LocationUpdate(BaseModel):
     location_type: OptionalNonWhitespaceStr = Field(None, min_length=1, max_length=50)
     is_published: Optional[bool] = Field(None, description="Whether location is published and searchable on map")
     is_default: Optional[bool] = Field(None, description="Whether this is the default location for new pets")
+    phone: Optional[str] = Field(None, description="Optional contact phone number")
+    show_phone: Optional[bool] = Field(None, description="Whether the phone number is shown to seekers on the map")
+
+    _validate_phone = field_validator("phone", mode="before")(classmethod(lambda cls, v: _clean_phone(v)))
 
 
 class PetBasicInfo(BaseModel):

@@ -85,6 +85,18 @@ class Location(Base):
         server_default='false',
         comment="Whether this is the default location for new pets"
     )
+
+    # Optional contact phone; only exposed publicly when show_phone is true
+    phone: Mapped[Optional[str]] = mapped_column(
+        String(32),
+        nullable=True
+    )
+    show_phone: Mapped[bool] = mapped_column(
+        sa.Boolean,
+        nullable=False,
+        server_default='false',
+        comment="Whether the phone number is shown to seekers on the map"
+    )
     
     # Geospatial columns
     latitude: Mapped[Optional[float]] = mapped_column(

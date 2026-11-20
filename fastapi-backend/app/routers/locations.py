@@ -186,6 +186,8 @@ async def create_location(
         location_type=location_data.location_type,
         is_published=location_data.is_published,
         is_default=make_default,
+        phone=location_data.phone,
+        show_phone=location_data.show_phone,
     )
     
     # Add to session first to get an ID
