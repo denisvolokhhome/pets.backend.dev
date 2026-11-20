@@ -107,6 +107,7 @@ class BreederService:
                 Location.id.label('location_id'),
                 Location.user_id.label('user_id'),
                 User.breedery_name.label('breeder_name'),
+                User.name.label('owner_name'),
                 func.ST_Y(Location.coordinates).label('latitude'),
                 func.ST_X(Location.coordinates).label('longitude'),
                 (func.ST_Distance(
@@ -158,6 +159,7 @@ class BreederService:
             Location.id,
             Location.user_id,
             User.breedery_name,
+            User.name,
             Location.coordinates,
             User.profile_image_path,
             Location.name,
@@ -206,7 +208,8 @@ class BreederService:
             results.append(BreederSearchResult(
                 location_id=loc.location_id,
                 user_id=loc.user_id,
-                breeder_name=loc.breeder_name or "Breeder, who didn't named himself",
+                # Kennel name, else the person's name, else a neutral label
+                breeder_name=loc.breeder_name or loc.owner_name or "Breeder",
                 # Public map shows an approximate spot, never the exact address:
                 # snap to a ~1 km grid and give distance in whole miles, so the
                 # point can't be recovered by searching from several centres.
