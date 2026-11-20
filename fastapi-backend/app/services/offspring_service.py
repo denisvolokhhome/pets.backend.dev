@@ -397,6 +397,83 @@ class OffspringService:
         
         return list(offsprings)
     
+    async def list_nearby_public_offsprings(
+        self,
+        db: AsyncSession,
+        latitude: float,
+        longitude: float,
+        radius_miles: float,
+        exclude_breeder_id: Optional[uuid.UUID] = None,
+        breed_ids: Optional[List[int]] = None,
+        limit: int = 12,
+    ) -> List[tuple]:
+        """
+        Available, published offspring of other breeders near a point.
+
+        A breeder counts as "near" when one of their published breeding
+        locations is within the radius; their nearest such location sets the
+        distance. Offspring whose breed is in ``breed_ids`` come first, then
+        nearest first, then newest.
+
+        Returns:
+            List of (offspring, breeder_name, distance_miles) tuples.
+        """
+        from sqlalchemy import case
+        from sqlalchemy.orm import selectinload
+        from app.models.location import Location
+        from app.models.user import User
+
+        point = func.ST_SetSRID(func.ST_MakePoint(longitude, latitude), 4326)
+        nearest = (
+            select(
+                Location.user_id.label('breeder_id'),
+                func.min(func.ST_Distance(Location.coordinates, point, True) / 1609.34).label('distance'),
+            )
+            .where(
+                Location.location_type == 'user',
+                Location.is_published == True,
+                Location.coordinates.isnot(None),
+                func.ST_DWithin(Location.coordinates, point, radius_miles * 1609.34, True),
+            )
+            .group_by(Location.user_id)
+            .subquery()
+        )
+
+        order = []
+        if breed_ids:
+            order.append(case((Offspring.breed_id.in_(breed_ids), 0), else_=1))
+        order += [nearest.c.distance, Offspring.created_at.desc()]
+
+        query = (
+            select(Offspring, User.breedery_name, User.name, nearest.c.distance)
+            .join(nearest, nearest.c.breeder_id == Offspring.user_id)
+            .join(User, User.id == Offspring.user_id)
+            .where(
+                Offspring.status == 'Available',
+                Offspring.is_published == True,
+                User.is_active == True,
+            )
+            .options(
+                selectinload(Offspring.breed),
+                selectinload(Offspring.father),
+                selectinload(Offspring.mother),
+                selectinload(Offspring.breeding),
+                selectinload(Offspring.images),
+                selectinload(Offspring.favorites),
+            )
+            .order_by(*order)
+            .limit(limit)
+        )
+        if exclude_breeder_id:
+            query = query.where(Offspring.user_id != exclude_breeder_id)
+
+        rows = (await db.execute(query)).all()
+        # Whole miles only, like the map search, so locations can't be triangulated
+        return [
+            (o, breedery_name or name or 'Breeder', float(max(1, round(distance))))
+            for o, breedery_name, name, distance in rows
+        ]
+
     async def count_public_offsprings(
         self,
         db: AsyncSession,

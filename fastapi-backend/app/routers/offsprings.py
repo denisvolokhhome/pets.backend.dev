@@ -18,7 +18,9 @@ from app.config import Settings
 from app.database import get_async_session
 from app.dependencies import current_active_user, require_breeder, optional_current_user, check_offspring_limit
 from app.models.user import User
-from app.schemas.offspring import OffspringCreate, OffspringRead, OffspringUpdate, OffspringListResponse
+from app.schemas.offspring import (
+    OffspringCreate, OffspringRead, OffspringUpdate, OffspringListResponse, NearbyOffspringListResponse,
+)
 from app.schemas.offspring_image import OffspringImageRead
 from app.schemas.pet_image import ImageRotateRequest
 from app.services.offspring_service import offspring_service
@@ -331,6 +333,38 @@ async def list_public_offsprings(
         "limit": limit,
         "offset": offset
     }
+
+
+@router.get("/public/nearby", response_model=NearbyOffspringListResponse)
+async def list_nearby_offsprings(
+    latitude: float = Query(..., ge=-90, le=90),
+    longitude: float = Query(..., ge=-180, le=180),
+    radius: float = Query(..., gt=0, le=100, description="Radius in miles"),
+    exclude_breeder_id: Optional[uuid.UUID] = Query(None, description="Breeder to leave out (the one being viewed)"),
+    breed_id: List[int] = Query([], description="Preferred breed IDs, listed first"),
+    limit: int = Query(12, ge=1, le=24),
+    session: AsyncSession = Depends(get_async_session),
+    user: Optional[User] = Depends(optional_current_user),
+) -> dict:
+    """
+    Available offspring from breeders near a point, for "More near you"
+    suggestions on the map. Public; distances are whole miles.
+    """
+    rows = await offspring_service.list_nearby_public_offsprings(
+        db=session,
+        latitude=latitude,
+        longitude=longitude,
+        radius_miles=radius,
+        exclude_breeder_id=exclude_breeder_id,
+        breed_ids=breed_id,
+        limit=limit,
+    )
+    items = []
+    for offspring, breeder_name, distance in rows:
+        item = await _build_offspring_response(session, offspring, user_id=user.id if user else None)
+        item.update(breeder_name=breeder_name, distance=distance)
+        items.append(item)
+    return {"offsprings": items}
 
 
 @router.get("/public/{offspring_id}", response_model=OffspringRead)
