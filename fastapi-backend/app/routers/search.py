@@ -10,8 +10,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_async_session
+from app.dependencies import optional_current_user
+from app.models.user import User
 from app.schemas.breeder import BreederSearchResult
+from app.schemas.offspring import OffspringGroupsResponse
 from app.services.breeder_service import BreederService
+from app.services.offspring_service import offspring_service
 
 
 router = APIRouter(
@@ -122,3 +126,35 @@ async def search_breeders(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while searching for breeders"
         )
+
+
+@router.get("/offsprings", response_model=OffspringGroupsResponse)
+async def search_offsprings(
+    latitude: float = Query(..., ge=-90, le=90, description="Search center latitude"),
+    longitude: float = Query(..., ge=-180, le=180, description="Search center longitude"),
+    radius: float = Query(..., gt=0, le=100, description="Search radius in miles"),
+    breed_id: Optional[int] = Query(None, description="Only this breed"),
+    animal_kind: Optional[str] = Query(None, description="Only this animal kind (dog, cat)"),
+    limit: int = Query(10, ge=1, le=30, description="Breeders per page"),
+    offset: int = Query(0, ge=0, description="Breeders to skip"),
+    session: AsyncSession = Depends(get_async_session),
+    user: Optional[User] = Depends(optional_current_user),
+) -> dict:
+    """
+    Available offspring near a point, grouped by breeder (nearest first), for
+    the map's Offspring view. Distances are whole miles to each breeder's
+    nearest published breeding location.
+    """
+    # Shared response builder (computed age, images, favorite status)
+    from app.routers.offsprings import _build_offspring_response
+
+    groups, total = await offspring_service.search_offspring_grouped_by_breeder(
+        db=session, latitude=latitude, longitude=longitude, radius_miles=radius,
+        breed_id=breed_id, animal_kind=animal_kind, limit=limit, offset=offset,
+    )
+    user_id = user.id if user else None
+    for group in groups:
+        group["offsprings"] = [
+            await _build_offspring_response(session, o, user_id=user_id) for o in group["offsprings"]
+        ]
+    return {"groups": groups, "total_breeders": total, "limit": limit, "offset": offset}

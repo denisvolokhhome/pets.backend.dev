@@ -13,6 +13,31 @@ from app.schemas.offspring import OffspringCreate, OffspringUpdate
 from app.services.breeding_planner_service import breeding_planner_service
 
 
+def public_miles(distance_miles: float) -> float:
+    """Distance shown publicly: whole miles, at least 1, so locations can't be triangulated."""
+    return float(max(1, round(distance_miles)))
+
+
+def _nearest_breeder_locations(latitude: float, longitude: float, radius_miles: float):
+    """Subquery: each breeder's nearest published breeding location within the radius (miles)."""
+    from app.models.location import Location
+
+    point = func.ST_SetSRID(func.ST_MakePoint(longitude, latitude), 4326)
+    return (
+        select(
+            Location.user_id.label('breeder_id'),
+            func.min(func.ST_Distance(Location.coordinates, point, True) / 1609.34).label('distance'),
+        )
+        .where(
+            Location.location_type == 'user',
+            Location.is_published == True,
+            Location.coordinates.isnot(None),
+            func.ST_DWithin(Location.coordinates, point, radius_miles * 1609.34, True),
+        )
+        .group_by(Location.user_id)
+        .subquery()
+    )
+
 class OffspringService:
     """Service for managing offspring CRUD operations and business logic."""
     
@@ -420,24 +445,9 @@ class OffspringService:
         """
         from sqlalchemy import case
         from sqlalchemy.orm import selectinload
-        from app.models.location import Location
         from app.models.user import User
 
-        point = func.ST_SetSRID(func.ST_MakePoint(longitude, latitude), 4326)
-        nearest = (
-            select(
-                Location.user_id.label('breeder_id'),
-                func.min(func.ST_Distance(Location.coordinates, point, True) / 1609.34).label('distance'),
-            )
-            .where(
-                Location.location_type == 'user',
-                Location.is_published == True,
-                Location.coordinates.isnot(None),
-                func.ST_DWithin(Location.coordinates, point, radius_miles * 1609.34, True),
-            )
-            .group_by(Location.user_id)
-            .subquery()
-        )
+        nearest = _nearest_breeder_locations(latitude, longitude, radius_miles)
 
         order = []
         if breed_ids:
@@ -470,9 +480,123 @@ class OffspringService:
         rows = (await db.execute(query)).all()
         # Whole miles only, like the map search, so locations can't be triangulated
         return [
-            (o, breedery_name or name or 'Breeder', float(max(1, round(distance))))
+            (o, breedery_name or name or 'Breeder', public_miles(distance))
             for o, breedery_name, name, distance in rows
         ]
+
+    async def search_offspring_grouped_by_breeder(
+        self,
+        db: AsyncSession,
+        latitude: float,
+        longitude: float,
+        radius_miles: float,
+        breed_id: Optional[int] = None,
+        animal_kind: Optional[str] = None,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        """
+        Available, published offspring near a point, grouped by breeder.
+
+        Breeders (nearest first) are paged; each group carries all of that
+        breeder's matching offspring, newest first.
+
+        Returns:
+            (groups, total_breeders). Each group is a dict with breeder_id,
+            breeder_name, thumbnail_url, distance, rating, review_count,
+            available_count and offsprings (Offspring models).
+        """
+        from sqlalchemy.orm import selectinload
+
+        from app.models.breed import Breed
+        from app.models.breeder_review import BreederReview
+        from app.models.user import User
+
+        nearest = _nearest_breeder_locations(latitude, longitude, radius_miles)
+
+        def eligible(query):
+            query = query.where(
+                Offspring.status == 'Available',
+                Offspring.is_published == True,
+                User.is_active == True,
+            )
+            if breed_id:
+                query = query.where(Offspring.breed_id == breed_id)
+            if animal_kind:
+                query = query.join(Breed, Breed.id == Offspring.breed_id).where(Breed.kind == animal_kind)
+            return query
+
+        per_breeder = eligible(
+            select(
+                Offspring.user_id.label('breeder_id'),
+                nearest.c.distance,
+                func.count(Offspring.id).label('available_count'),
+            )
+            .join(nearest, nearest.c.breeder_id == Offspring.user_id)
+            .join(User, User.id == Offspring.user_id)
+        ).group_by(Offspring.user_id, nearest.c.distance).subquery()
+
+        total = (await db.execute(select(func.count()).select_from(per_breeder))).scalar_one()
+
+        reviews = (
+            select(
+                BreederReview.breeder_id,
+                func.avg(BreederReview.rating).label('rating'),
+                func.count(BreederReview.id).label('review_count'),
+            )
+            .group_by(BreederReview.breeder_id)
+            .subquery()
+        )
+        page = (await db.execute(
+            select(
+                per_breeder.c.breeder_id, per_breeder.c.distance, per_breeder.c.available_count,
+                User.breedery_name, User.name, User.profile_image_path,
+                reviews.c.rating, reviews.c.review_count,
+            )
+            .join(User, User.id == per_breeder.c.breeder_id)
+            .outerjoin(reviews, reviews.c.breeder_id == per_breeder.c.breeder_id)
+            .order_by(per_breeder.c.distance, per_breeder.c.breeder_id)
+            .limit(limit)
+            .offset(offset)
+        )).all()
+        if not page:
+            return [], total
+
+        breeder_ids = [row.breeder_id for row in page]
+        offspring_rows = (await db.execute(
+            eligible(
+                select(Offspring)
+                .join(User, User.id == Offspring.user_id)
+                .where(Offspring.user_id.in_(breeder_ids))
+            )
+            .options(
+                selectinload(Offspring.breed),
+                selectinload(Offspring.father),
+                selectinload(Offspring.mother),
+                selectinload(Offspring.breeding),
+                selectinload(Offspring.images),
+                selectinload(Offspring.favorites),
+            )
+            .order_by(Offspring.created_at.desc())
+        )).scalars().all()
+        by_breeder: dict = {bid: [] for bid in breeder_ids}
+        for o in offspring_rows:
+            by_breeder[o.user_id].append(o)
+
+        groups = [
+            {
+                'breeder_id': row.breeder_id,
+                'breeder_name': row.breedery_name or row.name or 'Breeder',
+                'thumbnail_url': row.profile_image_path,
+                'distance': public_miles(row.distance),
+                'rating': round(float(row.rating), 1) if row.rating is not None else None,
+                'review_count': int(row.review_count or 0),
+                'available_count': int(row.available_count),
+                'offsprings': by_breeder[row.breeder_id],
+            }
+            for row in page
+        ]
+        return groups, total
 
     async def count_public_offsprings(
         self,
