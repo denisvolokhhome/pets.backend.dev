@@ -99,3 +99,22 @@ async def test_phone_only_when_shown(unauthenticated_client, async_session, test
     assert by_user[str(test_breeder.id)]["phone"] is None
     assert by_user[str(other.id)]["phone"] == "512-555-0199"
     assert "512-555-0100" not in r.text
+
+
+@pytest.mark.asyncio
+async def test_breeder_without_kennel_name_shows_their_name(unauthenticated_client, async_session, test_breed):
+    u = User(email="noname@example.com", hashed_password="x", name="Jane Doe", breedery_name=None,
+             is_active=True, is_verified=True, is_breeder=True)
+    nameless = User(email="nameless@example.com", hashed_password="x", name=None, breedery_name=None,
+                    is_active=True, is_verified=True, is_breeder=True)
+    async_session.add_all([u, nameless])
+    await async_session.flush()
+    await _with_parent(async_session, u, test_breed)
+    await _with_parent(async_session, nameless, test_breed, lat=30.21)
+    await async_session.commit()
+
+    r = await unauthenticated_client.get("/api/search/breeders", params=SEARCH)
+    names = {h["user_id"]: h["breeder_name"] for h in r.json()}
+    assert names[str(u.id)] == "Jane Doe"
+    assert names[str(nameless.id)] == "Breeder"
+    assert "didn't" not in r.text

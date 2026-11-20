@@ -114,6 +114,26 @@ class NearbyOffspringListResponse(BaseModel):
     offsprings: List[NearbyOffspringRead]
 
 
+class BreederOffspringGroup(BaseModel):
+    """A breeder and their available offspring, for the map's Offspring view."""
+    breeder_id: uuid.UUID
+    breeder_name: str
+    thumbnail_url: Optional[str] = None
+    distance: float  # whole miles to the breeder's nearest location
+    rating: Optional[float] = None
+    review_count: int = 0
+    available_count: int
+    offsprings: List[OffspringRead]
+
+
+class OffspringGroupsResponse(BaseModel):
+    """Paged breeders (nearest first) with their available offspring."""
+    groups: List[BreederOffspringGroup]
+    total_breeders: int
+    limit: int
+    offset: int
+
+
 class OffspringListResponse(BaseModel):
     """Schema for paginated offspring list response."""
     offsprings: List[OffspringRead]
