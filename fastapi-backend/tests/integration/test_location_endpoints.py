@@ -1199,3 +1199,46 @@ class TestDeleteLocationBlockedByActiveServices:
         # Deletion should succeed because the service is soft-deleted
         delete_r = await sp_authenticated_client.delete(f"/api/locations/{location_id}")
         assert delete_r.status_code == 204
+
+
+class TestLocationPhone:
+    """Optional public phone number on a location."""
+
+    BASE = {
+        "name": "Main Kennel", "address1": "123 Main Street", "city": "Springfield",
+        "state": "Illinois", "country": "USA", "zipcode": "62701", "location_type": "user",
+    }
+
+    @pytest.mark.asyncio
+    async def test_phone_defaults_to_hidden(self, authenticated_client: AsyncClient):
+        r = await authenticated_client.post("/api/locations/", json=self.BASE)
+        assert r.status_code == 201
+        assert r.json()["phone"] is None
+        assert r.json()["show_phone"] is False
+
+    @pytest.mark.asyncio
+    async def test_create_and_update_phone(self, authenticated_client: AsyncClient):
+        r = await authenticated_client.post(
+            "/api/locations/", json={**self.BASE, "phone": "+1 (512) 555-0100", "show_phone": True}
+        )
+        assert r.status_code == 201, r.text
+        assert r.json()["phone"] == "+1 (512) 555-0100"
+        assert r.json()["show_phone"] is True
+
+        loc_id = r.json()["id"]
+        r = await authenticated_client.put(f"/api/locations/{loc_id}", json={"show_phone": False})
+        assert r.status_code == 200, r.text
+        assert r.json()["show_phone"] is False
+        assert r.json()["phone"] == "+1 (512) 555-0100"
+
+    @pytest.mark.asyncio
+    async def test_blank_phone_is_stored_as_null(self, authenticated_client: AsyncClient):
+        r = await authenticated_client.post("/api/locations/", json={**self.BASE, "phone": "  "})
+        assert r.status_code == 201, r.text
+        assert r.json()["phone"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad", ["call me", "1" * 33, "555-0100 ext. <b>"])
+    async def test_invalid_phone_rejected(self, authenticated_client: AsyncClient, bad):
+        r = await authenticated_client.post("/api/locations/", json={**self.BASE, "phone": bad})
+        assert r.status_code == 422

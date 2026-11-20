@@ -103,6 +103,17 @@ class OffspringRead(OffspringBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class NearbyOffspringRead(OffspringRead):
+    """Public offspring suggested from a nearby breeder."""
+    breeder_name: str
+    distance: float  # whole miles from the search centre
+
+
+class NearbyOffspringListResponse(BaseModel):
+    """Nearby offspring suggestions."""
+    offsprings: List[NearbyOffspringRead]
+
+
 class OffspringListResponse(BaseModel):
     """Schema for paginated offspring list response."""
     offsprings: List[OffspringRead]

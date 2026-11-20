@@ -31,6 +31,7 @@ async def search_breeders(
     radius: float = Query(..., gt=0, le=100, description="Search radius in miles"),
     breed_id: Optional[int] = Query(None, description="Optional breed ID to filter results"),
     animal_kind: Optional[str] = Query(None, description="Optional animal kind filter (dog, cat)"),
+    has_offspring: bool = Query(False, description="Only breeders with available offspring"),
     session: AsyncSession = Depends(get_async_session),
 ) -> List[BreederSearchResult]:
     """
@@ -99,7 +100,8 @@ async def search_breeders(
             longitude=longitude,
             radius_miles=radius,
             breed_id=breed_id,
-            animal_kind=animal_kind
+            animal_kind=animal_kind,
+            has_offspring=has_offspring,
         )
         
         return results
