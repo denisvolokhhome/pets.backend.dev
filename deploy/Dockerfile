@@ -39,6 +39,7 @@ COPY ../fastapi-backend/ .
 
 # Create storage directory
 RUN mkdir -p storage/app
+RUN mkdir -p private/exports
 
 # Expose port
 EXPOSE 8000
