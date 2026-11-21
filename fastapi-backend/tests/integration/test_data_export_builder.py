@@ -256,3 +256,19 @@ def _factory(session: AsyncSession):
             return False
 
     return lambda: _Ctx()
+
+
+@pytest.mark.asyncio
+async def test_same_file_in_gallery_and_legacy_photo_exported_once(async_session, test_breeder, storage_root, tmp_path):
+    """Uploading a pet photo writes it to pet_images AND pets.image_path; export it once."""
+    rel = _put(storage_root, "app/shared.jpg", b"img")
+    pet = Pet(user_id=test_breeder.id, name="Solo", gender="Female", image_path=rel)
+    async_session.add(pet)
+    await async_session.flush()
+    async_session.add(PetImage(pet_id=pet.id, image_path=rel, image_file_name="shared.jpg",
+                               display_order=0, is_primary=True))
+    await async_session.commit()
+
+    zf, _ = await _build(async_session, test_breeder, storage_root, tmp_path)
+    photos = [n for n in zf.namelist() if n.startswith(ROOT + "photos/pets/Solo_")]
+    assert len(photos) == 1

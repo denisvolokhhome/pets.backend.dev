@@ -184,8 +184,10 @@ async def collect_export_data(session: AsyncSession, user_id: uuid.UUID) -> Expo
             fname = img.image_file_name or PurePosixPath(img.image_path).name
             data.files.append(FileEntry(img.image_path, f"photos/pets/{pet_folder[img.pet_id]}",
                                         f"{n}_{safe_name(fname, 'photo')}", f"photo of pet {pet_names.get(img.pet_id)}"))
+        gallery_paths = {img.image_path for img in images}
         for p in pets:
-            if p.image_path:
+            # Uploads write the same file to pet_images and the legacy column; export it once
+            if p.image_path and p.image_path not in gallery_paths:
                 n = counter[p.id] = counter.get(p.id, 0) + 1
                 fname = p.image_file_name or PurePosixPath(p.image_path).name
                 data.files.append(FileEntry(p.image_path, f"photos/pets/{pet_folder[p.id]}",
