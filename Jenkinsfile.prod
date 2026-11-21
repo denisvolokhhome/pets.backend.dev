@@ -1,0 +1,119 @@
+// Production pipeline for the Breedly API (api.breedly.us).
+// Jenkins job: "Breedly Prod/breedly-backend-prod", builds branch `master`.
+//
+// Build image -> test that exact image (alembic single head, migrations on an empty DB, pytest)
+// -> push to Harbor with an immutable tag -> deploy on prod-docker via delivery/prod/deploy.sh
+// (pg_dump backup -> alembic upgrade head -> seed -> switch backend -> health check, auto-rollback)
+// -> public smoke test through Cloudflare.
+pipeline {
+    agent any
+
+    options {
+        disableConcurrentBuilds()
+        timestamps()
+        timeout(time: 60, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '30'))
+    }
+
+    parameters {
+        booleanParam(name: 'SKIP_DEPLOY', defaultValue: false, description: 'Build, test and push only; do not touch production')
+    }
+
+    environment {
+        HARBOR_REGISTRY = '192.168.68.110:80'
+        IMAGE_NAME      = 'breedly/breedly-backend'
+        PROD_HOST       = '192.168.68.114'
+        PROD_DIR        = '/home/breedly/breedly-app'
+        KNOWN_HOSTS     = '/var/lib/jenkins/prod_known_hosts'
+        PUBLIC_HEALTH   = 'https://api.breedly.us/health'
+    }
+
+    stages {
+        stage('Prepare') {
+            steps {
+                script {
+                    env.GIT_SHA   = sh(returnStdout: true, script: 'git rev-parse --short=8 HEAD').trim()
+                    env.IMAGE_TAG = "prod-${env.BUILD_NUMBER}-${env.GIT_SHA}"
+                    env.IMAGE     = "${env.HARBOR_REGISTRY}/${env.IMAGE_NAME}:${env.IMAGE_TAG}"
+                    currentBuild.displayName = "#${env.BUILD_NUMBER} ${env.GIT_SHA}"
+                }
+                sh 'git log -1 --format="Releasing %h %s (%an, %ad)"'
+            }
+        }
+
+        stage('Build image') {
+            steps {
+                sh 'docker build --pull --platform linux/amd64 -t "$IMAGE" -f deploy/Dockerfile .'
+            }
+        }
+
+        stage('Test (migrations + pytest)') {
+            steps {
+                sh 'bash deploy/ci/backend-tests.sh "$IMAGE" test-results'
+            }
+            post {
+                always {
+                    junit allowEmptyResults: true, testResults: 'test-results/*.xml'
+                }
+            }
+        }
+
+        stage('Push to Harbor') {
+            steps {
+                withCredentials([string(credentialsId: 'harbor-username', variable: 'HU'), string(credentialsId: 'harbor-password', variable: 'HP')]) {
+                    sh '''
+                        echo "$HP" | docker login "$HARBOR_REGISTRY" -u "$HU" --password-stdin
+                        docker push "$IMAGE"
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy to production') {
+            when { expression { !params.SKIP_DEPLOY } }
+            steps {
+                withCredentials([
+                    sshUserPrivateKey(credentialsId: 'prod-ssh-key', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER'),
+                    // same Harbor account the dev deploy uses (the 'harbor-credentials' ci-puller robot secret is stale)
+                    string(credentialsId: 'harbor-username', variable: 'PULL_U'),
+                    string(credentialsId: 'harbor-password', variable: 'PULL_P')
+                ]) {
+                    sh '''
+                        # quoted helpers: the workspace path contains a space ("Breedly Prod")
+                        ssh_prod() { ssh -i "$SSH_KEY" -o UserKnownHostsFile="$KNOWN_HOSTS" -o StrictHostKeyChecking=yes -o BatchMode=yes "$SSH_USER@$PROD_HOST" "$@"; }
+                        scp_prod() { scp -i "$SSH_KEY" -o UserKnownHostsFile="$KNOWN_HOSTS" -o StrictHostKeyChecking=yes -o BatchMode=yes "$@"; }
+                        scp_prod delivery/docker-compose.prod.yml delivery/prod/deploy.sh "$SSH_USER@$PROD_HOST:$PROD_DIR/"
+                        echo "$PULL_P" | ssh_prod "docker login $HARBOR_REGISTRY -u '$PULL_U' --password-stdin"
+                        ssh_prod "chmod +x $PROD_DIR/deploy.sh && $PROD_DIR/deploy.sh backend $IMAGE_TAG"
+                    '''
+                }
+            }
+        }
+
+        stage('Smoke test') {
+            when { expression { !params.SKIP_DEPLOY } }
+            steps {
+                sh '''
+                    for i in $(seq 1 12); do
+                        code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$PUBLIC_HEALTH" || true)
+                        [ "$code" = "200" ] && { echo "public health check OK ($PUBLIC_HEALTH)"; exit 0; }
+                        echo "attempt $i: $PUBLIC_HEALTH -> $code"; sleep 5
+                    done
+                    echo "public health check failed"; exit 1
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            sh 'docker rmi "$IMAGE" >/dev/null 2>&1 || true'
+        }
+        success {
+            echo "Backend ${env.IMAGE_TAG} is live on https://api.breedly.us"
+        }
+        failure {
+            echo "Production pipeline failed. If it failed after 'Deploy to production' started, see the deploy log above: the previous backend tag is restored automatically when the new one is unhealthy."
+        }
+    }
+}
