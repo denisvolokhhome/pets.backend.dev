@@ -189,6 +189,7 @@ async def test_duplicate_file_names_are_deduplicated(async_session, test_breeder
 @pytest.mark.asyncio
 async def test_run_export_marks_ready(async_session, test_breeder, breedery, storage_root, tmp_path, monkeypatch):
     monkeypatch.setattr(svc, "_storage_root", lambda: storage_root)
+    monkeypatch.setattr(svc, "_allowed_root", lambda: storage_root)
     monkeypatch.setattr(svc, "_export_dir", lambda: tmp_path / "exports")
     export = DataExport(user_id=test_breeder.id)
     async_session.add(export)
@@ -207,6 +208,7 @@ async def test_run_export_marks_ready(async_session, test_breeder, breedery, sto
 @pytest.mark.asyncio
 async def test_run_export_marks_failed(async_session, test_breeder, storage_root, tmp_path, monkeypatch):
     monkeypatch.setattr(svc, "_storage_root", lambda: storage_root)
+    monkeypatch.setattr(svc, "_allowed_root", lambda: storage_root)
     monkeypatch.setattr(svc, "_export_dir", lambda: tmp_path / "exports")
 
     def boom(*a, **k):
@@ -237,7 +239,7 @@ async def test_sweep_expires_files_and_fails_stale_jobs(async_session, test_bree
     async_session.add_all([expired, stale])
     await async_session.commit()
 
-    await svc.sweep_exports(_factory(async_session))
+    await svc.sweep_exports(_factory(async_session), startup=True)
 
     await async_session.refresh(expired)
     await async_session.refresh(stale)
@@ -272,3 +274,160 @@ async def test_same_file_in_gallery_and_legacy_photo_exported_once(async_session
     zf, _ = await _build(async_session, test_breeder, storage_root, tmp_path)
     photos = [n for n in zf.namelist() if n.startswith(ROOT + "photos/pets/Solo_")]
     assert len(photos) == 1
+
+
+# ─── Final-review fixes ────────────────────────────────────────────────────────
+
+def test_export_dir_inside_public_static_dir_is_rejected(tmp_path):
+    """C1: StaticFiles serves the parent of STORAGE_PATH; the export dir must never be under it."""
+    public = tmp_path / "app"
+    with pytest.raises(RuntimeError):
+        svc.assert_export_dir_private(public / "private" / "exports", public)
+    svc.assert_export_dir_private(tmp_path / "var" / "exports", public)  # outside: fine
+
+
+@pytest.mark.asyncio
+async def test_files_outside_upload_dir_are_not_read(async_session, test_breeder, tmp_path):
+    """I1: containment is the upload dir itself, not its (publicly broad) parent."""
+    parent = tmp_path / "srv"
+    uploads = parent / "uploads"
+    uploads.mkdir(parents=True)
+    (parent / "secret.env").write_text("SECRET=1")
+    pet = Pet(user_id=test_breeder.id, name="Sneaky", gender="Male")
+    async_session.add(pet)
+    await async_session.flush()
+    async_session.add(Document(entity_type="pet", entity_id=pet.id, file_path="secret.env",
+                               file_name="secret.env", file_type="application/pdf", file_size=8))
+    await async_session.commit()
+
+    data = await svc.collect_export_data(async_session, test_breeder.id)
+    missing = svc.write_export_zip(data, parent, tmp_path / "o.zip", EXPORT_DATE, allowed_root=uploads)
+    names = zipfile.ZipFile(tmp_path / "o.zip").namelist()
+    assert not any(n.endswith("secret.env") for n in names)
+    assert any("secret.env" in m for m in missing)
+
+
+@pytest.mark.asyncio
+async def test_unreadable_file_is_listed_not_fatal(async_session, test_breeder, breedery, storage_root, tmp_path,
+                                                   monkeypatch):
+    """I7: a file deleted/unreadable between the check and the write goes to `missing`."""
+    real_write = zipfile.ZipFile.write
+
+    def flaky(self, filename, arcname=None, *a, **k):
+        if str(filename).endswith("doc_daisy.pdf"):
+            raise FileNotFoundError(filename)
+        return real_write(self, filename, arcname, *a, **k)
+
+    monkeypatch.setattr(zipfile.ZipFile, "write", flaky)
+    zf, missing = await _build(async_session, test_breeder, storage_root, tmp_path)
+    assert any("Daisy health.pdf" in m for m in missing)
+    assert ROOT + "offspring.csv" in zf.namelist()
+
+
+@pytest.mark.asyncio
+async def test_request_sweep_does_not_fail_long_running_job(async_session, test_breeder):
+    """I4a: only the startup sweep fails in-flight jobs; per-request sweeps just expire files."""
+    old = datetime.now(timezone.utc) - timedelta(hours=3)
+    job = DataExport(user_id=test_breeder.id, status="running", created_at=old)
+    async_session.add(job)
+    await async_session.commit()
+
+    await svc.sweep_exports(_factory(async_session), test_breeder.id)
+    await async_session.refresh(job)
+    assert job.status == "running"
+
+
+@pytest.mark.asyncio
+async def test_startup_sweep_fails_all_active_jobs_and_removes_partial_files(async_session, test_breeder, tmp_path,
+                                                                             monkeypatch):
+    """I4b + I5: after a restart nothing is still running, so fail every active job at once and clean up."""
+    monkeypatch.setattr(svc, "_export_dir", lambda: tmp_path)
+    partial = tmp_path / "partial.zip"
+    partial.write_bytes(b"half")
+    orphan = tmp_path / "orphan.zip"
+    orphan.write_bytes(b"orphan")
+    keep = tmp_path / "keep.zip"
+    keep.write_bytes(b"ready")
+    fresh = DataExport(user_id=test_breeder.id, status="running", file_path=str(partial))
+    ready = DataExport(user_id=test_breeder.id, status="ready", file_path=str(keep),
+                       expires_at=datetime.now(timezone.utc) + timedelta(hours=5))
+    async_session.add_all([fresh, ready])
+    await async_session.commit()
+
+    await svc.sweep_exports(_factory(async_session), startup=True)
+
+    await async_session.refresh(fresh)
+    assert fresh.status == "failed"
+    assert fresh.file_path is None
+    assert not partial.exists()
+    assert not orphan.exists()
+    assert keep.exists()
+
+
+@pytest.mark.asyncio
+async def test_run_export_records_file_path_before_writing(async_session, test_breeder, storage_root, tmp_path,
+                                                           monkeypatch):
+    """I5: the row points at the file while it is being written, so a sweep can find a partial file."""
+    monkeypatch.setattr(svc, "_storage_root", lambda: storage_root)
+    monkeypatch.setattr(svc, "_allowed_root", lambda: storage_root)
+    monkeypatch.setattr(svc, "_export_dir", lambda: tmp_path / "exports")
+    seen = {}
+    real = svc.write_export_zip
+
+    def spy(data, root, dest, d, **k):
+        seen["file_path"] = export.file_path
+        return real(data, root, dest, d, **k)
+
+    monkeypatch.setattr(svc, "write_export_zip", spy)
+    export = DataExport(user_id=test_breeder.id)
+    async_session.add(export)
+    await async_session.commit()
+    await svc.run_export(export.id, _factory(async_session))
+    assert seen["file_path"] and seen["file_path"].endswith(f"{export.id}.zip")
+
+
+@pytest.mark.asyncio
+async def test_run_export_discards_result_if_job_was_failed_meanwhile(async_session, test_breeder, storage_root,
+                                                                      tmp_path, monkeypatch):
+    """I4a: a job swept as failed while running must not flip back to ready."""
+    monkeypatch.setattr(svc, "_storage_root", lambda: storage_root)
+    monkeypatch.setattr(svc, "_allowed_root", lambda: storage_root)
+    monkeypatch.setattr(svc, "_export_dir", lambda: tmp_path / "exports")
+    real = svc.write_export_zip
+    export = DataExport(user_id=test_breeder.id)
+    async_session.add(export)
+    await async_session.commit()
+
+    def write_then_get_swept(data, root, dest, d, **k):
+        seen["dest"] = dest
+        return real(data, root, dest, d, **k)
+
+    seen = {}
+    from sqlalchemy import text
+
+    async def fake_to_thread(fn, *a, **k):
+        # Simulate another process failing the job (raw SQL, so the job's ORM object is stale)
+        res = fn(*a, **k)
+        await async_session.execute(text("UPDATE data_exports SET status='failed' WHERE id=:i"), {"i": export.id})
+        return res
+
+    monkeypatch.setattr(svc, "write_export_zip", write_then_get_swept)
+    monkeypatch.setattr(svc.asyncio, "to_thread", fake_to_thread)
+    await svc.run_export(export.id, _factory(async_session))
+
+    await async_session.refresh(export)
+    assert export.status == "failed"
+    assert not seen["dest"].exists()
+
+
+@pytest.mark.asyncio
+async def test_only_one_active_export_per_user_at_db_level(async_session, test_breeder):
+    """I6: a partial unique index makes concurrent starts impossible to double up."""
+    from sqlalchemy.exc import IntegrityError
+
+    async_session.add(DataExport(user_id=test_breeder.id, status="pending"))
+    await async_session.commit()
+    async_session.add(DataExport(user_id=test_breeder.id, status="running"))
+    with pytest.raises(IntegrityError):
+        await async_session.commit()
+    await async_session.rollback()

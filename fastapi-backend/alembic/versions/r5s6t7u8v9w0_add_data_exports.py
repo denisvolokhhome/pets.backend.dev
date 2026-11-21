@@ -36,9 +36,14 @@ def upgrade() -> None:
     )
     op.create_index('ix_data_exports_user_id', 'data_exports', ['user_id'])
     op.create_index('ix_data_exports_download_token_hash', 'data_exports', ['download_token_hash'])
+    op.create_index(
+        'uq_data_exports_one_active_per_user', 'data_exports', ['user_id'], unique=True,
+        postgresql_where=sa.text("status IN ('pending', 'running')"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_index('uq_data_exports_one_active_per_user', table_name='data_exports')
     op.drop_index('ix_data_exports_download_token_hash', table_name='data_exports')
     op.drop_index('ix_data_exports_user_id', table_name='data_exports')
     op.drop_table('data_exports')

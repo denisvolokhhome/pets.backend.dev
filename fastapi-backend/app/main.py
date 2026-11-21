@@ -112,6 +112,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     storage_path = Path(settings.storage_path)
     storage_path.mkdir(parents=True, exist_ok=True)
     Path(settings.export_path).mkdir(parents=True, exist_ok=True)
+    from app.services.data_export_service import assert_export_dir_private
+    # StaticFiles serves the parent of STORAGE_PATH publicly; exports must never be under it
+    assert_export_dir_private(Path(settings.export_path), Path(settings.storage_path).parent)
 
     # Initialize IP hash key for rate limiter
     from app.middleware.rate_limiter import set_ip_hash_key
@@ -128,7 +131,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         from app.database import async_session_maker
         from app.services.data_export_service import sweep_exports
         try:
-            await sweep_exports(async_session_maker)
+            await sweep_exports(async_session_maker, startup=True)
         except Exception as exc:  # noqa: BLE001 — never block startup on cleanup
             print(f"⚠ Data export sweep failed: {exc}")
     if settings.planner_reminders_enabled and os.environ.get("TESTING") != "1":

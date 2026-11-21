@@ -18,7 +18,7 @@ from decimal import Decimal
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Iterable, Optional
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import settings
@@ -39,7 +39,6 @@ from app.models.pet_image import PetImage
 logger = logging.getLogger(__name__)
 
 READY_LIFETIME = timedelta(hours=24)
-STALE_JOB_AGE = timedelta(hours=1)
 
 # Columns never written to the CSVs (internal or raw storage paths)
 _EXCLUDED = {"user_id", "coordinates", "error", "image_path", "image_file_name", "is_deleted"}
@@ -52,8 +51,24 @@ def _storage_root() -> Path:
     return Path(settings.storage_path).parent
 
 
+def _allowed_root() -> Path:
+    """Only files inside the upload dir itself may go into an archive."""
+    return Path(settings.storage_path)
+
+
 def _export_dir() -> Path:
     return Path(settings.export_path)
+
+
+def assert_export_dir_private(export_dir: Path, public_dir: Path) -> None:
+    """Refuse an export dir that StaticFiles would serve publicly."""
+    exp = export_dir.resolve()
+    pub = public_dir.resolve()
+    if exp == pub or exp.is_relative_to(pub):
+        raise RuntimeError(
+            f"EXPORT_PATH ({exp}) is inside the publicly served storage directory ({pub}); "
+            "point it somewhere outside, e.g. /var/lib/breedly/exports"
+        )
 
 
 def safe_name(name: Optional[str], fallback: str) -> str:
@@ -259,12 +274,18 @@ def _unique(path: str, used: set[str]) -> str:
         i += 1
 
 
-def write_export_zip(data: ExportData, storage_root: Path, dest: Path, export_date: date) -> list[str]:
-    """Write the archive to `dest`. Returns descriptions of files that were missing on disk."""
+def write_export_zip(
+    data: ExportData, storage_root: Path, dest: Path, export_date: date, allowed_root: Optional[Path] = None
+) -> list[str]:
+    """Write the archive to `dest`. Returns descriptions of files that were missing on disk.
+
+    File sources resolve against `storage_root`; only files inside `allowed_root` (default:
+    `storage_root`) are read.
+    """
     root = f"breedly-export-{export_date.isoformat()}"
     missing: list[str] = []
     used: set[str] = set()
-    root_resolved = storage_root.resolve()
+    root_resolved = (allowed_root or storage_root).resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(dest, "w", allowZip64=True) as zf:
         for name, (header, rows) in data.tables.items():
@@ -276,7 +297,13 @@ def write_export_zip(data: ExportData, storage_root: Path, dest: Path, export_da
                 missing.append(f"{f.folder}/{f.name} ({f.label})")
                 continue
             arc = _unique(f"{root}/{f.folder}/{f.name}", used)
-            zf.write(src, arc, compress_type=zipfile.ZIP_STORED)
+            try:
+                zf.write(src, arc, compress_type=zipfile.ZIP_STORED)
+            except OSError:
+                # Deleted or unreadable since the check: list it, don't fail the whole export
+                used.discard(arc)
+                missing.append(f"{f.folder}/{f.name} ({f.label})")
+                continue
             added += 1
         zf.writestr(f"{root}/README.txt", _readme(data, export_date, added, missing),
                     compress_type=zipfile.ZIP_DEFLATED)
@@ -322,51 +349,75 @@ async def run_export(export_id: uuid.UUID, session_factory: SessionFactory) -> N
         export = await session.get(DataExport, export_id)
         if export is None:
             return
-        export.status = "running"
-        await session.commit()
         dest = _export_dir() / f"{export.id}.zip"
+        user_id = export.user_id
+        # Record the path before writing so a sweep can always find a partial file
+        export.status = "running"
+        export.file_path = str(dest)
+        await session.commit()
         try:
-            data = await collect_export_data(session, export.user_id)
+            data = await collect_export_data(session, user_id)
+            await session.commit()  # don't hold a transaction open while the ZIP is written
             today = datetime.now(timezone.utc).date()
-            await asyncio.to_thread(write_export_zip, data, _storage_root(), dest, today)
+            await asyncio.to_thread(write_export_zip, data, _storage_root(), dest, today,
+                                    allowed_root=_allowed_root())
             now = datetime.now(timezone.utc)
-            export.status = "ready"
-            export.file_path = str(dest)
-            export.file_size = dest.stat().st_size
-            export.completed_at = now
-            export.expires_at = now + READY_LIFETIME
-            export.error = None
+            result = await session.execute(
+                update(DataExport)
+                .where(DataExport.id == export_id, DataExport.status == "running")
+                .values(status="ready", file_path=str(dest), file_size=dest.stat().st_size,
+                        completed_at=now, expires_at=now + READY_LIFETIME, error=None)
+            )
             await session.commit()
-        except Exception as exc:  # noqa: BLE001 — any failure must end as a failed export
+            if result.rowcount == 0:
+                # Failed by a sweep (or replaced) while running: don't resurrect it
+                remove_file(str(dest))
+        except Exception:  # noqa: BLE001 — any failure must end as a failed export
             logger.exception("Data export %s failed", export_id)
             await session.rollback()
             remove_file(str(dest))
-            export = await session.get(DataExport, export_id)
-            if export is not None:
-                export.status = "failed"
-                export.file_path = None
-                export.error = (str(exc) or exc.__class__.__name__)[:500]
-                export.completed_at = datetime.now(timezone.utc)
-                await session.commit()
+            await session.execute(
+                update(DataExport).where(DataExport.id == export_id).values(
+                    status="failed", file_path=None, completed_at=datetime.now(timezone.utc),
+                    error="Something went wrong while building your archive. Please try again.",
+                )
+            )
+            await session.commit()
 
 
-async def sweep_exports(session_factory: SessionFactory, user_id: Optional[uuid.UUID] = None) -> None:
-    """Delete files of expired exports and fail jobs stuck since before a restart."""
+async def sweep_exports(
+    session_factory: SessionFactory, user_id: Optional[uuid.UUID] = None, startup: bool = False
+) -> None:
+    """Delete files of expired exports.
+
+    With `startup=True` (single process, so nothing can still be running) also fail every
+    pending/running job, remove its partial file, and delete orphan ZIPs no ready row points to.
+    """
     now = datetime.now(timezone.utc)
     async with session_factory() as session:
-        q = select(DataExport).where(
-            or_(
-                (DataExport.file_path.is_not(None)) & (DataExport.expires_at < now),
-                DataExport.status.in_(("pending", "running")) & (DataExport.created_at < now - STALE_JOB_AGE),
-            )
-        )
+        cond = (DataExport.file_path.is_not(None)) & (DataExport.expires_at < now)
+        if startup:
+            cond = or_(cond, DataExport.status.in_(("pending", "running")))
+        q = select(DataExport).where(cond)
         if user_id is not None:
             q = q.where(DataExport.user_id == user_id)
         for export in (await session.execute(q)).scalars().all():
             if export.status in ("pending", "running"):
                 export.status = "failed"
                 export.error = "The export was interrupted. Please try again."
-            if export.expires_at and export.expires_at < now:
+                remove_file(export.file_path)
+                export.file_path = None
+            elif export.expires_at and export.expires_at < now:
                 remove_file(export.file_path)
                 export.file_path = None
         await session.commit()
+
+        if startup:
+            live = set((await session.execute(
+                select(DataExport.file_path).where(DataExport.file_path.is_not(None))
+            )).scalars().all())
+            export_dir = _export_dir()
+            if export_dir.is_dir():
+                for f in export_dir.glob("*.zip"):
+                    if str(f) not in live:
+                        remove_file(str(f))

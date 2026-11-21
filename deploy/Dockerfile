@@ -39,7 +39,7 @@ COPY ../fastapi-backend/ .
 
 # Create storage directory
 RUN mkdir -p storage/app
-RUN mkdir -p private/exports
+RUN mkdir -p /var/lib/breedly/exports
 
 # Expose port
 EXPOSE 8000

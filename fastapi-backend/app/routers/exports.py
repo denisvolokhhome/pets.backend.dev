@@ -9,6 +9,7 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_maker, get_async_session
@@ -78,7 +79,15 @@ async def start_export(
 
     export = DataExport(user_id=user.id, status="pending")
     session.add(export)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        # A concurrent request started one first: return that one
+        await session.rollback()
+        active = (await session.execute(
+            select(DataExport).where(DataExport.user_id == user.id, DataExport.status.in_(("pending", "running")))
+        )).scalar_one()
+        return _read(active)
     await session.refresh(export)
     background_tasks.add_task(svc.run_export, export.id, session_factory)
     return _read(export)
