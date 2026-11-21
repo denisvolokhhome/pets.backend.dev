@@ -113,7 +113,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     storage_path.mkdir(parents=True, exist_ok=True)
     Path(settings.export_path).mkdir(parents=True, exist_ok=True)
     from app.services.data_export_service import assert_export_dir_private
-    # StaticFiles serves the parent of STORAGE_PATH publicly; exports must never be under it
+    # Defence in depth: keep exports out of the whole storage tree (only STORAGE_PATH itself is served)
     assert_export_dir_private(Path(settings.export_path), Path(settings.storage_path).parent)
 
     # Initialize IP hash key for rate limiter
@@ -301,12 +301,17 @@ app.add_middleware(
 
 # Mount static files for image serving
 # Ensure storage directory exists before mounting
-storage_path = Path(settings.storage_path).parent  # Mount parent directory to serve both app/ and other subdirectories
-storage_path.mkdir(parents=True, exist_ok=True)
+#
+# Stored paths are relative to the PARENT of STORAGE_PATH (e.g. "storage/<file>" when
+# STORAGE_PATH=/app/storage), and URLs are "/storage/<stored path>". Serve only the upload
+# directory itself, at "/storage/<its name>", so those URLs keep working while nothing
+# around it is public. (Serving the parent exposed /app — the whole source tree — in prod.)
+upload_dir = Path(settings.storage_path)
+upload_dir.mkdir(parents=True, exist_ok=True)
 
 app.mount(
-    settings.storage_url,
-    StaticFiles(directory=str(storage_path)),
+    f"{settings.storage_url.rstrip('/')}/{upload_dir.resolve().name}",
+    StaticFiles(directory=str(upload_dir)),
     name="storage"
 )
 
