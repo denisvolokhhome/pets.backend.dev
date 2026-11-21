@@ -7,7 +7,18 @@ from app.models.user import User
 from app.models.pet import Pet
 from app.models.breed import Breed
 from app.models.breeder_review import BreederReview
+from app.models.offspring import Offspring
 from app.schemas.breeder import BreederSearchResult, BreedInfo
+
+
+# 2 decimal places ≈ 1.1 km of latitude: close enough for "near you", far enough
+# from the breeder's home address.
+PUBLIC_COORD_DECIMALS = 2
+
+
+def approximate_coordinate(value: float) -> float:
+    """Coarsen a coordinate for public display."""
+    return round(float(value), PUBLIC_COORD_DECIMALS)
 
 
 class BreederService:
@@ -20,7 +31,8 @@ class BreederService:
         longitude: float,
         radius_miles: float,
         breed_id: Optional[int] = None,
-        animal_kind: Optional[str] = None
+        animal_kind: Optional[str] = None,
+        has_offspring: bool = False,
     ) -> List[BreederSearchResult]:
         """
         Search for breeding locations within radius using PostGIS.
@@ -70,6 +82,19 @@ class BreederService:
             .subquery()
         )
 
+        # Available, published offspring per breeder (offspring belong to a
+        # user, not a location, so every location of a breeder shares the count)
+        offspring_subq = (
+            select(
+                Offspring.user_id.label('breeder_id'),
+                func.count(Offspring.id).label('offspring_count'),
+            )
+            .where(Offspring.status == 'Available', Offspring.is_published == True)
+            .group_by(Offspring.user_id)
+            .subquery()
+        )
+        offspring_count = func.coalesce(offspring_subq.c.offspring_count, 0)
+
         # Build base query for locations with pets
         # We need to find locations that:
         # 1. Are user locations (location_type='user')
@@ -82,6 +107,7 @@ class BreederService:
                 Location.id.label('location_id'),
                 Location.user_id.label('user_id'),
                 User.breedery_name.label('breeder_name'),
+                User.name.label('owner_name'),
                 func.ST_Y(Location.coordinates).label('latitude'),
                 func.ST_X(Location.coordinates).label('longitude'),
                 (func.ST_Distance(
@@ -93,10 +119,14 @@ class BreederService:
                 Location.name.label('location_description'),
                 func.coalesce(review_subq.c.avg_rating, 0).label('rating'),
                 func.coalesce(review_subq.c.review_count, 0).label('review_count'),
+                offspring_count.label('available_offspring_count'),
+                Location.phone.label('phone'),
+                Location.show_phone.label('show_phone'),
             )
             .join(User, Location.user_id == User.id)
             .join(Pet, Pet.location_id == Location.id)
             .outerjoin(review_subq, review_subq.c.breeder_id == Location.user_id)
+            .outerjoin(offspring_subq, offspring_subq.c.breeder_id == Location.user_id)
             .where(
                 Location.location_type == 'user',  # Only breeding locations
                 Location.is_published == True,  # Only published locations visible on map
@@ -117,6 +147,9 @@ class BreederService:
         if breed_id:
             query = query.where(Pet.breed_id == breed_id)
         
+        if has_offspring:
+            query = query.where(offspring_count > 0)
+
         # Filter by animal kind if specified
         if animal_kind:
             query = query.join(Breed, Pet.breed_id == Breed.id).where(Breed.kind == animal_kind)
@@ -126,11 +159,15 @@ class BreederService:
             Location.id,
             Location.user_id,
             User.breedery_name,
+            User.name,
             Location.coordinates,
             User.profile_image_path,
             Location.name,
             review_subq.c.avg_rating,
             review_subq.c.review_count,
+            offspring_subq.c.offspring_count,
+            Location.phone,
+            Location.show_phone,
         )
         
         # Order by distance (nearest first)
@@ -171,10 +208,14 @@ class BreederService:
             results.append(BreederSearchResult(
                 location_id=loc.location_id,
                 user_id=loc.user_id,
-                breeder_name=loc.breeder_name or "Breeder, who didn't named himself",
-                latitude=loc.latitude,
-                longitude=loc.longitude,
-                distance=round(loc.distance, 1),  # Round to 1 decimal place
+                # Kennel name, else the person's name, else a neutral label
+                breeder_name=loc.breeder_name or loc.owner_name or "Breeder",
+                # Public map shows an approximate spot, never the exact address:
+                # snap to a ~1 km grid and give distance in whole miles, so the
+                # point can't be recovered by searching from several centres.
+                latitude=approximate_coordinate(loc.latitude),
+                longitude=approximate_coordinate(loc.longitude),
+                distance=float(max(1, round(loc.distance))),
                 available_breeds=[
                     BreedInfo(
                         breed_id=b.breed_id,
@@ -187,6 +228,9 @@ class BreederService:
                 location_description=loc.location_description,
                 rating=float(loc.rating) if loc.rating else None,
                 review_count=int(loc.review_count) if loc.review_count else 0,
+                available_offspring_count=int(loc.available_offspring_count or 0),
+                # Never send a phone the breeder chose to hide
+                phone=loc.phone if loc.show_phone and loc.phone else None,
             ))
         
         return results

@@ -9,6 +9,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import Settings
 from app.models.invoice import Invoice
 from app.models.location import Location
 from app.models.offspring import Offspring
@@ -18,6 +19,17 @@ from app.models.subscription import Subscription
 from app.services.billing_audit_logger import log_billing_event
 
 logger = logging.getLogger(__name__)
+
+settings = Settings()
+
+
+def billing_enabled() -> bool:
+    """Single source of truth for the ENABLE_BILLING flag.
+
+    While it is off, breeders stay on the free plan and no plan usage limits are
+    enforced (pets, published locations, offsprings, CSV import caps).
+    """
+    return settings.enable_billing
 
 
 class BillingService:
@@ -406,6 +418,10 @@ class BillingService:
         Raises:
             HTTPException: 403 with USAGE_LIMIT_EXCEEDED if at or above limit
         """
+        if not billing_enabled():
+            # Billing is off: no paid tiers to upgrade to, so no limits either.
+            return
+
         # Get the user's subscription
         sub_result = await session.execute(
             select(Subscription)

@@ -29,7 +29,10 @@ from app.schemas.message import (
     UnreadCountResponse,
     MessageSendResponse,
 )
-from app.schemas.offspring import OffspringBase, OffspringCreate, OffspringUpdate, OffspringRead, OffspringListResponse
+from app.schemas.offspring import (
+    OffspringBase, OffspringCreate, OffspringUpdate, OffspringRead, OffspringListResponse,
+    NearbyOffspringRead, NearbyOffspringListResponse, BreederOffspringGroup, OffspringGroupsResponse,
+)
 from app.schemas.offspring_image import OffspringImageRead
 from app.schemas.offspring_favorite import OffspringFavoriteRead
 from app.schemas.notification import NotificationRead
@@ -37,6 +40,10 @@ from app.schemas.pet_import import PetImportRow, ImportPayload, ImportError, Imp
 
 # Rebuild models to resolve forward references
 OffspringRead.model_rebuild()
+NearbyOffspringRead.model_rebuild()
+NearbyOffspringListResponse.model_rebuild()
+BreederOffspringGroup.model_rebuild()
+OffspringGroupsResponse.model_rebuild()
 OffspringFavoriteRead.model_rebuild()
 
 __all__ = [

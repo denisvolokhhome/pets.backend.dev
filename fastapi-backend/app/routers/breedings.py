@@ -198,6 +198,7 @@ async def list_litters(
                 "microchip": None,  # Offsprings don't have microchip field
                 "status": offspring.status,
                 "price": float(offspring.price) if offspring.price is not None else None,
+                "is_published": bool(offspring.is_published),
             })
         
         response_litters.append({
@@ -285,6 +286,7 @@ async def get_litter(
             "microchip": None,  # Offsprings don't have microchip field
             "status": offspring.status,
             "price": float(offspring.price) if offspring.price is not None else None,
+            "is_published": bool(offspring.is_published),
         })
     
     # Return LitterResponse format

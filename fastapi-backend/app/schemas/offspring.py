@@ -103,6 +103,37 @@ class OffspringRead(OffspringBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class NearbyOffspringRead(OffspringRead):
+    """Public offspring suggested from a nearby breeder."""
+    breeder_name: str
+    distance: float  # whole miles from the search centre
+
+
+class NearbyOffspringListResponse(BaseModel):
+    """Nearby offspring suggestions."""
+    offsprings: List[NearbyOffspringRead]
+
+
+class BreederOffspringGroup(BaseModel):
+    """A breeder and their available offspring, for the map's Offspring view."""
+    breeder_id: uuid.UUID
+    breeder_name: str
+    thumbnail_url: Optional[str] = None
+    distance: float  # whole miles to the breeder's nearest location
+    rating: Optional[float] = None
+    review_count: int = 0
+    available_count: int
+    offsprings: List[OffspringRead]
+
+
+class OffspringGroupsResponse(BaseModel):
+    """Paged breeders (nearest first) with their available offspring."""
+    groups: List[BreederOffspringGroup]
+    total_breeders: int
+    limit: int
+    offset: int
+
+
 class OffspringListResponse(BaseModel):
     """Schema for paginated offspring list response."""
     offsprings: List[OffspringRead]

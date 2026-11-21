@@ -41,6 +41,10 @@ class BreederSearchResult(BaseModel):
     location_description: Optional[str] = Field(None, description="Description or name of the breeding location")
     rating: Optional[float] = Field(None, ge=0, le=5, description="Average breeder rating from reviews")
     review_count: int = Field(0, ge=0, description="Total number of reviews for this breeder")
+    available_offspring_count: int = Field(
+        0, ge=0, description="Breeder's published offspring with status Available (all locations)"
+    )
+    phone: Optional[str] = Field(None, description="Location phone, only when the breeder chose to show it")
     
     @validator('distance')
     def round_distance(cls, v):

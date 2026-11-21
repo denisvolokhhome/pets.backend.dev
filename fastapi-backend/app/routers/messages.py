@@ -56,6 +56,79 @@ from pydantic import BaseModel, Field
 class DirectMessageCreate(BaseModel):
     receiver_id: UUID
     message: str = Field(..., min_length=1, max_length=2000)
+    # Continue an existing conversation; without it the existing direct thread
+    # between the two users is reused (or a new one is started).
+    thread_id: Optional[UUID] = None
+
+
+def display_name(user: Optional[User]) -> str:
+    """Public name for a user. Never falls back to the email address (PII)."""
+    if user is None:
+        return "Unknown"
+    return user.name or getattr(user, "breedery_name", None) or "Breedly user"
+
+
+async def get_thread_for_participant(
+    session: AsyncSession, thread_id: UUID, user: User
+) -> Message:
+    """Return the thread's first message if ``user`` is one of its two participants.
+
+    Participants are fixed by the thread's first message. Later messages can't
+    widen access, so a stranger who learns a thread id can neither read it nor
+    post into it. Raises 404 otherwise (don't reveal that the thread exists).
+    """
+    first = (await session.execute(
+        select(Message).where(Message.thread_id == thread_id)
+        .order_by(Message.created_at.asc()).limit(1)
+    )).scalar_one_or_none()
+    if first is None or user.id not in (first.sender_id, first.receiver_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thread not found or access denied",
+        )
+    return first
+
+
+def other_participant(first: Message, user: User) -> UUID:
+    return first.receiver_id if first.sender_id == user.id else first.sender_id
+
+
+def reject_card_spoofing(content: str) -> None:
+    """Typed cards (location/documents) are created by the server only; users can't fake them."""
+    import json
+    try:
+        parsed = json.loads(content)
+    except (ValueError, TypeError):
+        return
+    if isinstance(parsed, dict) and "__type" in parsed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Message content is not allowed",
+        )
+
+
+async def notify_new_message(
+    session: AsyncSession, receiver_id: UUID, title: str, text: str, message_id: UUID
+) -> None:
+    """Best effort: the message is already committed, so a notification failure
+    must not turn into a 500 (the client would retry and send a duplicate)."""
+    try:
+        if await notification_preference_service.should_send_notification(
+            db=session, user_id=receiver_id, notification_type="message_received"
+        ):
+            await notification_service.create_notification(
+                session,
+                NotificationCreate(
+                    user_id=receiver_id,
+                    type="message_received",
+                    title=title,
+                    message=text,
+                    related_id=message_id,
+                    related_type="message",
+                ),
+            )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Failed to send notification for message {message_id}: {e}")
 
 
 @router.post("/direct", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
@@ -65,60 +138,72 @@ async def send_direct_message(
     session: AsyncSession = Depends(get_async_session),
 ) -> Message:
     """
-    Send a direct message from the authenticated user to any other user.
+    Send a direct (non-offspring) message.
 
-    Used for service provider contact, breeder contact, and general messaging.
-    Requires authentication — no guest messaging.
+    - With ``thread_id``: reply in that conversation. The sender must be one of
+      its participants; the receiver is always the other participant.
+    - Without it: reuse the existing direct conversation between the two users,
+      or start one. New conversations can only be started with a breeder (or a
+      service provider while ENABLE_SERVICE_PROVIDERS is on), so this can't be
+      used to message/email arbitrary accounts.
     """
-    # Verify receiver exists
-    receiver_result = await session.execute(
-        select(User).where(User.id == message_data.receiver_id, User.is_active == True)
-    )
-    receiver = receiver_result.scalar_one_or_none()
-    if receiver is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recipient not found")
+    reject_card_spoofing(message_data.message)
 
-    # Cannot message yourself
-    if message_data.receiver_id == user.id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot send a message to yourself")
+    if message_data.thread_id:
+        first = await get_thread_for_participant(session, message_data.thread_id, user)
+        if first.context_type is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Use the offspring messaging endpoint for this conversation",
+            )
+        thread_id = message_data.thread_id
+        receiver_id = other_participant(first, user)
+    else:
+        receiver_id = message_data.receiver_id
+        if receiver_id == user.id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot send a message to yourself")
+        receiver = (await session.execute(
+            select(User).where(User.id == receiver_id, User.is_active == True)  # noqa: E712
+        )).scalar_one_or_none()
+        if receiver is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recipient not found")
 
-    thread_id = str(uuid.uuid4())
+        existing = (await session.execute(
+            select(Message.thread_id).where(
+                Message.context_type.is_(None),
+                ((Message.sender_id == user.id) & (Message.receiver_id == receiver_id))
+                | ((Message.sender_id == receiver_id) & (Message.receiver_id == user.id)),
+            ).order_by(Message.created_at.asc()).limit(1)
+        )).scalar_one_or_none()
+        if existing is not None:
+            thread_id = existing
+        else:
+            from app.dependencies import settings as app_settings
+            can_start = receiver.is_breeder or (
+                app_settings.enable_service_providers
+                and receiver.account_type == "service"
+            )
+            if not can_start:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recipient not found")
+            thread_id = uuid.uuid4()
 
     message = Message(
         sender_id=user.id,
-        receiver_id=message_data.receiver_id,
+        receiver_id=receiver_id,
         thread_id=thread_id,
         content=message_data.message,
         is_read=False,
     )
     session.add(message)
-    await session.flush()
-
-    # Send notification to receiver
-    try:
-        should_notify = await notification_preference_service.should_send_notification(
-            db=session,
-            user_id=message_data.receiver_id,
-            notification_type="message_received",
-        )
-        if should_notify:
-            sender_name = user.name or user.email
-            await notification_service.create_notification(
-                db=session,
-                notification_data=NotificationCreate(
-                    user_id=message_data.receiver_id,
-                    type="message_received",
-                    title="New message",
-                    message=f"You have a new message from {sender_name}",
-                ),
-            )
-    except Exception as e:
-        logger.warning(f"Failed to send notification for direct message: {e}")
-
     await session.commit()
     await session.refresh(message)
 
-    logger.info(f"Direct message {message.id} sent from {user.id} to {message_data.receiver_id}")
+    await notify_new_message(
+        session, receiver_id, "New message",
+        f"You have a new message from {display_name(user)}", message.id,
+    )
+
+    logger.info(f"Direct message {message.id} sent from {user.id} to {receiver_id} in thread {thread_id}")
     return message
 
 
@@ -175,7 +260,8 @@ async def list_messages(
     if status_filter == "read":
         query = query.where(Message.is_read == True)
     elif status_filter == "unread":
-        query = query.where(Message.is_read == False)
+        # Your own sent-but-unopened messages aren't "unread" for you
+        query = query.where(Message.is_read == False, Message.receiver_id == user.id)
     # 'all' means no filter
     
     # Apply sorting
@@ -226,10 +312,10 @@ async def list_messages(
                     content_preview += "..."
         
         # Get sender info
-        sender_name = msg.sender.name if msg.sender and msg.sender.name else msg.sender.email if msg.sender else "Unknown"
+        sender_name = display_name(msg.sender)
         
         # Get receiver info
-        receiver_name = msg.receiver.name if msg.receiver and msg.receiver.name else msg.receiver.email if msg.receiver else "Unknown"
+        receiver_name = display_name(msg.receiver)
         
         message_items.append(MessageListItem(
             id=msg.id,
@@ -455,13 +541,38 @@ async def send_offspring_message(
             detail="Offspring not found"
         )
     
-    # Get receiver_id from request or default to offspring owner
-    receiver_id = getattr(message_data, 'receiver_id', None) or offspring.user_id
-    
-    # Get thread_id from request or generate new one
-    thread_id = getattr(message_data, 'thread_id', None) or uuid.uuid4()
-    
-    # Create new message
+    reject_card_spoofing(message_data.message)
+
+    # The receiver is never taken from the client (it allowed messaging/emailing
+    # arbitrary users "about" any offspring). It is either the other participant
+    # of the thread being continued, or the offspring's owner.
+    if message_data.thread_id:
+        first = await get_thread_for_participant(session, message_data.thread_id, user)
+        if first.context_type != "offspring" or first.context_id != offspring_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Thread not found or access denied",
+            )
+        thread_id = message_data.thread_id
+        receiver_id = other_participant(first, user)
+    else:
+        receiver_id = offspring.user_id
+        if receiver_id == user.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot send a message to yourself",
+            )
+        # Reuse the existing conversation about this offspring instead of
+        # starting a second one (e.g. two quick sends, or a stale page).
+        thread_id = (await session.execute(
+            select(Message.thread_id).where(
+                Message.context_type == "offspring",
+                Message.context_id == offspring_id,
+                ((Message.sender_id == user.id) & (Message.receiver_id == receiver_id))
+                | ((Message.sender_id == receiver_id) & (Message.receiver_id == user.id)),
+            ).order_by(Message.created_at.asc()).limit(1)
+        )).scalar_one_or_none() or uuid.uuid4()
+
     message = Message(
         sender_id=user.id,
         receiver_id=receiver_id,
@@ -471,35 +582,22 @@ async def send_offspring_message(
         context_id=offspring_id,
         is_read=False,
     )
-    
+
     session.add(message)
     await session.commit()
     await session.refresh(message)
-    
-    # Create notification for receiver (only if they have it enabled)
-    should_notify = await notification_preference_service.should_send_notification(
-        db=session,
-        user_id=receiver_id,
-        notification_type="message_received"
+
+    await notify_new_message(
+        session, receiver_id, "New message about offspring",
+        f"{display_name(user)} sent you a message about {offspring.name or 'an offspring'}",
+        message.id,
     )
-    
-    if should_notify:
-        sender_name = user.name if user.name else user.email
-        notification_data = NotificationCreate(
-            user_id=receiver_id,
-            type="message_received",
-            title="New message about offspring",
-            message=f"{sender_name} sent you a message about {offspring.name or 'an offspring'}",
-            related_id=message.id,
-            related_type="message"
-        )
-        await notification_service.create_notification(session, notification_data)
-    
+
     logger.info(
         f"Message created: {message.id} from user {user.id} "
         f"to user {receiver_id} about offspring {offspring_id} in thread {thread_id}"
     )
-    
+
     return message
 
 
@@ -535,13 +633,9 @@ async def get_thread_messages(
             detail="Thread not found"
         )
     
-    # Verify user is a participant in the thread
-    user_is_participant = any(
-        msg.sender_id == user.id or msg.receiver_id == user.id
-        for msg in messages
-    )
-    
-    if not user_is_participant:
+    # Participants are fixed by the first message; later (possibly injected)
+    # messages must not grant access.
+    if user.id not in (messages[0].sender_id, messages[0].receiver_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Thread not found or access denied"
@@ -607,7 +701,7 @@ async def get_thread_messages(
     # Build thread message responses
     thread_messages = []
     for msg in messages:
-        sender_name = msg.sender.name if msg.sender and msg.sender.name else msg.sender.email if msg.sender else "Unknown"
+        sender_name = display_name(msg.sender)
         sender_is_breeder = msg.sender.is_breeder if msg.sender else False
         
         # Get profile image URL
@@ -755,18 +849,7 @@ async def share_location_in_thread(
         )
 
     # Verify user is a participant in this thread
-    thread_query = select(Message).where(
-        Message.thread_id == thread_id,
-        (Message.sender_id == user.id) | (Message.receiver_id == user.id)
-    ).limit(1)
-    thread_result = await session.execute(thread_query)
-    thread_msg = thread_result.scalar_one_or_none()
-
-    if thread_msg is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Thread not found or access denied"
-        )
+    thread_msg = await get_thread_for_participant(session, thread_id, user)
 
     # Get the other participant as receiver
     if thread_msg.sender_id == user.id:
@@ -845,24 +928,10 @@ async def share_location_in_thread(
     await session.commit()
     await session.refresh(message)
 
-    # Create notification
-    should_notify = await notification_preference_service.should_send_notification(
-        db=session,
-        user_id=receiver_id,
-        notification_type="message_received"
+    await notify_new_message(
+        session, receiver_id, "Location shared",
+        f"{display_name(user)} shared their location with you", message.id,
     )
-
-    if should_notify:
-        sender_name = user.name if user.name else user.email
-        notification_data = NotificationCreate(
-            user_id=receiver_id,
-            type="message_received",
-            title="Location shared",
-            message=f"{sender_name} shared their location with you",
-            related_id=message.id,
-            related_type="message"
-        )
-        await notification_service.create_notification(session, notification_data)
 
     logger.info(f"Breeder {user.id} shared location in thread {thread_id}")
 
@@ -888,14 +957,7 @@ async def share_documents_in_thread(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only breeders can share documents")
 
     # Verify thread participation
-    thread_query = select(Message).where(
-        Message.thread_id == thread_id,
-        (Message.sender_id == user.id) | (Message.receiver_id == user.id)
-    ).limit(1)
-    thread_msg = (await session.execute(thread_query)).scalar_one_or_none()
-
-    if thread_msg is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found or access denied")
+    thread_msg = await get_thread_for_participant(session, thread_id, user)
 
     # Must be about an offspring
     if thread_msg.context_type != "offspring" or not thread_msg.context_id:
@@ -946,23 +1008,11 @@ async def share_documents_in_thread(
     await session.commit()
     await session.refresh(message)
 
-    # Notification
-    should_notify = await notification_preference_service.should_send_notification(
-        db=session, user_id=receiver_id, notification_type="message_received"
+    await notify_new_message(
+        session, receiver_id, "Documents shared",
+        f"{display_name(user)} shared documents for {offspring.name or 'an offspring'} with you",
+        message.id,
     )
-    if should_notify:
-        sender_name = user.name or user.email
-        await notification_service.create_notification(
-            session,
-            NotificationCreate(
-                user_id=receiver_id,
-                type="message_received",
-                title="Documents shared",
-                message=f"{sender_name} shared documents for {offspring.name or 'an offspring'} with you",
-                related_id=message.id,
-                related_type="message",
-            ),
-        )
 
     logger.info(f"Breeder {user.id} shared documents in thread {thread_id}")
     return message
