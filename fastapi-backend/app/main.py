@@ -23,6 +23,7 @@ from app.routers.service_categories import router as service_categories_router
 from app.routers.services import router as services_router
 from app.routers import breeding_planner
 from app.routers import waitlist
+from app.routers import exports
 
 # Configure logging
 logging.basicConfig(
@@ -110,6 +111,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup: Create storage directory if it doesn't exist
     storage_path = Path(settings.storage_path)
     storage_path.mkdir(parents=True, exist_ok=True)
+    Path(settings.export_path).mkdir(parents=True, exist_ok=True)
+    from app.services.data_export_service import assert_export_dir_private
+    # StaticFiles serves the parent of STORAGE_PATH publicly; exports must never be under it
+    assert_export_dir_private(Path(settings.export_path), Path(settings.storage_path).parent)
 
     # Initialize IP hash key for rate limiter
     from app.middleware.rate_limiter import set_ip_hash_key
@@ -122,6 +127,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Breeding milestone reminders (never under tests)
     from app.services.breeding_reminder_service import start_reminder_loop, stop_reminder_loop
     reminder_task = None
+    if os.environ.get("TESTING") != "1":
+        from app.database import async_session_maker
+        from app.services.data_export_service import sweep_exports
+        try:
+            await sweep_exports(async_session_maker, startup=True)
+        except Exception as exc:  # noqa: BLE001 — never block startup on cleanup
+            print(f"⚠ Data export sweep failed: {exc}")
     if settings.planner_reminders_enabled and os.environ.get("TESTING") != "1":
         reminder_task = start_reminder_loop(settings.planner_reminder_interval_seconds)
 
@@ -333,6 +345,7 @@ app.include_router(support.router, tags=["support"])
 app.include_router(genealogy.router, tags=["genealogy"])
 app.include_router(billing.router, tags=["billing"])
 app.include_router(reviews.router, tags=["reviews"])
+app.include_router(exports.router)
 app.include_router(pet_import.router)
 app.include_router(service_categories_router)
 app.include_router(services_router)

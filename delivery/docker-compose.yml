@@ -87,6 +87,7 @@ services:
       # File Storage
       STORAGE_PATH: /app/storage
       STORAGE_URL: /storage
+      EXPORT_PATH: /var/lib/breedly/exports
       
       # OAuth
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_CLIENT_ID}
@@ -142,6 +143,7 @@ services:
       ADMIN_API_KEY: ${ADMIN_API_KEY}
     volumes:
       - backend_storage:/app/storage
+      - backend_exports:/var/lib/breedly/exports
     depends_on:
       postgres:
         condition: service_healthy
@@ -205,6 +207,8 @@ volumes:
   redis_data:
     driver: local
   backend_storage:
+    driver: local
+  backend_exports:
     driver: local
 
 networks:

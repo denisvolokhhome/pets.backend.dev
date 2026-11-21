@@ -27,6 +27,7 @@ from app.models.waitlist_entry import WaitlistEntry
 from app.models.waitlist_event import WaitlistEvent
 from app.models.service_category import ServiceCategory, user_service_categories
 from app.models.service import Service, ServiceImage, service_locations
+from app.models.data_export import DataExport
 
 __all__ = [
     "User",
@@ -61,4 +62,5 @@ __all__ = [
     "Service",
     "ServiceImage",
     "service_locations",
+    "DataExport",
 ]

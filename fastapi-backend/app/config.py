@@ -33,6 +33,10 @@ class Settings(BaseSettings):
         default="storage/app",
         description="Path to storage directory for uploaded files"
     )
+    export_path: str = Field(
+        default="private/exports",
+        description="Private directory for data export ZIPs (must NOT be under the public storage dir)"
+    )
     storage_url: str = Field(
         default="/storage",
         description="URL prefix for serving static files"
