@@ -22,9 +22,13 @@ cleanup() { docker rm -f "$DB" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 echo "--- starting PostGIS ($DB)"
+# Throwaway DB: data on tmpfs and durability off. Every test creates and drops the whole schema,
+# so fsync cost dominates the run time on the Jenkins box (HDD).
 docker run -d --name "$DB" \
+  --tmpfs /var/lib/postgresql/data:rw,size=1g \
   -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test -e POSTGRES_DB=test_db \
-  postgis/postgis:15-3.3-alpine >/dev/null
+  postgis/postgis:15-3.3-alpine \
+  -c fsync=off -c synchronous_commit=off -c full_page_writes=off >/dev/null
 for _ in $(seq 1 60); do
   # pg_isready can succeed during the image's init restart; require a real query to pass twice
   if docker exec "$DB" psql -U test -d test_db -qtAc 'select 1' >/dev/null 2>&1; then
