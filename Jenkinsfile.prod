@@ -74,14 +74,15 @@ pipeline {
             steps {
                 withCredentials([
                     sshUserPrivateKey(credentialsId: 'prod-ssh-key', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER'),
-                    usernamePassword(credentialsId: 'harbor-credentials', usernameVariable: 'PULL_U', passwordVariable: 'PULL_P')
+                    // same Harbor account the dev deploy uses (the 'harbor-credentials' ci-puller robot secret is stale)
+                    string(credentialsId: 'harbor-username', variable: 'PULL_U'),
+                    string(credentialsId: 'harbor-password', variable: 'PULL_P')
                 ]) {
                     sh '''
                         # quoted helpers: the workspace path contains a space ("Breedly Prod")
                         ssh_prod() { ssh -i "$SSH_KEY" -o UserKnownHostsFile="$KNOWN_HOSTS" -o StrictHostKeyChecking=yes -o BatchMode=yes "$SSH_USER@$PROD_HOST" "$@"; }
                         scp_prod() { scp -i "$SSH_KEY" -o UserKnownHostsFile="$KNOWN_HOSTS" -o StrictHostKeyChecking=yes -o BatchMode=yes "$@"; }
                         scp_prod delivery/docker-compose.prod.yml delivery/prod/deploy.sh "$SSH_USER@$PROD_HOST:$PROD_DIR/"
-                        # read-only robot account for pulls on prod
                         echo "$PULL_P" | ssh_prod "docker login $HARBOR_REGISTRY -u '$PULL_U' --password-stdin"
                         ssh_prod "chmod +x $PROD_DIR/deploy.sh && $PROD_DIR/deploy.sh backend $IMAGE_TAG"
                     '''
