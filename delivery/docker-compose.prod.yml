@@ -80,7 +80,10 @@ services:
     profiles: ["jobs"]
     command: sh -c "python db/seed_breeds.py && python scripts/seed_service_categories.py"
     env_file: .env
-    environment: *backend-env
+    environment:
+      <<: *backend-env
+      # `python scripts/x.py` puts scripts/ (not /app) on sys.path, so `import app` fails without this
+      PYTHONPATH: /app
     depends_on:
       postgres:
         condition: service_healthy
