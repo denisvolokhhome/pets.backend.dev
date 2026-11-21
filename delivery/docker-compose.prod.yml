@@ -26,6 +26,7 @@ x-backend-env: &backend-env
   CLIENT_IP_HEADER: CF-Connecting-IP
   STORAGE_PATH: /app/storage
   STORAGE_URL: /storage
+  EXPORT_PATH: /var/lib/breedly/exports   # private, NOT under STORAGE_PATH (which is served publicly)
   GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_CLIENT_ID}
   GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
   # Feature flags: must match the frontend's environment.prod.ts
@@ -97,6 +98,7 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       - backend_storage:/app/storage
+      - backend_exports:/var/lib/breedly/exports
     depends_on:
       postgres:
         condition: service_healthy
@@ -126,3 +128,4 @@ volumes:
   postgres_data:
   redis_data:
   backend_storage:
+  backend_exports:
