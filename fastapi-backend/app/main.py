@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 import asyncio
 import logging
+import mimetypes
 import os
 import time
 
@@ -11,8 +12,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse, Response
 from pathlib import Path
 from sqlalchemy.exc import NoResultFound
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -309,18 +309,35 @@ app.add_middleware(
 # Mount static files for image serving
 # Ensure storage directory exists before mounting
 #
-# Stored paths are relative to the PARENT of STORAGE_PATH (e.g. "storage/<file>" when
-# STORAGE_PATH=/app/storage), and URLs are "/storage/<stored path>". Serve only the upload
-# directory itself, at "/storage/<its name>", so those URLs keep working while nothing
-# around it is public. (Serving the parent exposed /app — the whole source tree — in prod.)
+# Photos live in the object storage "photos" bucket under their stored path
+# ("<upload dir name>/<file>", e.g. "storage/x.jpg" when STORAGE_PATH=/app/storage),
+# and URLs stay "/storage/<stored path>". Only that prefix is served; documents
+# ("doc_*") never are — they go through signed links (app/routers/documents.py).
+# While pre-migration local copies exist, a photo missing from the bucket is
+# served from STORAGE_PATH.
 upload_dir = Path(settings.storage_path)
-upload_dir.mkdir(parents=True, exist_ok=True)
+PHOTO_CACHE_CONTROL = "public, max-age=31536000, immutable"
 
-app.mount(
-    f"{settings.storage_url.rstrip('/')}/{upload_dir.resolve().name}",
-    StaticFiles(directory=str(upload_dir)),
-    name="storage"
-)
+
+@app.get(f"{settings.storage_url.rstrip('/')}/{upload_dir.resolve().name}/{{rest:path}}", include_in_schema=False)
+async def serve_photo(rest: str) -> Response:
+    from app.services.object_storage import ObjectNotFoundError, get_object_storage, photos_bucket
+
+    parts = rest.split("/")
+    if not rest or "\\" in rest or any(p in ("", ".", "..") for p in parts) or parts[-1].startswith("doc_"):
+        raise HTTPException(status_code=404, detail="Not found")
+    key = f"{upload_dir.resolve().name}/{rest}"
+    try:
+        obj = await asyncio.to_thread(get_object_storage().get, photos_bucket(), key)
+        data, content_type = obj.data, obj.content_type
+    except ObjectNotFoundError:
+        root = upload_dir.resolve()
+        local = (root / rest).resolve()
+        if root not in local.parents or not local.is_file():
+            raise HTTPException(status_code=404, detail="Not found")
+        data = await asyncio.to_thread(local.read_bytes)
+        content_type = mimetypes.guess_type(local.name)[0] or "application/octet-stream"
+    return Response(content=data, media_type=content_type, headers={"Cache-Control": PHOTO_CACHE_CONTROL})
 
 
 @app.get("/")

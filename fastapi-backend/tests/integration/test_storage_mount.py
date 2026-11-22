@@ -79,3 +79,40 @@ async def test_traversal_out_of_upload_dir_is_not_served(client, upload_dir):
         assert r.status_code == 404
     finally:
         secret.unlink()
+
+
+# ── Photos now live in object storage; the same URLs serve them from the bucket ──
+
+def _put_photo(key: str, data: bytes = b"\xff\xd8jpeg", content_type: str = "image/jpeg") -> None:
+    from app.services.object_storage import get_object_storage, photos_bucket
+    get_object_storage().put(photos_bucket(), key, data, content_type)
+
+
+@pytest.mark.asyncio
+async def test_photo_in_bucket_is_served_with_long_cache(client, upload_dir):
+    key = f"{upload_dir.name}/pet_{uuid.uuid4().hex}.jpg"
+    _put_photo(key, b"\xff\xd8photo")
+    r = await client.get(f"/storage/{key}")
+    assert r.status_code == 200
+    assert r.content == b"\xff\xd8photo"
+    assert r.headers["content-type"] == "image/jpeg"
+    assert r.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+
+@pytest.mark.asyncio
+async def test_documents_are_never_served_on_the_photo_route(client, upload_dir):
+    name = f"doc_{uuid.uuid4()}_{uuid.uuid4()}.pdf"
+    _put_photo(f"{upload_dir.name}/{name}", b"%PDF", "application/pdf")
+    local = upload_dir / name  # a pre-migration local document copy
+    local.write_bytes(b"%PDF")
+    try:
+        r = await client.get(f"/storage/{upload_dir.name}/{name}")
+        assert r.status_code == 404
+    finally:
+        local.unlink()
+
+
+@pytest.mark.asyncio
+async def test_unknown_photo_is_404(client, upload_dir):
+    r = await client.get(f"/storage/{upload_dir.name}/nope_{uuid.uuid4().hex}.jpg")
+    assert r.status_code == 404
