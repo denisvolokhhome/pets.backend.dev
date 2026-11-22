@@ -35,6 +35,13 @@ from app.models.offspring import Offspring
 from app.models.offspring_image import OffspringImage
 from app.models.pet import Pet
 from app.models.pet_image import PetImage
+from app.services.object_storage import (
+    ObjectNotFoundError,
+    ObjectStorage,
+    documents_bucket,
+    get_object_storage,
+    photos_bucket,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,16 +51,6 @@ READY_LIFETIME = timedelta(hours=24)
 _EXCLUDED = {"user_id", "coordinates", "error", "image_path", "image_file_name", "is_deleted"}
 
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
-
-
-def _storage_root() -> Path:
-    """Stored file paths are relative to the parent of STORAGE_PATH."""
-    return Path(settings.storage_path).parent
-
-
-def _allowed_root() -> Path:
-    """Only files inside the upload dir itself may go into an archive."""
-    return Path(settings.storage_path)
 
 
 def _export_dir() -> Path:
@@ -82,7 +79,8 @@ def safe_name(name: Optional[str], fallback: str) -> str:
 
 @dataclass
 class FileEntry:
-    source: str  # path relative to the storage root
+    source: str  # object key in `bucket`
+    bucket: str  # object storage bucket (photos or documents)
     folder: str  # folder inside the archive root
     name: str  # desired file name (sanitized and de-duplicated on write)
     label: str  # human description for the README if missing
@@ -197,7 +195,7 @@ async def collect_export_data(session: AsyncSession, user_id: uuid.UUID) -> Expo
         for img in images:
             n = counter[img.pet_id] = counter.get(img.pet_id, 0) + 1
             fname = img.image_file_name or PurePosixPath(img.image_path).name
-            data.files.append(FileEntry(img.image_path, f"photos/pets/{pet_folder[img.pet_id]}",
+            data.files.append(FileEntry(img.image_path, photos_bucket(), f"photos/pets/{pet_folder[img.pet_id]}",
                                         f"{n}_{safe_name(fname, 'photo')}", f"photo of pet {pet_names.get(img.pet_id)}"))
         gallery_paths = {img.image_path for img in images}
         for p in pets:
@@ -205,7 +203,7 @@ async def collect_export_data(session: AsyncSession, user_id: uuid.UUID) -> Expo
             if p.image_path and p.image_path not in gallery_paths:
                 n = counter[p.id] = counter.get(p.id, 0) + 1
                 fname = p.image_file_name or PurePosixPath(p.image_path).name
-                data.files.append(FileEntry(p.image_path, f"photos/pets/{pet_folder[p.id]}",
+                data.files.append(FileEntry(p.image_path, photos_bucket(), f"photos/pets/{pet_folder[p.id]}",
                                             f"{n}_{safe_name(fname, 'photo')}", f"photo of pet {p.name}"))
     if offspring:
         images = (await session.execute(
@@ -216,7 +214,7 @@ async def collect_export_data(session: AsyncSession, user_id: uuid.UUID) -> Expo
         for img in images:
             n = counter[img.offspring_id] = counter.get(img.offspring_id, 0) + 1
             ext = PurePosixPath(img.image_path).suffix or ".jpg"
-            data.files.append(FileEntry(img.image_path, f"photos/offspring/{pup_folder[img.offspring_id]}",
+            data.files.append(FileEntry(img.image_path, photos_bucket(), f"photos/offspring/{pup_folder[img.offspring_id]}",
                                         f"{n}{ext}", f"photo of offspring {img.offspring_id}"))
 
     conds = []
@@ -233,7 +231,7 @@ async def collect_export_data(session: AsyncSession, user_id: uuid.UUID) -> Expo
                 folder = f"documents/pets/{pet_folder[d.entity_id]}"
             else:
                 folder = f"documents/offspring/{pup_folder[d.entity_id]}"
-            data.files.append(FileEntry(d.file_path, folder, safe_name(d.file_name, "document"),
+            data.files.append(FileEntry(d.file_path, documents_bucket(), folder, safe_name(d.file_name, "document"),
                                         f"document {d.file_name}"))
     return data
 
@@ -274,36 +272,29 @@ def _unique(path: str, used: set[str]) -> str:
         i += 1
 
 
-def write_export_zip(
-    data: ExportData, storage_root: Path, dest: Path, export_date: date, allowed_root: Optional[Path] = None
-) -> list[str]:
-    """Write the archive to `dest`. Returns descriptions of files that were missing on disk.
+def write_export_zip(data: ExportData, storage: ObjectStorage, dest: Path, export_date: date) -> list[str]:
+    """Write the archive to `dest`. Returns descriptions of files missing from storage.
 
-    File sources resolve against `storage_root`; only files inside `allowed_root` (default:
-    `storage_root`) are read.
+    Photos are read from the photos bucket and documents from the documents
+    bucket only. Storage connection errors propagate (the export fails and can
+    be retried); a missing object is listed in the README instead.
     """
     root = f"breedly-export-{export_date.isoformat()}"
     missing: list[str] = []
     used: set[str] = set()
-    root_resolved = (allowed_root or storage_root).resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(dest, "w", allowZip64=True) as zf:
         for name, (header, rows) in data.tables.items():
             zf.writestr(f"{root}/{name}", _csv_bytes(header, rows), compress_type=zipfile.ZIP_DEFLATED)
         added = 0
         for f in data.files:
-            src = (storage_root / f.source).resolve()
-            if not src.is_relative_to(root_resolved) or not src.is_file():
+            try:
+                content = storage.get(f.bucket, f.source).data
+            except ObjectNotFoundError:
                 missing.append(f"{f.folder}/{f.name} ({f.label})")
                 continue
             arc = _unique(f"{root}/{f.folder}/{f.name}", used)
-            try:
-                zf.write(src, arc, compress_type=zipfile.ZIP_STORED)
-            except OSError:
-                # Deleted or unreadable since the check: list it, don't fail the whole export
-                used.discard(arc)
-                missing.append(f"{f.folder}/{f.name} ({f.label})")
-                continue
+            zf.writestr(arc, content, compress_type=zipfile.ZIP_STORED)
             added += 1
         zf.writestr(f"{root}/README.txt", _readme(data, export_date, added, missing),
                     compress_type=zipfile.ZIP_DEFLATED)
@@ -359,8 +350,7 @@ async def run_export(export_id: uuid.UUID, session_factory: SessionFactory) -> N
             data = await collect_export_data(session, user_id)
             await session.commit()  # don't hold a transaction open while the ZIP is written
             today = datetime.now(timezone.utc).date()
-            await asyncio.to_thread(write_export_zip, data, _storage_root(), dest, today,
-                                    allowed_root=_allowed_root())
+            await asyncio.to_thread(write_export_zip, data, get_object_storage(), dest, today)
             now = datetime.now(timezone.utc)
             result = await session.execute(
                 update(DataExport)

@@ -5,7 +5,7 @@ import uuid
 import zipfile
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,15 +23,19 @@ from app.models.pet import Pet
 from app.models.pet_image import PetImage
 from app.models.user import User
 from app.services import data_export_service as svc
+from app.services.object_storage import ObjectNotFoundError, documents_bucket, get_object_storage, photos_bucket
 
 EXPORT_DATE = date(2026, 11, 20)
 ROOT = "breedly-export-2026-11-20/"
 
 
-def _put(storage_root: Path, rel: str, data: bytes) -> str:
-    p = storage_root / rel
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_bytes(data)
+def _put(storage_root, rel: str, data: bytes) -> str:
+    """Store an upload the way FileService does: doc_* in the documents bucket, images in photos."""
+    name = PurePosixPath(rel).name
+    if name.startswith("doc_"):
+        get_object_storage().put(documents_bucket(), name, data, "application/pdf")
+        return name
+    get_object_storage().put(photos_bucket(), rel, data, "image/jpeg")
     return rel
 
 
@@ -42,10 +46,9 @@ def _read_csv(zf: zipfile.ZipFile, name: str) -> list[dict]:
 
 
 @pytest.fixture
-def storage_root(tmp_path: Path) -> Path:
-    root = tmp_path / "storage"
-    root.mkdir()
-    return root
+def storage_root():
+    """The object storage holding uploads (in-memory under tests)."""
+    return get_object_storage()
 
 
 @pytest.fixture
@@ -176,7 +179,7 @@ async def test_duplicate_file_names_are_deduplicated(async_session, test_breeder
     dam = breedery["dam"]
     for _ in range(2):
         async_session.add(Document(entity_type="pet", entity_id=dam.id,
-                                   file_path=_put(storage_root, f"app/{uuid.uuid4()}.pdf", b"%PDF"),
+                                   file_path=_put(storage_root, f"app/doc_{uuid.uuid4()}.pdf", b"%PDF"),
                                    file_name="../../same.pdf", file_type="application/pdf", file_size=4))
     await async_session.commit()
 
@@ -188,8 +191,6 @@ async def test_duplicate_file_names_are_deduplicated(async_session, test_breeder
 
 @pytest.mark.asyncio
 async def test_run_export_marks_ready(async_session, test_breeder, breedery, storage_root, tmp_path, monkeypatch):
-    monkeypatch.setattr(svc, "_storage_root", lambda: storage_root)
-    monkeypatch.setattr(svc, "_allowed_root", lambda: storage_root)
     monkeypatch.setattr(svc, "_export_dir", lambda: tmp_path / "exports")
     export = DataExport(user_id=test_breeder.id)
     async_session.add(export)
@@ -207,8 +208,6 @@ async def test_run_export_marks_ready(async_session, test_breeder, breedery, sto
 
 @pytest.mark.asyncio
 async def test_run_export_marks_failed(async_session, test_breeder, storage_root, tmp_path, monkeypatch):
-    monkeypatch.setattr(svc, "_storage_root", lambda: storage_root)
-    monkeypatch.setattr(svc, "_allowed_root", lambda: storage_root)
     monkeypatch.setattr(svc, "_export_dir", lambda: tmp_path / "exports")
 
     def boom(*a, **k):
@@ -287,38 +286,35 @@ def test_export_dir_inside_public_static_dir_is_rejected(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_files_outside_upload_dir_are_not_read(async_session, test_breeder, tmp_path):
-    """I1: containment is the upload dir itself, not its (publicly broad) parent."""
-    parent = tmp_path / "srv"
-    uploads = parent / "uploads"
-    uploads.mkdir(parents=True)
-    (parent / "secret.env").write_text("SECRET=1")
+async def test_documents_are_read_only_from_the_documents_bucket(async_session, test_breeder, tmp_path):
+    """A document row pointing at a photo key never pulls a file out of the photos bucket."""
+    get_object_storage().put(photos_bucket(), "app/secret.jpg", b"photo", "image/jpeg")
     pet = Pet(user_id=test_breeder.id, name="Sneaky", gender="Male")
     async_session.add(pet)
     await async_session.flush()
-    async_session.add(Document(entity_type="pet", entity_id=pet.id, file_path="secret.env",
-                               file_name="secret.env", file_type="application/pdf", file_size=8))
+    async_session.add(Document(entity_type="pet", entity_id=pet.id, file_path="app/secret.jpg",
+                               file_name="secret.jpg", file_type="image/jpeg", file_size=5))
     await async_session.commit()
 
     data = await svc.collect_export_data(async_session, test_breeder.id)
-    missing = svc.write_export_zip(data, parent, tmp_path / "o.zip", EXPORT_DATE, allowed_root=uploads)
+    missing = svc.write_export_zip(data, get_object_storage(), tmp_path / "o.zip", EXPORT_DATE)
     names = zipfile.ZipFile(tmp_path / "o.zip").namelist()
-    assert not any(n.endswith("secret.env") for n in names)
-    assert any("secret.env" in m for m in missing)
+    assert not any(n.endswith("secret.jpg") for n in names)
+    assert any("secret.jpg" in m for m in missing)
 
 
 @pytest.mark.asyncio
 async def test_unreadable_file_is_listed_not_fatal(async_session, test_breeder, breedery, storage_root, tmp_path,
                                                    monkeypatch):
-    """I7: a file deleted/unreadable between the check and the write goes to `missing`."""
-    real_write = zipfile.ZipFile.write
+    """I7: a file that disappears from storage goes to `missing`; the export still completes."""
+    real_get = type(storage_root).get
 
-    def flaky(self, filename, arcname=None, *a, **k):
-        if str(filename).endswith("doc_daisy.pdf"):
-            raise FileNotFoundError(filename)
-        return real_write(self, filename, arcname, *a, **k)
+    def flaky(self, bucket, key):
+        if key.endswith("doc_daisy.pdf"):
+            raise ObjectNotFoundError(key)
+        return real_get(self, bucket, key)
 
-    monkeypatch.setattr(zipfile.ZipFile, "write", flaky)
+    monkeypatch.setattr(type(storage_root), "get", flaky)
     zf, missing = await _build(async_session, test_breeder, storage_root, tmp_path)
     assert any("Daisy health.pdf" in m for m in missing)
     assert ROOT + "offspring.csv" in zf.namelist()
@@ -368,8 +364,6 @@ async def test_startup_sweep_fails_all_active_jobs_and_removes_partial_files(asy
 async def test_run_export_records_file_path_before_writing(async_session, test_breeder, storage_root, tmp_path,
                                                            monkeypatch):
     """I5: the row points at the file while it is being written, so a sweep can find a partial file."""
-    monkeypatch.setattr(svc, "_storage_root", lambda: storage_root)
-    monkeypatch.setattr(svc, "_allowed_root", lambda: storage_root)
     monkeypatch.setattr(svc, "_export_dir", lambda: tmp_path / "exports")
     seen = {}
     real = svc.write_export_zip
@@ -390,8 +384,6 @@ async def test_run_export_records_file_path_before_writing(async_session, test_b
 async def test_run_export_discards_result_if_job_was_failed_meanwhile(async_session, test_breeder, storage_root,
                                                                       tmp_path, monkeypatch):
     """I4a: a job swept as failed while running must not flip back to ready."""
-    monkeypatch.setattr(svc, "_storage_root", lambda: storage_root)
-    monkeypatch.setattr(svc, "_allowed_root", lambda: storage_root)
     monkeypatch.setattr(svc, "_export_dir", lambda: tmp_path / "exports")
     real = svc.write_export_zip
     export = DataExport(user_id=test_breeder.id)
