@@ -19,6 +19,20 @@ from app.database import get_async_session
 from app.config import Settings
 
 
+class _StoredPath:
+    """A stored upload in the photos bucket, with the bits of the Path API these tests use."""
+
+    def __init__(self, key):
+        from app.services.object_storage import get_object_storage, photos_bucket
+        self.key, self._storage, self._bucket = key, get_object_storage(), photos_bucket()
+
+    def exists(self):
+        return self._storage.exists(self._bucket, self.key)
+
+    def unlink(self):
+        self._storage.delete(self._bucket, self.key)
+
+
 @pytest.fixture
 async def client(async_session: AsyncSession):
     """Create test client with database session override."""
@@ -192,7 +206,7 @@ async def test_upload_profile_image(authenticated_client: AsyncClient):
     # Verify image file exists
     settings = Settings()
     storage_path = Path(settings.storage_path).parent
-    image_path = storage_path / data["profile_image_path"]
+    image_path = _StoredPath(data["profile_image_path"])
     assert image_path.exists()
     
     # Cleanup
@@ -219,7 +233,7 @@ async def test_replace_profile_image(authenticated_client: AsyncClient):
     response1 = await authenticated_client.post("/api/users/me/profile-image", files=files1)
     assert response1.status_code == 200
     first_path = response1.json()["profile_image_path"]
-    first_full_path = storage_path / first_path
+    first_full_path = _StoredPath(first_path)
     
     # Verify first image exists
     assert first_full_path.exists()
@@ -233,7 +247,7 @@ async def test_replace_profile_image(authenticated_client: AsyncClient):
     response2 = await authenticated_client.post("/api/users/me/profile-image", files=files2)
     assert response2.status_code == 200
     second_path = response2.json()["profile_image_path"]
-    second_full_path = storage_path / second_path
+    second_full_path = _StoredPath(second_path)
     
     # Verify second image exists
     assert second_full_path.exists()
@@ -302,7 +316,7 @@ async def test_get_profile_image(authenticated_client: AsyncClient):
     # Cleanup
     settings = Settings()
     storage_path = Path(settings.storage_path).parent
-    full_path = storage_path / image_path
+    full_path = _StoredPath(image_path)
     if full_path.exists():
         full_path.unlink()
 

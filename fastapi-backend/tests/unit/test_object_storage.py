@@ -2,7 +2,7 @@
 import pytest
 
 from app.services import object_storage as os_mod
-from app.services.object_storage import MemoryObjectStorage, ObjectNotFound, get_object_storage
+from app.services.object_storage import MemoryObjectStorage, ObjectNotFoundError, get_object_storage
 
 
 def test_memory_round_trip():
@@ -18,7 +18,7 @@ def test_memory_round_trip():
 
 
 def test_get_missing_raises():
-    with pytest.raises(ObjectNotFound):
+    with pytest.raises(ObjectNotFoundError):
         MemoryObjectStorage().get("documents", "nope.pdf")
 
 

@@ -5,10 +5,16 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from app.config import Settings
 from app.models.pet import Pet
+from app.services.object_storage import get_object_storage, photos_bucket
 
-STORAGE_ROOT = Path(Settings().storage_path).parent
+
+def _stored(key: str) -> bool:
+    return get_object_storage().exists(photos_bucket(), key)
+
+
+def _open(key: str) -> Image.Image:
+    return Image.open(BytesIO(get_object_storage().get(photos_bucket(), key).data))
 
 
 def _jpeg(width=200, height=100, orientation=None) -> BytesIO:
@@ -26,7 +32,7 @@ def _jpeg(width=200, height=100, orientation=None) -> BytesIO:
 
 
 def _size(rel_path: str):
-    with Image.open(STORAGE_ROOT / rel_path) as im:
+    with _open(rel_path) as im:
         return im.size
 
 
@@ -66,11 +72,11 @@ async def test_rotate_pet_image_clockwise(unauthenticated_client, test_breeder, 
     body = r.json()
     new = body["images"][0]["image_path"]
     assert new != old  # new file name busts browser caches
-    assert not (STORAGE_ROOT / old).exists()
+    assert not _stored(old)
     assert _size(new) == (100, 200)
     assert body["image_path"] == new  # legacy primary field follows
     # Clockwise: the top-left marker ends up top-right.
-    with Image.open(STORAGE_ROOT / new) as im:
+    with _open(new) as im:
         r_, g_, b_ = im.convert("RGB").getpixel((95, 5))
     assert r_ > 200 and b_ < 80
 
@@ -107,7 +113,7 @@ async def test_cannot_rotate_someone_elses_pet_image(
         f"/api/pets/{breeder_pet.id}/image/{img['id']}/rotate", json={"degrees": 90}, headers=h2
     )
     assert r.status_code == 404
-    assert (STORAGE_ROOT / img["image_path"]).exists()
+    assert _stored(img["image_path"])
 
 
 @pytest.mark.asyncio

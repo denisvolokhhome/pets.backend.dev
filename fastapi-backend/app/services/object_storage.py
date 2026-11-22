@@ -13,7 +13,7 @@ from functools import lru_cache
 from app.config import Settings
 
 
-class ObjectNotFound(Exception):
+class ObjectNotFoundError(Exception):
     """The object (or its bucket) does not exist."""
 
 
@@ -59,7 +59,7 @@ class MemoryObjectStorage(ObjectStorage):
             try:
                 return self._objects[(bucket, key)]
             except KeyError:
-                raise ObjectNotFound(f"{bucket}/{key}") from None
+                raise ObjectNotFoundError(f"{bucket}/{key}") from None
 
     def exists(self, bucket, key):
         with self._lock:
@@ -118,7 +118,7 @@ class S3ObjectStorage(ObjectStorage):
             obj = self._client.get_object(Bucket=bucket, Key=key)
         except Exception as exc:
             if self._is_missing(exc):
-                raise ObjectNotFound(f"{bucket}/{key}") from None
+                raise ObjectNotFoundError(f"{bucket}/{key}") from None
             raise
         return StoredObject(obj["Body"].read(), obj.get("ContentType") or "application/octet-stream")
 
