@@ -42,6 +42,19 @@ class Settings(BaseSettings):
         description="URL prefix for serving static files"
     )
 
+    # Object storage (RustFS / S3). Uploads live here; STORAGE_PATH only holds
+    # pre-migration local copies.
+    object_storage: str = Field(
+        default="s3",
+        description="'s3' (RustFS or any S3-compatible store) or 'memory' (tests only)"
+    )
+    s3_endpoint_url: str = Field(default="http://localhost:9000", description="S3 API endpoint")
+    s3_access_key: str = Field(default="", description="S3 access key")
+    s3_secret_key: str = Field(default="", description="S3 secret key")
+    s3_region: str = Field(default="us-east-1", description="S3 region name")
+    s3_photos_bucket: str = Field(default="photos", description="Bucket for uploaded images")
+    s3_documents_bucket: str = Field(default="documents", description="Private bucket for documents")
+
     # Application Configuration
     app_name: str = Field(
         default="Pet Breeding API",

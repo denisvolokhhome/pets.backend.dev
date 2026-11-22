@@ -2,6 +2,7 @@
 
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
+import asyncio
 import logging
 import os
 import time
@@ -130,6 +131,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if os.environ.get("TESTING") != "1":
         from app.database import async_session_maker
         from app.services.data_export_service import sweep_exports
+        from app.services.object_storage import get_object_storage
+        try:
+            await asyncio.to_thread(get_object_storage().ensure_buckets)
+            print("✓ Object storage buckets verified")
+        except Exception as exc:  # noqa: BLE001 — /health reports it and the deploy rolls back
+            print(f"✗ Object storage unavailable: {exc}")
         try:
             await sweep_exports(async_session_maker, startup=True)
         except Exception as exc:  # noqa: BLE001 — never block startup on cleanup
@@ -357,11 +364,18 @@ app.include_router(services_router)
 
 
 @app.get("/health")
-async def health_check() -> dict:
-    """Health check endpoint."""
+async def health_check():
+    """Health check endpoint. 503 when object storage is unreachable, so deploys roll back."""
+    from app.services.object_storage import get_object_storage
+    try:
+        await asyncio.to_thread(get_object_storage().ping)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Health check: object storage unreachable: %s", exc)
+        return JSONResponse(status_code=503, content={"status": "unhealthy", "storage": "unreachable"})
     return {
         "status": "healthy",
-        "app_name": settings.app_name
+        "app_name": settings.app_name,
+        "storage": "ok",
     }
 
 
