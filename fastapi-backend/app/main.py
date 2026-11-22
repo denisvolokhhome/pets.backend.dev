@@ -128,6 +128,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Breeding milestone reminders (never under tests)
     from app.services.breeding_reminder_service import start_reminder_loop, stop_reminder_loop
     reminder_task = None
+    photo_copy_task = None
     if os.environ.get("TESTING") != "1":
         from app.database import async_session_maker
         from app.services.data_export_service import sweep_exports
@@ -135,10 +136,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         try:
             await asyncio.to_thread(get_object_storage().ensure_buckets)
             print("✓ Object storage buckets verified")
-            from app.services.storage_migration import migrate_local_files
-            report = await migrate_local_files(async_session_maker, get_object_storage(), storage_path)
-            print(f"✓ Storage migration: {report.documents_moved} documents moved, "
-                  f"{report.photos_copied} photos copied, {len(report.missing)} document files missing")
+            from app.services.storage_migration import start_storage_migration
+            photo_copy_task = await start_storage_migration(async_session_maker, get_object_storage(), storage_path)
+            print("✓ Documents moved to object storage; copying photos in the background")
         except Exception as exc:  # noqa: BLE001 — /health reports storage; the move retries next start
             print(f"✗ Object storage setup failed: {exc}")
         try:
@@ -153,6 +153,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Shutdown
     if reminder_task is not None:
         await stop_reminder_loop(reminder_task)
+    if photo_copy_task is not None and not photo_copy_task.done():
+        photo_copy_task.cancel()  # resumes on the next start (copies are idempotent)
     print(f"✓ Application shutdown: {settings.app_name}")
 
 
@@ -323,7 +325,7 @@ upload_dir = Path(settings.storage_path)
 PHOTO_CACHE_CONTROL = "public, max-age=31536000, immutable"
 
 
-@app.get(f"{settings.storage_url.rstrip('/')}/{upload_dir.resolve().name}/{{rest:path}}", include_in_schema=False)
+@app.api_route(f"{settings.storage_url.rstrip('/')}/{upload_dir.resolve().name}/{{rest:path}}", methods=["GET", "HEAD"], include_in_schema=False)
 async def serve_photo(rest: str) -> Response:
     from app.services.object_storage import ObjectNotFoundError, get_object_storage, photos_bucket
 

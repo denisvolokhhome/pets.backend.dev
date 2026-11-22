@@ -15,6 +15,7 @@ set -euo pipefail
 APP_DIR=/home/breedly/breedly-app
 BACKUP_DIR=/home/breedly/backups
 KEEP_PREDEPLOY_BACKUPS=20
+KEEP_STORAGE_BACKUPS=5   # full photo/document archives are large; keep fewer than DB dumps
 HEALTH_TIMEOUT=180
 cd "$APP_DIR"
 
@@ -93,7 +94,7 @@ backup_storage() {
   "${COMPOSE[@]}" exec -T rustfs tar -C /data -czf - . > "$file.partial"
   mv "$file.partial" "$file"
   log "storage backup size: $(du -h "$file" | cut -f1)"
-  ls -1t "$BACKUP_DIR"/predeploy-*.storage.tar.gz 2>/dev/null | tail -n +$((KEEP_PREDEPLOY_BACKUPS + 1)) | xargs -r rm -f
+  ls -1t "$BACKUP_DIR"/predeploy-*.storage.tar.gz 2>/dev/null | tail -n +$((KEEP_STORAGE_BACKUPS + 1)) | xargs -r rm -f
   echo "$file"
 }
 

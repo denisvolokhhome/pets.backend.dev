@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.document import Document
 from app.models.pet import Pet
 from app.services.object_storage import documents_bucket, get_object_storage, photos_bucket
-from app.services.storage_migration import migrate_local_files
+from app.services.storage_migration import migrate_local_files, start_storage_migration
 
 
 def _factory(session: AsyncSession):
@@ -50,8 +50,7 @@ async def test_documents_move_to_private_bucket_and_local_copy_is_removed(async_
 
     await async_session.refresh(doc)
     assert report.documents_moved == 1
-    assert "/" not in doc.file_path and doc.file_path.startswith("doc_")
-    assert doc.file_path != local.name  # new private name
+    assert doc.file_path == local.name  # deterministic key: a restored DB row still finds it
     assert get_object_storage().get(documents_bucket(), doc.file_path).data == b"%PDF"
     assert not local.exists()
     assert not get_object_storage().exists(photos_bucket(), f"storage/{local.name}")
@@ -114,3 +113,35 @@ async def test_document_path_outside_upload_dir_is_not_read(async_session, test_
 
     assert report.documents_moved == 0
     assert secret.exists()
+
+
+@pytest.mark.asyncio
+async def test_restored_database_row_is_repointed_to_the_moved_document(async_session, test_breeder, upload_dir):
+    """Pre-deploy dump restored after a failed deploy: row is legacy again, local file is gone, object exists."""
+    name = f"doc_{uuid.uuid4()}_{uuid.uuid4()}.pdf"
+    get_object_storage().put(documents_bucket(), name, b"%PDF", "application/pdf")
+    doc = await _doc(async_session, test_breeder, f"storage/{name}")
+
+    report = await migrate_local_files(_factory(async_session), get_object_storage(), upload_dir)
+
+    await async_session.refresh(doc)
+    assert doc.file_path == name
+    assert report.missing == []
+    assert report.documents_moved == 1
+
+
+@pytest.mark.asyncio
+async def test_startup_moves_documents_first_and_copies_photos_in_the_background(
+        async_session, test_breeder, upload_dir):
+    local = upload_dir / "doc_a_b.pdf"
+    local.write_bytes(b"%PDF")
+    doc = await _doc(async_session, test_breeder, f"storage/{local.name}")
+    (upload_dir / "p.jpg").write_bytes(b"img")
+
+    task = await start_storage_migration(_factory(async_session), get_object_storage(), upload_dir)
+
+    await async_session.refresh(doc)
+    assert doc.file_path == "doc_a_b.pdf"  # documents are done before the app serves
+    report = await task  # photos finish in the background
+    assert report.photos_copied == 1
+    assert get_object_storage().exists(photos_bucket(), "storage/p.jpg")

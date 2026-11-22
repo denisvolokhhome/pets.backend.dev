@@ -1,8 +1,10 @@
 """One-time move of local uploads into object storage. Runs at backend startup; safe to repeat.
 
 - Documents (rows whose file_path is still a local path, i.e. contains "/"):
-  uploaded to the private documents bucket under a new doc_ key, the row is
-  updated, then the local copy is deleted.
+  uploaded to the private documents bucket under their file name (already an
+  unguessable doc_<entity>_<uuid> name), the row is updated, then the local copy
+  is deleted. The key is deterministic, so if the pre-deploy DB dump is restored
+  after a failed deploy, the next start simply repoints the rows.
 - Photos (every other file in the upload dir): copied to the photos bucket
   under "<upload dir name>/<file>" if not there yet. Local copies are kept for
   one release so a rollback to the previous image still shows them.
@@ -10,9 +12,8 @@
 import asyncio
 import logging
 import mimetypes
-import uuid
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Optional
 
 from sqlalchemy import select
@@ -44,13 +45,17 @@ async def _migrate_documents(session_factory, storage: ObjectStorage, upload_dir
         )).scalars().all()
         for doc in docs:
             local = _local_document(upload_dir, doc.file_path)
-            if local is None or not local.is_file():
+            if local is None:
                 report.missing.append(doc.file_path)
                 continue
-            data = await asyncio.to_thread(local.read_bytes)
-            key = f"doc_{doc.entity_id}_{uuid.uuid4()}{PurePosixPath(local.name).suffix or '.pdf'}"
-            await asyncio.to_thread(storage.put, documents_bucket(), key, data,
-                                    doc.file_type or "application/octet-stream")
+            key = local.name if local.name.startswith("doc_") else f"doc_{doc.entity_id}_{local.name}"
+            if not await asyncio.to_thread(storage.exists, documents_bucket(), key):
+                if not local.is_file():
+                    report.missing.append(doc.file_path)
+                    continue
+                data = await asyncio.to_thread(local.read_bytes)
+                await asyncio.to_thread(storage.put, documents_bucket(), key, data,
+                                        doc.file_type or "application/octet-stream")
             doc.file_path = key
             await session.commit()  # the row points at the bucket before the local copy goes
             local.unlink(missing_ok=True)
@@ -72,11 +77,34 @@ async def _copy_photos(storage: ObjectStorage, upload_dir: Path, report: Migrati
         report.photos_copied += 1
 
 
-async def migrate_local_files(session_factory, storage: ObjectStorage, upload_dir: Path) -> MigrationReport:
-    report = MigrationReport()
-    await _migrate_documents(session_factory, storage, upload_dir, report)
-    await _copy_photos(storage, upload_dir, report)
+def _log(report: MigrationReport) -> None:
     if report.documents_moved or report.photos_copied or report.missing:
         logger.info("Storage migration: %d documents moved, %d photos copied, %d document files missing: %s",
                     report.documents_moved, report.photos_copied, len(report.missing), report.missing)
+
+
+async def migrate_local_files(session_factory, storage: ObjectStorage, upload_dir: Path) -> MigrationReport:
+    """Move documents and copy photos, all before returning."""
+    report = MigrationReport()
+    await _migrate_documents(session_factory, storage, upload_dir, report)
+    await _copy_photos(storage, upload_dir, report)
+    _log(report)
     return report
+
+
+async def start_storage_migration(session_factory, storage: ObjectStorage, upload_dir: Path) -> "asyncio.Task[MigrationReport]":
+    """Startup entry point: documents move before the app serves (signed downloads need the
+    new keys); photos are copied in a background task, since the photo route falls back to
+    the local copy until then. Await the returned task for the full report."""
+    report = MigrationReport()
+    await _migrate_documents(session_factory, storage, upload_dir, report)
+
+    async def copy() -> MigrationReport:
+        try:
+            await _copy_photos(storage, upload_dir, report)
+        except Exception:  # noqa: BLE001 — retried on the next start
+            logger.exception("Background photo copy failed")
+        _log(report)
+        return report
+
+    return asyncio.create_task(copy())

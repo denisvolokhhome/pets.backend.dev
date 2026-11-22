@@ -116,3 +116,13 @@ async def test_documents_are_never_served_on_the_photo_route(client, upload_dir)
 async def test_unknown_photo_is_404(client, upload_dir):
     r = await client.get(f"/storage/{upload_dir.name}/nope_{uuid.uuid4().hex}.jpg")
     assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_photo_answers_head_requests(client, upload_dir):
+    """Link-preview scrapers send HEAD; the old static mount answered it."""
+    key = f"{upload_dir.name}/pet_{uuid.uuid4().hex}.jpg"
+    _put_photo(key, b"\xff\xd8photo")
+    r = await client.head(f"/storage/{key}")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/jpeg"
