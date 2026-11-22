@@ -135,8 +135,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         try:
             await asyncio.to_thread(get_object_storage().ensure_buckets)
             print("✓ Object storage buckets verified")
-        except Exception as exc:  # noqa: BLE001 — /health reports it and the deploy rolls back
-            print(f"✗ Object storage unavailable: {exc}")
+            from app.services.storage_migration import migrate_local_files
+            report = await migrate_local_files(async_session_maker, get_object_storage(), storage_path)
+            print(f"✓ Storage migration: {report.documents_moved} documents moved, "
+                  f"{report.photos_copied} photos copied, {len(report.missing)} document files missing")
+        except Exception as exc:  # noqa: BLE001 — /health reports storage; the move retries next start
+            print(f"✗ Object storage setup failed: {exc}")
         try:
             await sweep_exports(async_session_maker, startup=True)
         except Exception as exc:  # noqa: BLE001 — never block startup on cleanup
