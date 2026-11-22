@@ -2,7 +2,7 @@
 # Production deploy for one Breedly service. Runs ON prod-docker as user `breedly`,
 # from /home/breedly/breedly-app (Jenkinsfile.prod copies it there).
 #
-#   ./deploy.sh backend  <tag>   pg_dump backup -> alembic upgrade head -> seed -> switch backend -> health check
+#   ./deploy.sh backend  <tag>   pg_dump + storage backup -> alembic upgrade head -> seed -> switch backend -> health check
 #   ./deploy.sh frontend <tag>   switch frontend -> health check
 #   ./deploy.sh rollback <backend|frontend>   go back to the tag deployed before the current one
 #
@@ -84,15 +84,29 @@ backup_db() {
   echo "$file"
 }
 
+backup_storage() {
+  # Uploaded photos and documents (RustFS data volume), archived next to the DB dump.
+  local tag=$1 file
+  mkdir -p "$BACKUP_DIR"
+  file="$BACKUP_DIR/predeploy-$(date +%Y%m%d-%H%M%S)-${tag}.storage.tar.gz"
+  log "backing up object storage -> $file"
+  "${COMPOSE[@]}" exec -T rustfs tar -C /data -czf - . > "$file.partial"
+  mv "$file.partial" "$file"
+  log "storage backup size: $(du -h "$file" | cut -f1)"
+  ls -1t "$BACKUP_DIR"/predeploy-*.storage.tar.gz 2>/dev/null | tail -n +$((KEEP_PREDEPLOY_BACKUPS + 1)) | xargs -r rm -f
+  echo "$file"
+}
+
 deploy_backend() {
-  local tag=$1 backup
+  local tag=$1 backup storage_backup
   log "pulling backend $tag"
   BACKEND_TAG=$tag "${COMPOSE[@]}" pull backend
 
-  log "ensuring postgres and redis are up"
-  "${COMPOSE[@]}" up -d --wait postgres redis
+  log "ensuring postgres, redis and rustfs are up"
+  "${COMPOSE[@]}" up -d --wait postgres redis rustfs
 
   backup=$(backup_db "$tag")
+  storage_backup=$(backup_storage "$tag")
 
   log "applying migrations (alembic upgrade head)"
   BACKEND_TAG=$tag "${COMPOSE[@]}" run --rm migration \
@@ -102,7 +116,7 @@ deploy_backend() {
   BACKEND_TAG=$tag "${COMPOSE[@]}" run --rm seed || die "seed failed - backend still on $(get_tag BACKEND_TAG)"
 
   switch_service backend BACKEND_TAG "$tag" \
-    || die "backend $tag failed health check and was rolled back. Migrations WERE applied; pre-deploy dump: $backup"
+    || die "backend $tag failed health check and was rolled back. Migrations WERE applied; pre-deploy dump: $backup, storage: $storage_backup"
 }
 
 deploy_frontend() {

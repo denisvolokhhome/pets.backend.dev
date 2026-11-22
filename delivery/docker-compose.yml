@@ -69,6 +69,28 @@ services:
       - breedly-network
     restart: "no"
 
+  # Object storage (RustFS, S3-compatible): photos + private documents.
+  # Internal only: no published ports, console off. Keys come from .env.
+  rustfs:
+    image: rustfs/rustfs:1.0.6
+    container_name: breedly-rustfs
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY}
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ENABLE: "false"
+    volumes:
+      - rustfs_data:/data
+    networks:
+      - breedly-network
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
   # FastAPI Backend
   backend:
     image: 192.168.68.110:80/breedly/breedly-backend:latest
@@ -89,6 +111,10 @@ services:
       STORAGE_PATH: /app/storage
       STORAGE_URL: /storage
       EXPORT_PATH: /var/lib/breedly/exports
+      # Object storage (RustFS) — uploads live here
+      S3_ENDPOINT_URL: http://rustfs:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
       
       # OAuth
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_CLIENT_ID}
@@ -152,10 +178,12 @@ services:
         condition: service_healthy
       migration:
         condition: service_completed_successfully
+      rustfs:
+        condition: service_healthy
     networks:
       - breedly-network
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health', timeout=5).raise_for_status()"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -210,6 +238,8 @@ volumes:
   backend_storage:
     driver: local
   backend_exports:
+    driver: local
+  rustfs_data:
     driver: local
 
 networks:
