@@ -148,7 +148,7 @@ def _google(email, oauth_id="g-123"):
     oauth = MagicMock()
     oauth.get_access_token = AsyncMock(return_value={"access_token": "tok"})
     userinfo = MagicMock()
-    userinfo.json.return_value = {"email": email, "id": oauth_id}
+    userinfo.json.return_value = {"email": email, "id": oauth_id, "verified_email": True}
     http = MagicMock()
     http.get = AsyncMock(return_value=userinfo)
     http_cls = MagicMock()

@@ -174,6 +174,9 @@ class ReviewService:
         Returns ReviewEligibility with eligible=True only when a location
         share exists AND no prior review has been submitted.
         """
+        # Never answer questions about threads the caller isn't part of
+        await self._validate_thread_participation(db, reviewer_id, thread_id)
+
         # Check location share
         has_location = await self._location_shared_in_thread(db, breeder_id, thread_id)
         if not has_location:

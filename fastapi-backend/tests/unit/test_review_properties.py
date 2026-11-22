@@ -660,6 +660,11 @@ async def test_eligibility_correctness(
     breeder = await _create_breeder(async_session, suffix="elig")
     thread_id = uuid.uuid4()
 
+    # The seeker is always a participant (eligibility 404s for outsiders)
+    opener = Message(sender_id=seeker.id, receiver_id=breeder.id, thread_id=thread_id, content="Hi")
+    async_session.add(opener)
+    await async_session.flush()
+
     # Conditionally create a location-share message
     location_msg = None
     if has_location_share:
@@ -705,6 +710,7 @@ async def test_eligibility_correctness(
         await async_session.delete(existing_review)
     if location_msg is not None:
         await async_session.delete(location_msg)
+    await async_session.delete(opener)
     await async_session.flush()
 
 

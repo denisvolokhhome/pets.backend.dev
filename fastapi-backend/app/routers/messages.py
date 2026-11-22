@@ -470,6 +470,8 @@ async def respond_to_message(
             detail="Message not found or you are not the receiver"
         )
     
+    reject_card_spoofing(response_data.response_text)
+
     # Mark original message as read
     original_message.mark_as_read()
     
