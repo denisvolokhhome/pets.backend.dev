@@ -16,7 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.database import get_async_session
-from app.dependencies import current_active_user, require_breeder, check_pet_limit
+from app.dependencies import current_active_user, optional_current_user, require_breeder, check_pet_limit
+from app.models.breeding import Breeding
+from app.models.location import Location
 from app.models.pet import Pet
 from app.models.user import User
 from app.schemas.pet import PetCreate, PetRead, PetUpdate
@@ -39,6 +41,28 @@ def get_file_service() -> FileService:
     """Dependency to get FileService instance."""
     settings = Settings()
     return FileService(settings)
+
+
+# Fields only the pet's owner may see; blanked in public responses.
+PRIVATE_PET_FIELDS = (
+    "microchip", "vaccination", "health_certificate", "deworming", "birth_certificate", "location_id",
+)
+
+
+async def _ensure_own_references(session: AsyncSession, user: User, data: dict) -> None:
+    """A pet may only point at the caller's own location and litter."""
+    location_id = data.get("location_id")
+    if location_id is not None:
+        owned = await session.scalar(
+            select(Location.id).where(Location.id == location_id, Location.user_id == user.id))
+        if owned is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Location not found")
+    breeding_id = data.get("breeding_id")
+    if breeding_id is not None:
+        owned = await session.scalar(
+            select(Breeding.id).where(Breeding.id == breeding_id, Breeding.user_id == user.id))
+        if owned is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Breeding not found")
 
 
 @router.post("/", response_model=PetRead, status_code=status.HTTP_201_CREATED)
@@ -82,6 +106,8 @@ async def create_pet(
     
     **Returns:** The created pet record with generated UUID
     """
+    await _ensure_own_references(session, user, pet_data.model_dump())
+
     # Create new pet instance
     pet = Pet(
         user_id=user.id,
@@ -177,6 +203,7 @@ async def list_pets(
 async def get_pets_by_breeder(
     breeder_id: uuid.UUID,
     session: AsyncSession = Depends(get_async_session),
+    viewer: User | None = Depends(optional_current_user),
     skip: int = 0,
     limit: int = 100,
     include_deleted: bool = False,
@@ -185,9 +212,13 @@ async def get_pets_by_breeder(
     Get all pets owned by a specific breeder.
     
     This endpoint is public and does not require authentication.
-    By default, soft-deleted pets are excluded.
+    Only the breeder themselves sees microchip, health records, location and
+    (with include_deleted) soft-deleted pets; everyone else gets those blanked.
     Each pet includes the location name and all images.
     """
+    is_owner = viewer is not None and viewer.id == breeder_id
+    if not is_owner:
+        include_deleted = False
     from sqlalchemy.orm import selectinload
     
     query = select(Pet).options(selectinload(Pet.images)).where(Pet.user_id == breeder_id)
@@ -245,6 +276,10 @@ async def get_pets_by_breeder(
             "updated_at": pet.updated_at,
             "location_name": pet.location.name if pet.location else None
         }
+        if not is_owner:
+            for field in PRIVATE_PET_FIELDS:
+                pet_dict[field] = None
+            pet_dict["location_name"] = None
         pets_with_location.append(pet_dict)
     
     return pets_with_location
@@ -302,6 +337,7 @@ async def update_pet(
     
     # Update fields that were provided
     update_data = pet_update.model_dump(exclude_unset=True)
+    await _ensure_own_references(session, user, update_data)
     for field, value in update_data.items():
         setattr(pet, field, value)
     

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings
 from app.database import get_async_session
 from app.dependencies import auth_backend, fastapi_users, get_user_manager
-from app.schemas.user import UserRead, UserCreate, UserUpdate, PetSeekerCreate, GuestToAccountCreate, ServiceProviderCreate
+from app.schemas.user import UserRead, UserCreate, PetSeekerCreate, GuestToAccountCreate, ServiceProviderCreate
 from app.services.user_manager import UserManager
 from app.services.notification_service import NotificationService
 from app.schemas.notification import NotificationCreate
@@ -88,12 +88,14 @@ router.include_router(
 #     tags=["auth"],
 # )
 
-# Include users router (for /users/me endpoint)
-router.include_router(
-    fastapi_users.get_users_router(UserRead, UserUpdate),
-    prefix="/users",
-    tags=["users"],
-)
+# NOTE: We do NOT include the default fastapi-users users router. Its
+# PATCH /users/me accepts a new password without the current one, so a stolen
+# session token could take over the account. Profile and password changes go
+# through /api/users/me and /api/users/me/change-password instead.
+@router.get("/users/me", response_model=UserRead, tags=["users"])
+async def read_current_user(user: User = Depends(current_active_user)) -> User:
+    """Return the signed-in user."""
+    return user
 
 
 # Google OAuth endpoints
@@ -184,6 +186,9 @@ async def google_callback(
             
             if not email or not oauth_id:
                 raise ValueError(f"Missing email or id in user data: {user_data}")
+            if user_data.get("verified_email") is not True:
+                # We match accounts by email, so the email must be proven.
+                raise ValueError("Google account email is not verified")
                 
         except Exception as user_info_error:
             logger.error(f"Failed to get user info: {str(user_info_error)}")
@@ -204,12 +209,18 @@ async def google_callback(
         existing_user = result.scalar_one_or_none()
         
         if existing_user:
+            if not existing_user.is_verified:
+                # Nobody proved they own this email before; Google just did.
+                # Drop the old password so whoever registered it can't get back in.
+                import secrets
+                existing_user.hashed_password = user_manager.password_helper.hash(secrets.token_urlsafe(32))
+                existing_user.is_verified = True
             # Update OAuth info if not set
             if not existing_user.oauth_provider:
                 existing_user.oauth_provider = "google"
                 existing_user.oauth_id = oauth_id
-                await session.commit()
-                await session.refresh(existing_user)
+            await session.commit()
+            await session.refresh(existing_user)
             user = existing_user
             await user_manager.on_after_login(user)
         else:

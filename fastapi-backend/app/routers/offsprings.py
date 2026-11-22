@@ -687,7 +687,15 @@ async def _build_offspring_response(
         "is_favorited": is_favorited,  # Always include, defaults to False for guests
         "thread_count": 0  # Will be populated by caller if needed
     }
-    
+
+    # Parents' microchip, health records and location are for the owner only.
+    if user_id != offspring.user_id:
+        from app.routers.pets import PRIVATE_PET_FIELDS
+        for parent in (response["father"], response["mother"]):
+            if parent:
+                for field in PRIVATE_PET_FIELDS:
+                    parent[field] = None
+
     return response
 
 

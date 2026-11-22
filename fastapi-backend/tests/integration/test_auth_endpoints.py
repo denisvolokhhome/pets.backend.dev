@@ -411,11 +411,10 @@ async def test_get_current_user(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_update_current_user(client: AsyncClient):
     """
-    Test updating current authenticated user information.
-    
-    Validates: Requirements 4.2, 13.1
+    The stock fastapi-users PATCH /users/me is not exposed: it would let a
+    stolen token change the password without the current one. Password
+    changes go through /api/users/me/change-password.
     """
-    # Register and login
     registration_data = {
         "email": "updateuser@example.com",
         "password": "SecurePassword123!",
@@ -431,35 +430,15 @@ async def test_update_current_user(client: AsyncClient):
     login_response = await client.post("/api/auth/jwt/login", data=login_data)
     token_data = login_response.json()
     
-    # Update user
     headers = {"Authorization": f"Bearer {token_data['access_token']}"}
-    update_data = {
-        "password": "NewSecurePassword123!",
-    }
+    response = await client.patch(
+        "/api/auth/users/me", json={"password": "NewSecurePassword123!"}, headers=headers
+    )
+    assert response.status_code == 405
     
-    response = await client.patch("/api/auth/users/me", json=update_data, headers=headers)
-    
-    assert response.status_code == 200
-    user_data = response.json()
-    assert user_data["email"] == registration_data["email"]
-    
-    # Verify old password no longer works
-    old_login_data = {
-        "username": registration_data["email"],
-        "password": registration_data["password"],
-    }
-    
-    old_login_response = await client.post("/api/auth/jwt/login", data=old_login_data)
-    assert old_login_response.status_code == 400
-    
-    # Verify new password works
-    new_login_data = {
-        "username": registration_data["email"],
-        "password": update_data["password"],
-    }
-    
-    new_login_response = await client.post("/api/auth/jwt/login", data=new_login_data)
-    assert new_login_response.status_code == 200
+    # Old password still works
+    old_login_response = await client.post("/api/auth/jwt/login", data=login_data)
+    assert old_login_response.status_code == 200
 
 
 @pytest.mark.asyncio
