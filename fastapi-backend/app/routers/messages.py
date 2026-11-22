@@ -20,6 +20,7 @@ from app.models.message import Message
 from app.models.user import User
 from app.models.offspring import Offspring
 from app.schemas.notification import NotificationCreate
+from app.services.message_service import message_preview
 from app.services.notification_service import notification_service
 from app.services.notification_preference_service import notification_preference_service
 from app.schemas.message import (
@@ -293,24 +294,8 @@ async def list_messages(
     # Build response with message previews
     message_items = []
     for msg in messages:
-        # Create preview (first 100 characters)
-        # Check if this is a location share message
-        content_preview = ""
-        if msg.content:
-            try:
-                import json
-                parsed = json.loads(msg.content)
-                if isinstance(parsed, dict) and parsed.get("__type") == "location":
-                    content_preview = "📍 Shared Location"
-                else:
-                    content_preview = msg.content[:100]
-                    if len(msg.content) > 100:
-                        content_preview += "..."
-            except (json.JSONDecodeError, TypeError):
-                content_preview = msg.content[:100]
-                if len(msg.content) > 100:
-                    content_preview += "..."
-        
+        content_preview = message_preview(msg.content)
+
         # Get sender info
         sender_name = display_name(msg.sender)
         
