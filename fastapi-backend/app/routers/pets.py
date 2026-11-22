@@ -582,17 +582,8 @@ async def list_pet_documents(
     result = await session.execute(query)
     docs = result.scalars().all()
 
-    return [
-        {
-            "id": doc.id,
-            "file_name": doc.file_name,
-            "file_type": doc.file_type,
-            "file_size": doc.file_size,
-            "file_url": f"/storage/{doc.file_path}" if not doc.file_path.startswith("/") else f"/storage{doc.file_path}",
-            "created_at": doc.created_at.isoformat(),
-        }
-        for doc in docs
-    ]
+    from app.services.document_access import document_payload
+    return [document_payload(doc) for doc in docs]
 
 
 @router.post("/{pet_id}/documents", status_code=status.HTTP_201_CREATED)
@@ -638,14 +629,8 @@ async def upload_pet_document(
     await session.commit()
     await session.refresh(doc)
 
-    return {
-        "id": doc.id,
-        "file_name": doc.file_name,
-        "file_type": doc.file_type,
-        "file_size": doc.file_size,
-        "file_url": f"/storage/{doc.file_path}" if not doc.file_path.startswith("/") else f"/storage{doc.file_path}",
-        "created_at": doc.created_at.isoformat(),
-    }
+    from app.services.document_access import document_payload
+    return document_payload(doc)
 
 
 @router.delete("/{pet_id}/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -24,7 +24,7 @@ from app.routers.service_categories import router as service_categories_router
 from app.routers.services import router as services_router
 from app.routers import breeding_planner
 from app.routers import waitlist
-from app.routers import exports
+from app.routers import documents, exports
 
 # Configure logging
 logging.basicConfig(
@@ -375,6 +375,7 @@ app.include_router(genealogy.router, tags=["genealogy"])
 app.include_router(billing.router, tags=["billing"])
 app.include_router(reviews.router, tags=["reviews"])
 app.include_router(exports.router)
+app.include_router(documents.router)
 app.include_router(pet_import.router)
 app.include_router(service_categories_router)
 app.include_router(services_router)

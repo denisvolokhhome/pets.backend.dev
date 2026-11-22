@@ -940,6 +940,33 @@ async def share_location_in_thread(
     return message
 
 
+@router.get("/threads/{thread_id}/documents")
+async def list_thread_documents(
+    thread_id: UUID,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> list[dict]:
+    """Documents the breeder shared in this chat, with 15-minute download links.
+
+    Only the two participants may ask. A document drops out when the breeder
+    deletes it or the share message is deleted.
+    """
+    from app.services.document_access import shared_documents_in_thread, sign_document_url
+
+    await get_thread_for_participant(session, thread_id, user)
+    docs = await shared_documents_in_thread(session, thread_id)
+    return [
+        {
+            "id": d.id,
+            "file_name": d.file_name,
+            "file_type": d.file_type,
+            "file_size": d.file_size,
+            "url": sign_document_url(d.id),
+        }
+        for d in docs
+    ]
+
+
 @router.post("/threads/{thread_id}/share-documents", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
 async def share_documents_in_thread(
     thread_id: UUID,
@@ -991,7 +1018,6 @@ async def share_documents_in_thread(
                 "file_name": d.file_name,
                 "file_type": d.file_type,
                 "file_size": d.file_size,
-                "file_url": f"/storage/{d.file_path}" if not d.file_path.startswith("/") else f"/storage{d.file_path}",
             }
             for d in docs
         ],
