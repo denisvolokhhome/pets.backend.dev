@@ -18,6 +18,8 @@ os.environ['ENABLE_SERVICE_PROVIDERS'] = 'true'
 # Same for paid plans: the suite tests real limits/checkout; the flag-off
 # behavior is covered by tests/integration/test_billing_flag.py.
 os.environ['ENABLE_BILLING'] = 'true'
+# Uploads go to an in-memory object store; the suite never needs RustFS.
+os.environ['OBJECT_STORAGE'] = 'memory'
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy import text
@@ -58,6 +60,10 @@ def setup_test_env() -> Generator[None, None, None]:
     # Reset the rate limiter between tests to prevent cross-test interference
     from app.middleware.rate_limiter import rate_limiter
     rate_limiter.requests.clear()
+
+    # Fresh, empty object storage for every test
+    from app.services.object_storage import get_object_storage
+    get_object_storage().clear()
     
     yield
     

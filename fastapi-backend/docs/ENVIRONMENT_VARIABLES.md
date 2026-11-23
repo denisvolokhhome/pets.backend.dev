@@ -290,9 +290,29 @@ STORAGE_PATH=/var/www/pet-breeding/storage
 ```
 
 **Notes:**
-- Directory must be writable by application
-- Created automatically if doesn't exist
-- Should be outside web root for security
+- Uploads now live in object storage (see below). This directory only holds
+  copies from before the move; they are copied into RustFS at startup, and
+  documents are deleted from it once moved.
+
+---
+
+#### Object storage (`S3_*`, `OBJECT_STORAGE`)
+
+Uploads are stored in RustFS (S3-compatible): images in the `photos` bucket
+(served by the backend at the existing `/storage/...` URLs), documents in the
+private `documents` bucket (served only through 15-minute signed links).
+The backend creates both buckets at startup, and `/health` returns 503 when
+storage is unreachable.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `S3_ENDPOINT_URL` | `http://localhost:9000` | `http://rustfs:9000` in the deployed stacks |
+| `S3_ACCESS_KEY` | (empty) | Same value as RustFS `RUSTFS_ACCESS_KEY`; secret, set in the server `.env` |
+| `S3_SECRET_KEY` | (empty) | Same value as RustFS `RUSTFS_SECRET_KEY`; secret, set in the server `.env` |
+| `S3_REGION` | `us-east-1` | Any value works with RustFS |
+| `S3_PHOTOS_BUCKET` | `photos` | |
+| `S3_DOCUMENTS_BUCKET` | `documents` | |
+| `OBJECT_STORAGE` | `s3` | `memory` is for the test suite only |
 
 ---
 
@@ -611,6 +631,9 @@ JWT_LIFETIME_SECONDS=3600
 # Storage
 STORAGE_PATH=storage/app
 STORAGE_URL=/storage
+S3_ENDPOINT_URL=http://localhost:9000
+S3_ACCESS_KEY=breedly-dev
+S3_SECRET_KEY=breedly-dev-secret
 
 # Application
 APP_NAME=Pet Breeding API (Dev)

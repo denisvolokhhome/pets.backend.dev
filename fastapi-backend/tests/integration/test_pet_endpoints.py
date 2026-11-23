@@ -400,13 +400,12 @@ class TestStaticFileServing:
         pet_id = uuid.uuid4()
         image_path, image_filename = await file_service.save_image(upload_file, pet_id)
         
-        # Verify the file was saved
-        # image_path is relative to storage_path.parent (which is tmp_path/storage)
-        # So if storage_path is tmp_path/storage/app, then image_path will be app/filename.jpg
-        # The actual file is at tmp_path/storage/app/filename.jpg
-        saved_file_path = storage_path.parent / image_path
-        assert saved_file_path.exists(), f"Image file should exist at {saved_file_path}"
-        
+        # Verify the image was stored in the photos bucket (never on local disk)
+        from app.services.object_storage import get_object_storage, photos_bucket
+        storage = get_object_storage()
+        assert storage.exists(photos_bucket(), image_path), f"Image should be stored at {image_path}"
+        assert not (storage_path / Path(image_path).name).exists()
+
         # Get the public URL
         public_url = file_service.get_image_url(image_path)
         assert public_url is not None, "Public URL should not be None"
@@ -421,21 +420,16 @@ class TestStaticFileServing:
         # you would make an HTTP GET request to the public_url
         # and verify the response contains the correct image data
         
-        # For now, verify the file exists and can be read
-        with open(saved_file_path, "rb") as f:
-            image_data = f.read()
-            assert len(image_data) > 0, "Image file should contain data"
-            
-            # Verify it's a valid image by opening with PIL
-            img_bytes_verify = io.BytesIO(image_data)
-            verified_image = Image.open(img_bytes_verify)
-            assert verified_image.format == "JPEG", "Saved image should be JPEG format"
-            assert verified_image.size[0] <= 400, "Image width should be preserved or reduced"
-            assert verified_image.size[1] <= 300, "Image height should be preserved or reduced"
-        
+        image_data = storage.get(photos_bucket(), image_path).data
+        assert len(image_data) > 0, "Image should contain data"
+        verified_image = Image.open(io.BytesIO(image_data))
+        assert verified_image.format == "JPEG", "Saved image should be JPEG format"
+        assert verified_image.size[0] <= 400, "Image width should be preserved or reduced"
+        assert verified_image.size[1] <= 300, "Image height should be preserved or reduced"
+
         # Clean up
         await file_service.delete_image(image_path)
-        assert not saved_file_path.exists(), "Image file should be deleted"
+        assert not storage.exists(photos_bucket(), image_path), "Image should be deleted"
 
     @pytest.mark.asyncio
     async def test_static_files_mounted_at_storage_url(

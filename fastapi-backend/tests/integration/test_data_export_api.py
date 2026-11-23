@@ -36,9 +36,6 @@ def export_env(async_session: AsyncSession, tmp_path: Path, monkeypatch):
     from app.main import app
     from app.routers.exports import get_export_session_factory
 
-    (tmp_path / "storage").mkdir()
-    monkeypatch.setattr(svc, "_storage_root", lambda: tmp_path / "storage")
-    monkeypatch.setattr(svc, "_allowed_root", lambda: tmp_path / "storage")
     monkeypatch.setattr(svc, "_export_dir", lambda: tmp_path / "exports")
     app.dependency_overrides[get_export_session_factory] = lambda: _factory(async_session)
     yield tmp_path

@@ -11,6 +11,21 @@ from PIL import Image
 
 from app.config import Settings
 from app.services.file_service import FileService
+from app.services.object_storage import documents_bucket, get_object_storage, photos_bucket
+
+
+class Stored:
+    """A stored upload, looked up in object storage (uploads never touch local disk)."""
+
+    def __init__(self, key: str, bucket: str | None = None):
+        self.key = key
+        self.bucket = bucket or photos_bucket()
+
+    def exists(self) -> bool:
+        return get_object_storage().exists(self.bucket, self.key)
+
+    def image(self) -> Image.Image:
+        return Image.open(io.BytesIO(get_object_storage().get(self.bucket, self.key).data))
 
 
 @pytest.fixture
@@ -75,11 +90,10 @@ def create_upload_file(create_test_image):
 class TestFileServiceInit:
     """Tests for FileService initialization."""
 
-    def test_init_creates_storage_directory(self, test_settings):
-        """Test that FileService creates storage directory on init."""
-        service = FileService(test_settings)
-        assert service.storage_path.exists()
-        assert service.storage_path.is_dir()
+    def test_init_does_not_write_to_local_disk(self, test_settings):
+        """Uploads live in object storage; FileService no longer creates a local folder."""
+        FileService(test_settings)
+        assert not Path(test_settings.storage_path).exists()
 
     def test_init_sets_configuration(self, test_settings, file_service):
         """Test that FileService correctly sets configuration from settings."""
@@ -107,12 +121,12 @@ class TestSaveImage:
         assert original_filename == "test.jpg"
 
         # Verify file was created
-        full_path = file_service.storage_path.parent / image_path
+        full_path = Stored(image_path)
         assert full_path.exists()
-        assert full_path.is_file()
+        assert full_path.exists()
 
         # Verify it's a valid image
-        img = Image.open(full_path)
+        img = full_path.image()
         assert img.format == "JPEG"
 
     @pytest.mark.asyncio
@@ -132,7 +146,7 @@ class TestSaveImage:
         assert original_filename == "test.png"
 
         # Verify file was created
-        full_path = file_service.storage_path.parent / image_path
+        full_path = Stored(image_path)
         assert full_path.exists()
 
     @pytest.mark.asyncio
@@ -198,8 +212,8 @@ class TestSaveImage:
         image_path, _ = await file_service.save_image(upload_file, pet_id)
 
         # Verify image was resized
-        full_path = file_service.storage_path.parent / image_path
-        img = Image.open(full_path)
+        full_path = Stored(image_path)
+        img = full_path.image()
         assert img.width <= 1920
         assert img.height <= 1920
 
@@ -217,8 +231,8 @@ class TestSaveImage:
         assert path1 != path2
 
         # Both files should exist
-        assert (file_service.storage_path.parent / path1).exists()
-        assert (file_service.storage_path.parent / path2).exists()
+        assert (Stored(path1)).exists()
+        assert (Stored(path2)).exists()
 
     @pytest.mark.asyncio
     async def test_save_image_converts_rgba_to_rgb(self, file_service, create_upload_file):
@@ -234,8 +248,8 @@ class TestSaveImage:
         image_path, _ = await file_service.save_image(upload_file, pet_id)
 
         # Verify image was saved and converted
-        full_path = file_service.storage_path.parent / image_path
-        img = Image.open(full_path)
+        full_path = Stored(image_path)
+        img = full_path.image()
         assert img.mode == "RGB"
 
 
@@ -250,7 +264,7 @@ class TestDeleteImage:
 
         # Save image first
         image_path, _ = await file_service.save_image(upload_file, pet_id)
-        full_path = file_service.storage_path.parent / image_path
+        full_path = Stored(image_path)
         assert full_path.exists()
 
         # Delete image
@@ -321,12 +335,12 @@ class TestSaveProfileImage:
         assert str(user_id) in image_path
 
         # Verify file was created
-        full_path = file_service.storage_path.parent / image_path
+        full_path = Stored(image_path)
         assert full_path.exists()
-        assert full_path.is_file()
+        assert full_path.exists()
 
         # Verify it's a valid image
-        img = Image.open(full_path)
+        img = full_path.image()
         assert img.format == "JPEG"
 
     @pytest.mark.asyncio
@@ -342,11 +356,11 @@ class TestSaveProfileImage:
         image_path = await file_service.save_profile_image(upload_file, user_id)
 
         # Verify file was created
-        full_path = file_service.storage_path.parent / image_path
+        full_path = Stored(image_path)
         assert full_path.exists()
 
         # Verify it's a valid PNG
-        img = Image.open(full_path)
+        img = full_path.image()
         assert img.format in ["JPEG", "PNG"]  # May be converted
 
     @pytest.mark.asyncio
@@ -362,7 +376,7 @@ class TestSaveProfileImage:
         image_path = await file_service.save_profile_image(upload_file, user_id)
 
         # Verify file was created
-        full_path = file_service.storage_path.parent / image_path
+        full_path = Stored(image_path)
         assert full_path.exists()
 
     @pytest.mark.asyncio
@@ -378,7 +392,7 @@ class TestSaveProfileImage:
         image_path = await file_service.save_profile_image(upload_file, user_id)
 
         # Verify file was created
-        full_path = file_service.storage_path.parent / image_path
+        full_path = Stored(image_path)
         assert full_path.exists()
 
     @pytest.mark.asyncio
@@ -430,8 +444,8 @@ class TestSaveProfileImage:
         assert path1 != path2
 
         # Both files should exist
-        assert (file_service.storage_path.parent / path1).exists()
-        assert (file_service.storage_path.parent / path2).exists()
+        assert (Stored(path1)).exists()
+        assert (Stored(path2)).exists()
 
     @pytest.mark.asyncio
     async def test_save_profile_image_resizes_to_800x800(self, file_service, create_upload_file):
@@ -448,8 +462,8 @@ class TestSaveProfileImage:
         image_path = await file_service.save_profile_image(upload_file, user_id)
 
         # Verify image was resized
-        full_path = file_service.storage_path.parent / image_path
-        img = Image.open(full_path)
+        full_path = Stored(image_path)
+        img = full_path.image()
         assert img.width <= 800
         assert img.height <= 800
 
@@ -465,7 +479,7 @@ class TestDeleteProfileImage:
 
         # Save profile image first
         image_path = await file_service.save_profile_image(upload_file, user_id)
-        full_path = file_service.storage_path.parent / image_path
+        full_path = Stored(image_path)
         assert full_path.exists()
 
         # Delete profile image
@@ -479,3 +493,32 @@ class TestDeleteProfileImage:
         """Test that deleting non-existent profile image raises FileNotFoundError."""
         with pytest.raises(FileNotFoundError, match="Profile image file not found"):
             await file_service.delete_profile_image("storage/app/nonexistent_profile.jpg")
+
+
+class TestSaveDocument:
+    """Documents go to the private documents bucket under an unguessable key."""
+
+    @pytest.mark.asyncio
+    async def test_save_document_stores_in_documents_bucket(self, file_service, test_settings):
+        from starlette.datastructures import Headers
+        entity_id = uuid.uuid4()
+        upload = UploadFile(filename="health.pdf", file=io.BytesIO(b"%PDF-1.4 test"),
+                            headers=Headers({"content-type": "application/pdf"}))
+
+        key, name, content_type, size = await file_service.save_document(upload, entity_id)
+
+        assert key.startswith(f"doc_{entity_id}_") and key.endswith(".pdf") and "/" not in key
+        assert (name, content_type, size) == ("health.pdf", "application/pdf", 13)
+        stored = get_object_storage().get(documents_bucket(), key)
+        assert stored.data == b"%PDF-1.4 test"
+        assert not get_object_storage().exists(photos_bucket(), key)
+        assert not Path(test_settings.storage_path).exists()
+
+    @pytest.mark.asyncio
+    async def test_delete_document_removes_object(self, file_service):
+        from starlette.datastructures import Headers
+        upload = UploadFile(filename="a.pdf", file=io.BytesIO(b"x"),
+                            headers=Headers({"content-type": "application/pdf"}))
+        key, *_ = await file_service.save_document(upload, uuid.uuid4())
+        await file_service.delete_document(key)
+        assert not get_object_storage().exists(documents_bucket(), key)

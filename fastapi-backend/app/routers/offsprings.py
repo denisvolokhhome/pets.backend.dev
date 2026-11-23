@@ -722,17 +722,8 @@ async def list_offspring_documents(
     ).order_by(Document.created_at)
     docs = (await session.execute(query)).scalars().all()
 
-    return [
-        {
-            "id": d.id,
-            "file_name": d.file_name,
-            "file_type": d.file_type,
-            "file_size": d.file_size,
-            "file_url": f"/storage/{d.file_path}" if not d.file_path.startswith("/") else f"/storage{d.file_path}",
-            "created_at": d.created_at.isoformat(),
-        }
-        for d in docs
-    ]
+    from app.services.document_access import document_payload
+    return [document_payload(d) for d in docs]
 
 
 @router.post("/{offspring_id}/documents", status_code=status.HTTP_201_CREATED)
@@ -775,14 +766,8 @@ async def upload_offspring_document(
     await session.commit()
     await session.refresh(doc)
 
-    return {
-        "id": doc.id,
-        "file_name": doc.file_name,
-        "file_type": doc.file_type,
-        "file_size": doc.file_size,
-        "file_url": f"/storage/{doc.file_path}" if not doc.file_path.startswith("/") else f"/storage{doc.file_path}",
-        "created_at": doc.created_at.isoformat(),
-    }
+    from app.services.document_access import document_payload
+    return document_payload(doc)
 
 
 @router.delete("/{offspring_id}/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -24,6 +24,20 @@ from app.models.pet import Pet
 from app.dependencies import current_active_user
 
 
+class _StoredPath:
+    """A stored upload in the photos bucket, with the bits of the Path API these tests use."""
+
+    def __init__(self, key):
+        from app.services.object_storage import get_object_storage, photos_bucket
+        self.key, self._storage, self._bucket = key, get_object_storage(), photos_bucket()
+
+    def exists(self):
+        return self._storage.exists(self._bucket, self.key)
+
+    def unlink(self):
+        self._storage.delete(self._bucket, self.key)
+
+
 @pytest.fixture
 async def client(async_session: AsyncSession):
     """Create test client with database session override."""
@@ -200,7 +214,7 @@ class TestImageUploadAndReplacementFlow:
         first_image_path = upload1_data["profile_image_path"]
         
         # Step 3: Verify image was uploaded and file exists
-        first_full_path = storage_path / first_image_path
+        first_full_path = _StoredPath(first_image_path)
         assert first_full_path.exists(), "First image file should exist"
         
         # Verify profile was updated
@@ -230,7 +244,7 @@ class TestImageUploadAndReplacementFlow:
         # Step 5: Verify old image was deleted and new image exists
         assert not first_full_path.exists(), "Old image file should be deleted"
         
-        second_full_path = storage_path / second_image_path
+        second_full_path = _StoredPath(second_image_path)
         assert second_full_path.exists(), "New image file should exist"
         
         # Step 6: Verify profile points to new image
@@ -658,7 +672,7 @@ class TestCompleteFeatureIntegration:
         image2_path = image2_response.json()["profile_image_path"]
         
         # Verify old image was deleted
-        image1_full_path = storage_path / image1_path
+        image1_full_path = _StoredPath(image1_path)
         assert not image1_full_path.exists()
         
         # Step 7: Update location
@@ -705,6 +719,6 @@ class TestCompleteFeatureIntegration:
             assert fetched_pet["location_id"] is not None
         
         # Cleanup
-        image2_full_path = storage_path / image2_path
+        image2_full_path = _StoredPath(image2_path)
         if image2_full_path.exists():
             image2_full_path.unlink()
