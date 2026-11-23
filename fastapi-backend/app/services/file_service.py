@@ -1,5 +1,11 @@
-"""File service for handling image uploads and storage."""
+"""File service for handling image and document uploads.
 
+Files live in object storage (RustFS): images in the photos bucket under
+"<upload dir name>/<file>" (the same path stored in the DB and used in
+/storage/... URLs), documents in the private documents bucket.
+"""
+
+import asyncio
 import io
 import uuid
 from pathlib import Path
@@ -9,6 +15,23 @@ from fastapi import UploadFile
 from PIL import Image, ImageOps
 
 from app.config import Settings
+from app.services.object_storage import (
+    ObjectNotFoundError,
+    documents_bucket,
+    get_object_storage,
+    photos_bucket,
+)
+
+
+def _encode_image(image: Image.Image, filename: str, quality: int, fmt: Optional[str] = None) -> Tuple[bytes, str]:
+    """Encode an image the way Image.save(path) would, returning (bytes, content type)."""
+    fmt = fmt or Image.registered_extensions().get(Path(filename).suffix.lower(), "JPEG")
+    kwargs = {"optimize": True}
+    if fmt in ("JPEG", "WEBP"):
+        kwargs["quality"] = quality
+    buf = io.BytesIO()
+    image.save(buf, format=fmt, **kwargs)
+    return buf.getvalue(), Image.MIME.get(fmt, "application/octet-stream")
 
 
 class FileService:
@@ -26,8 +49,10 @@ class FileService:
             settings: Application settings containing storage configuration
         """
         self.settings = settings
+        # Only used to build keys and to read pre-migration local copies; never written.
         self.storage_path = Path(settings.storage_path)
-        self.storage_path.mkdir(parents=True, exist_ok=True)
+        self.key_prefix = self.storage_path.name
+        self.storage = get_object_storage()
         self.allowed_types = settings.get_allowed_image_types_list()
         self.max_size = settings.max_image_size_bytes
         self.max_width = settings.image_max_width
@@ -91,7 +116,6 @@ class FileService:
         if not ext:
             ext = ".jpg"
         filename = f"{pet_id}_{uuid.uuid4()}{ext}"
-        file_path = self.storage_path / filename
 
         # Resize if needed (maintain aspect ratio)
         max_size = (self.max_width, self.max_height)
@@ -108,10 +132,7 @@ class FileService:
             image = background
 
         # Save processed image
-        image.save(file_path, optimize=True, quality=self.quality)
-
-        # Return relative path and original filename
-        relative_path = str(file_path.relative_to(self.storage_path.parent))
+        relative_path = await self._put_image(image, filename)
         original_filename = file.filename or filename
 
         return relative_path, original_filename
@@ -123,65 +144,79 @@ class FileService:
         270: Image.Transpose.ROTATE_90,
     }
 
-    def _resolve_stored_path(self, image_path: str) -> Path:
-        """Absolute path of a stored file, refusing anything outside storage."""
+    async def _put_image(self, image: Image.Image, filename: str, fmt: Optional[str] = None) -> str:
+        """Store an encoded image in the photos bucket and return its key."""
+        data, content_type = _encode_image(image, filename, self.quality, fmt)
+        key = f"{self.key_prefix}/{filename}"
+        await asyncio.to_thread(self.storage.put, photos_bucket(), key, data, content_type)
+        return key
+
+    def _local_copy(self, key: str) -> Optional[Path]:
+        """Pre-migration local file for a stored key, if it still exists inside STORAGE_PATH."""
+        if "\\" in key or ".." in key.split("/"):
+            return None
         root = self.storage_path.resolve()
-        path = (self.storage_path.parent / image_path).resolve()
-        if root not in path.parents:
-            raise ValueError("Invalid image path")
-        return path
+        path = (self.storage_path.parent / key).resolve()
+        return path if root in path.parents and path.is_file() else None
+
+    async def _read_photo(self, key: str) -> bytes:
+        try:
+            return (await asyncio.to_thread(self.storage.get, photos_bucket(), key)).data
+        except ObjectNotFoundError:
+            local = self._local_copy(key)
+            if local is None:
+                raise FileNotFoundError(f"Image file not found: {key}") from None
+            return local.read_bytes()
+
+    async def _delete_photo(self, key: str, missing_message: str) -> None:
+        in_bucket = await asyncio.to_thread(self.storage.exists, photos_bucket(), key)
+        local = self._local_copy(key)
+        if not in_bucket and local is None:
+            raise FileNotFoundError(missing_message)
+        if in_bucket:
+            await asyncio.to_thread(self.storage.delete, photos_bucket(), key)
+        if local is not None:
+            local.unlink(missing_ok=True)
 
     async def rotate_image(self, image_path: str, degrees: int) -> str:
         """
         Rotate a stored image clockwise by 90, 180 or 270 degrees.
 
-        The result is written under a new file name so browsers and CDNs don't
-        keep showing the cached original; the old file is removed.
+        The result is written under a new key so browsers and CDNs don't keep
+        showing the cached original; the old image is removed.
 
         Returns:
-            New relative path of the rotated image.
+            New relative path (key) of the rotated image.
 
         Raises:
-            ValueError: unsupported angle or path outside storage
-            FileNotFoundError: the stored file is missing
+            ValueError: unsupported angle or invalid path
+            FileNotFoundError: the stored image is missing
         """
         degrees = degrees % 360
         if degrees not in self._ROTATIONS:
             raise ValueError("Rotation must be 90, 180 or 270 degrees")
+        if "\\" in image_path or ".." in image_path.split("/"):
+            raise ValueError("Invalid image path")
 
-        src = self._resolve_stored_path(image_path)
-        if not src.exists():
-            raise FileNotFoundError(f"Image file not found: {image_path}")
-
-        with Image.open(src) as opened:
+        data = await self._read_photo(image_path)
+        with Image.open(io.BytesIO(data)) as opened:
             fmt = opened.format
             image = ImageOps.exif_transpose(opened).transpose(self._ROTATIONS[degrees])
 
+        src = Path(image_path)
         prefix = src.stem.rsplit("_", 1)[0] if "_" in src.stem else src.stem
-        dst = src.with_name(f"{prefix}_{uuid.uuid4()}{src.suffix}")
-        save_kwargs = {"optimize": True}
-        if fmt in ("JPEG", "WEBP"):
-            save_kwargs["quality"] = self.quality
-        image.save(dst, format=fmt, **save_kwargs)
-        src.unlink()
-
-        return str(dst.relative_to(self.storage_path.parent.resolve()))
+        new_key = await self._put_image(image, f"{prefix}_{uuid.uuid4()}{src.suffix}", fmt)
+        await self._delete_photo(image_path, f"Image file not found: {image_path}")
+        return new_key
 
     async def delete_image(self, image_path: str) -> None:
         """
-        Delete image file from storage.
-
-        Args:
-            image_path: Relative path to the image file
+        Delete an image from storage.
 
         Raises:
-            FileNotFoundError: If image file does not exist
+            FileNotFoundError: If the image does not exist
         """
-        file_path = self.storage_path.parent / image_path
-        if not file_path.exists():
-            raise FileNotFoundError(f"Image file not found: {image_path}")
-
-        file_path.unlink()
+        await self._delete_photo(image_path, f"Image file not found: {image_path}")
 
     def get_image_url(self, image_path: Optional[str]) -> Optional[str]:
         """
@@ -262,7 +297,6 @@ class FileService:
         if not ext:
             ext = ".jpg"
         filename = f"profile_{user_id}_{uuid.uuid4()}{ext}"
-        file_path = self.storage_path / filename
 
         # Resize if needed (maintain aspect ratio)
         # Use smaller dimensions for profile images
@@ -280,12 +314,7 @@ class FileService:
             image = background
 
         # Save processed image
-        image.save(file_path, optimize=True, quality=self.quality)
-
-        # Return relative path
-        relative_path = str(file_path.relative_to(self.storage_path.parent))
-
-        return relative_path
+        return await self._put_image(image, filename)
 
     async def delete_profile_image(self, image_path: str) -> None:
         """
@@ -297,11 +326,13 @@ class FileService:
         Raises:
             FileNotFoundError: If image file does not exist
         """
-        file_path = self.storage_path.parent / image_path
-        if not file_path.exists():
-            raise FileNotFoundError(f"Profile image file not found: {image_path}")
+        await self._delete_photo(image_path, f"Profile image file not found: {image_path}")
 
-        file_path.unlink()
+    async def read_photo(self, image_path: str) -> Tuple[bytes, str]:
+        """Bytes and content type of a stored image (FileNotFoundError if missing)."""
+        data = await self._read_photo(image_path)
+        fmt = Image.registered_extensions().get(Path(image_path).suffix.lower(), "JPEG")
+        return data, Image.MIME.get(fmt, "application/octet-stream")
     ALLOWED_DOCUMENT_TYPES = {
         "application/pdf",
         "image/jpeg", "image/png", "image/gif", "image/webp",
@@ -317,7 +348,7 @@ class FileService:
         Save uploaded document (PDF or image) and return metadata.
 
         Returns:
-            Tuple of (relative_path, original_filename, content_type, file_size)
+            Tuple of (storage key, original_filename, content_type, file_size)
         """
         if file.content_type not in self.ALLOWED_DOCUMENT_TYPES:
             raise ValueError(
@@ -333,19 +364,12 @@ class FileService:
         ext = Path(file.filename).suffix if file.filename else ".pdf"
         if not ext:
             ext = ".pdf"
-        filename = f"doc_{pet_id}_{uuid.uuid4()}{ext}"
-        file_path = self.storage_path / filename
+        key = f"doc_{pet_id}_{uuid.uuid4()}{ext}"
+        await asyncio.to_thread(self.storage.put, documents_bucket(), key, contents, file.content_type)
+        original_filename = file.filename or key
 
-        with open(file_path, "wb") as f:
-            f.write(contents)
-
-        relative_path = str(file_path.relative_to(self.storage_path.parent))
-        original_filename = file.filename or filename
-
-        return relative_path, original_filename, file.content_type, len(contents)
+        return key, original_filename, file.content_type, len(contents)
 
     async def delete_document(self, file_path: str) -> None:
-        """Delete a document file from storage."""
-        full_path = self.storage_path.parent / file_path
-        if full_path.exists():
-            full_path.unlink()
+        """Delete a document from the documents bucket (missing is fine)."""
+        await asyncio.to_thread(self.storage.delete, documents_bucket(), file_path)

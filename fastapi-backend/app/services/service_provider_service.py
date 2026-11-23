@@ -680,7 +680,10 @@ async def get_public_provider_profile(
 
     # Fetch user's locations
     loc_result = await db.execute(
-        select(Location).where(Location.user_id == user_id)
+        select(Location).where(
+            Location.user_id == user_id,
+            Location.is_published == True,  # noqa: E712 - private addresses stay private
+        )
     )
     locations = [
         {

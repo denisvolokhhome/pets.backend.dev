@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
-from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -187,7 +186,7 @@ async def rotate_profile_image(
 @router.get("/me/profile-image")
 async def get_profile_image(
     user: User = Depends(current_active_user),
-) -> FileResponse:
+) -> Response:
     """
     Serve user's profile image.
     
@@ -195,7 +194,7 @@ async def get_profile_image(
         user: Current authenticated user
         
     Returns:
-        FileResponse: Profile image file
+        Response: Profile image bytes
         
     Raises:
         HTTPException: If user has no profile image or file not found
@@ -206,20 +205,18 @@ async def get_profile_image(
             detail="User has no profile image"
         )
     
-    # Construct full file path
-    storage_path = Path(settings.storage_path).parent
-    file_path = storage_path / user.profile_image_path
-    
-    if not file_path.exists():
+    try:
+        data, content_type = await FileService(settings).read_photo(user.profile_image_path)
+    except (FileNotFoundError, ValueError):
         raise HTTPException(
             status_code=404,
             detail="Profile image file not found"
         )
-    
-    return FileResponse(
-        path=str(file_path),
-        media_type="image/jpeg",
-        filename=file_path.name
+
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={"Content-Disposition": f'inline; filename="{Path(user.profile_image_path).name}"'},
     )
 
 

@@ -4,7 +4,7 @@
 # Jenkinsfile.prod pipelines of the backend and frontend repos.
 #
 # Two env files are passed on every compose call:
-#   .env          secrets (POSTGRES_PASSWORD, SECRET_KEY, SMTP_*, STRIPE_*, ...); lives only on the server
+#   .env          secrets (POSTGRES_PASSWORD, SECRET_KEY, S3_ACCESS_KEY, S3_SECRET_KEY, SMTP_*, STRIPE_*, ...); lives only on the server
 #   releases.env  image tags currently deployed (BACKEND_TAG, FRONTEND_TAG); written by deploy.sh
 #
 # Images are always pinned to an immutable tag (prod-<build>-<sha>), never :latest,
@@ -27,6 +27,10 @@ x-backend-env: &backend-env
   STORAGE_PATH: /app/storage
   STORAGE_URL: /storage
   EXPORT_PATH: /var/lib/breedly/exports   # private, NOT under STORAGE_PATH (which is served publicly)
+  # Uploads live in RustFS (photos + private documents); STORAGE_PATH only holds pre-migration copies
+  S3_ENDPOINT_URL: http://rustfs:9000
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY in .env}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
   GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_CLIENT_ID}
   GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
   # Feature flags: must match the frontend's environment.prod.ts
@@ -61,6 +65,24 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+
+  # Object storage (RustFS, S3-compatible). Internal only: no published ports, console off.
+  rustfs:
+    image: rustfs/rustfs:1.0.6
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY in .env}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ENABLE: "false"
+    volumes:
+      - rustfs_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     restart: unless-stopped
 
   # One-shot jobs. The "jobs" profile keeps them out of a plain `up -d`;
@@ -104,6 +126,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      rustfs:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
       interval: 30s
@@ -129,3 +153,4 @@ volumes:
   redis_data:
   backend_storage:
   backend_exports:
+  rustfs_data:

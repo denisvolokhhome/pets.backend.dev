@@ -441,9 +441,13 @@ async def assign_pets_to_litter(
             detail="Breeding not found"
         )
     
-    # Validate both pets exist
+    # Validate both pets exist and belong to the caller
     pet_ids = pet_assignment.pet_ids
-    pets_query = select(Pet).where(Pet.id.in_(pet_ids)).options(
+    pets_query = select(Pet).where(
+        Pet.id.in_(pet_ids),
+        Pet.user_id == current_user.id,
+        Pet.is_deleted == False,  # noqa: E712
+    ).options(
         selectinload(Pet.breed),
         selectinload(Pet.location)
     )
@@ -602,15 +606,17 @@ async def add_puppies_to_litter(
     # Derive location and breed from parent pets
     parent_pets = [litter_pet.pet for litter_pet in breeding.breeding_pets]
     
-    # Get location from first parent pet (they should all have the same location)
-    location_id = parent_pets[0].location_id if parent_pets[0].location_id else None
+    # Get location from first parent pet (they should all have the same location).
+    # Never inherit a location from a pet in another account.
+    first_parent = parent_pets[0]
+    location_id = first_parent.location_id if first_parent.user_id == current_user.id else None
     
     # Get breed - if both parents have the same breed, use that; otherwise use first parent's breed
     breed_ids = [pet.breed_id for pet in parent_pets if pet.breed_id]
     breed_id = breed_ids[0] if breed_ids else None
     
-    # Get user_id from first parent pet
-    user_id = parent_pets[0].user_id
+    # Puppies always belong to the breeder who owns the litter
+    user_id = current_user.id
     
     # Create pet records for each puppy
     created_puppies = []

@@ -33,6 +33,25 @@ services:
       timeout: 5s
       retries: 5
 
+  # RustFS - S3-compatible object storage for uploads (local dev credentials only)
+  rustfs:
+    image: rustfs/rustfs:1.0.6
+    container_name: pets_rustfs
+    ports:
+      - "127.0.0.1:9000:9000"
+    environment:
+      RUSTFS_ACCESS_KEY: breedly-dev
+      RUSTFS_SECRET_KEY: breedly-dev-secret
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ENABLE: "false"
+    volumes:
+      - rustfs_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Nominatim - Geocoding service with US data only
   nominatim:
     image: mediagis/nominatim:4.4
@@ -62,6 +81,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  rustfs_data:
   nominatim_data:
 
 networks:

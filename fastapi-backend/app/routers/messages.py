@@ -20,6 +20,7 @@ from app.models.message import Message
 from app.models.user import User
 from app.models.offspring import Offspring
 from app.schemas.notification import NotificationCreate
+from app.services.message_service import message_preview
 from app.services.notification_service import notification_service
 from app.services.notification_preference_service import notification_preference_service
 from app.schemas.message import (
@@ -293,24 +294,8 @@ async def list_messages(
     # Build response with message previews
     message_items = []
     for msg in messages:
-        # Create preview (first 100 characters)
-        # Check if this is a location share message
-        content_preview = ""
-        if msg.content:
-            try:
-                import json
-                parsed = json.loads(msg.content)
-                if isinstance(parsed, dict) and parsed.get("__type") == "location":
-                    content_preview = "📍 Shared Location"
-                else:
-                    content_preview = msg.content[:100]
-                    if len(msg.content) > 100:
-                        content_preview += "..."
-            except (json.JSONDecodeError, TypeError):
-                content_preview = msg.content[:100]
-                if len(msg.content) > 100:
-                    content_preview += "..."
-        
+        content_preview = message_preview(msg.content)
+
         # Get sender info
         sender_name = display_name(msg.sender)
         
@@ -470,6 +455,8 @@ async def respond_to_message(
             detail="Message not found or you are not the receiver"
         )
     
+    reject_card_spoofing(response_data.response_text)
+
     # Mark original message as read
     original_message.mark_as_read()
     
@@ -938,6 +925,33 @@ async def share_location_in_thread(
     return message
 
 
+@router.get("/threads/{thread_id}/documents")
+async def list_thread_documents(
+    thread_id: UUID,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> list[dict]:
+    """Documents the breeder shared in this chat, with 15-minute download links.
+
+    Only the two participants may ask. A document drops out when the breeder
+    deletes it or the share message is deleted.
+    """
+    from app.services.document_access import shared_documents_in_thread, sign_document_url
+
+    await get_thread_for_participant(session, thread_id, user)
+    docs = await shared_documents_in_thread(session, thread_id)
+    return [
+        {
+            "id": d.id,
+            "file_name": d.file_name,
+            "file_type": d.file_type,
+            "file_size": d.file_size,
+            "url": sign_document_url(d.id),
+        }
+        for d in docs
+    ]
+
+
 @router.post("/threads/{thread_id}/share-documents", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
 async def share_documents_in_thread(
     thread_id: UUID,
@@ -989,7 +1003,6 @@ async def share_documents_in_thread(
                 "file_name": d.file_name,
                 "file_type": d.file_type,
                 "file_size": d.file_size,
-                "file_url": f"/storage/{d.file_path}" if not d.file_path.startswith("/") else f"/storage{d.file_path}",
             }
             for d in docs
         ],

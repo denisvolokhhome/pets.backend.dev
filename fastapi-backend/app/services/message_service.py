@@ -1,4 +1,5 @@
 """Message service for handling message operations."""
+import json
 import uuid
 from datetime import datetime
 from typing import Optional, List, Tuple
@@ -11,6 +12,24 @@ from app.models.message import Message
 from app.models.user import User
 from app.models.offspring import Offspring
 from app.schemas.message import MessageCreate, MessageResponse, ConversationResponse, MessageListItem
+
+
+
+_CARD_PREVIEWS = {"location": "📍 Shared Location", "documents": "📄 Shared documents"}
+
+
+def message_preview(content: str) -> str:
+    """Conversation-list preview: a label for server-made cards, else the first 100 characters."""
+    if not content:
+        return ""
+    if content.startswith("{"):
+        try:
+            parsed = json.loads(content)
+        except (ValueError, TypeError):
+            parsed = None
+        if isinstance(parsed, dict) and parsed.get("__type") in _CARD_PREVIEWS:
+            return _CARD_PREVIEWS[parsed["__type"]]
+    return content[:100] + ("..." if len(content) > 100 else "")
 
 
 class MessageService:
@@ -285,10 +304,8 @@ class MessageService:
             message_count = total_result.scalar()
             
             # Create message preview
-            content_preview = msg.content[:100]
-            if len(msg.content) > 100:
-                content_preview += "..."
-            
+            content_preview = message_preview(msg.content)
+
             conversations.append(ConversationResponse(
                 thread_id=msg.thread_id,
                 participant_id=participant_id,

@@ -2,7 +2,9 @@
 
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
+import asyncio
 import logging
+import mimetypes
 import os
 import time
 
@@ -10,8 +12,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse, Response
 from pathlib import Path
 from sqlalchemy.exc import NoResultFound
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -23,7 +24,7 @@ from app.routers.service_categories import router as service_categories_router
 from app.routers.services import router as services_router
 from app.routers import breeding_planner
 from app.routers import waitlist
-from app.routers import exports
+from app.routers import documents, exports
 
 # Configure logging
 logging.basicConfig(
@@ -127,9 +128,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Breeding milestone reminders (never under tests)
     from app.services.breeding_reminder_service import start_reminder_loop, stop_reminder_loop
     reminder_task = None
+    photo_copy_task = None
     if os.environ.get("TESTING") != "1":
         from app.database import async_session_maker
         from app.services.data_export_service import sweep_exports
+        from app.services.object_storage import get_object_storage
+        try:
+            await asyncio.to_thread(get_object_storage().ensure_buckets)
+            print("✓ Object storage buckets verified")
+            from app.services.storage_migration import start_storage_migration
+            photo_copy_task = await start_storage_migration(async_session_maker, get_object_storage(), storage_path)
+            print("✓ Documents moved to object storage; copying photos in the background")
+        except Exception as exc:  # noqa: BLE001 — /health reports storage; the move retries next start
+            print(f"✗ Object storage setup failed: {exc}")
         try:
             await sweep_exports(async_session_maker, startup=True)
         except Exception as exc:  # noqa: BLE001 — never block startup on cleanup
@@ -142,6 +153,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Shutdown
     if reminder_task is not None:
         await stop_reminder_loop(reminder_task)
+    if photo_copy_task is not None and not photo_copy_task.done():
+        photo_copy_task.cancel()  # resumes on the next start (copies are idempotent)
     print(f"✓ Application shutdown: {settings.app_name}")
 
 
@@ -302,18 +315,35 @@ app.add_middleware(
 # Mount static files for image serving
 # Ensure storage directory exists before mounting
 #
-# Stored paths are relative to the PARENT of STORAGE_PATH (e.g. "storage/<file>" when
-# STORAGE_PATH=/app/storage), and URLs are "/storage/<stored path>". Serve only the upload
-# directory itself, at "/storage/<its name>", so those URLs keep working while nothing
-# around it is public. (Serving the parent exposed /app — the whole source tree — in prod.)
+# Photos live in the object storage "photos" bucket under their stored path
+# ("<upload dir name>/<file>", e.g. "storage/x.jpg" when STORAGE_PATH=/app/storage),
+# and URLs stay "/storage/<stored path>". Only that prefix is served; documents
+# ("doc_*") never are — they go through signed links (app/routers/documents.py).
+# While pre-migration local copies exist, a photo missing from the bucket is
+# served from STORAGE_PATH.
 upload_dir = Path(settings.storage_path)
-upload_dir.mkdir(parents=True, exist_ok=True)
+PHOTO_CACHE_CONTROL = "public, max-age=31536000, immutable"
 
-app.mount(
-    f"{settings.storage_url.rstrip('/')}/{upload_dir.resolve().name}",
-    StaticFiles(directory=str(upload_dir)),
-    name="storage"
-)
+
+@app.api_route(f"{settings.storage_url.rstrip('/')}/{upload_dir.resolve().name}/{{rest:path}}", methods=["GET", "HEAD"], include_in_schema=False)
+async def serve_photo(rest: str) -> Response:
+    from app.services.object_storage import ObjectNotFoundError, get_object_storage, photos_bucket
+
+    parts = rest.split("/")
+    if not rest or "\\" in rest or any(p in ("", ".", "..") for p in parts) or parts[-1].startswith("doc_"):
+        raise HTTPException(status_code=404, detail="Not found")
+    key = f"{upload_dir.resolve().name}/{rest}"
+    try:
+        obj = await asyncio.to_thread(get_object_storage().get, photos_bucket(), key)
+        data, content_type = obj.data, obj.content_type
+    except ObjectNotFoundError:
+        root = upload_dir.resolve()
+        local = (root / rest).resolve()
+        if root not in local.parents or not local.is_file():
+            raise HTTPException(status_code=404, detail="Not found")
+        data = await asyncio.to_thread(local.read_bytes)
+        content_type = mimetypes.guess_type(local.name)[0] or "application/octet-stream"
+    return Response(content=data, media_type=content_type, headers={"Cache-Control": PHOTO_CACHE_CONTROL})
 
 
 @app.get("/")
@@ -351,17 +381,25 @@ app.include_router(genealogy.router, tags=["genealogy"])
 app.include_router(billing.router, tags=["billing"])
 app.include_router(reviews.router, tags=["reviews"])
 app.include_router(exports.router)
+app.include_router(documents.router)
 app.include_router(pet_import.router)
 app.include_router(service_categories_router)
 app.include_router(services_router)
 
 
 @app.get("/health")
-async def health_check() -> dict:
-    """Health check endpoint."""
+async def health_check():
+    """Health check endpoint. 503 when object storage is unreachable, so deploys roll back."""
+    from app.services.object_storage import get_object_storage
+    try:
+        await asyncio.to_thread(get_object_storage().ping)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Health check: object storage unreachable: %s", exc)
+        return JSONResponse(status_code=503, content={"status": "unhealthy", "storage": "unreachable"})
     return {
         "status": "healthy",
-        "app_name": settings.app_name
+        "app_name": settings.app_name,
+        "storage": "ok",
     }
 
 
