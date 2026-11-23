@@ -223,7 +223,8 @@ services:
     networks:
       - breedly-network
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]
+      # the image (python:3.11-slim) has no curl
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3
