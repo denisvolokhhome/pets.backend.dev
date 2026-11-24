@@ -22,6 +22,8 @@ class NotificationPreference(Base):
     favorite_added = Column(Boolean, default=False, nullable=False)
     breeding_reminder = Column(Boolean, default=True, server_default=true(), nullable=False)
     waitlist_update = Column(Boolean, default=True, server_default=true(), nullable=False)
+    # New litter applications (breeders) and updates on your own application (families)
+    application_update = Column(Boolean, default=True, server_default=true(), nullable=False)
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.now, nullable=False)

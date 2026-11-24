@@ -41,6 +41,7 @@ from app.schemas.waitlist import (
 from app.services.breeding_planner_service import breeding_label
 from app.services.notification_preference_service import notification_preference_service
 from app.services.notification_service import notification_service
+from app.services.offspring_reservation import reserve_offspring
 from app.services.waitlist_rules import (
     ACTIVE_STATUSES,
     SETTLED_DEPOSIT_STATUSES,
@@ -142,12 +143,16 @@ class WaitlistService:
         )
         return result.scalar_one()
 
-    async def _load_owned(self, db: AsyncSession, breeder: User, entry_id: uuid.UUID) -> WaitlistEntry:
-        result = await db.execute(
+    async def _load_owned(self, db: AsyncSession, breeder: User, entry_id: uuid.UUID, *,
+                          lock: bool = False) -> WaitlistEntry:
+        stmt = (
             select(WaitlistEntry)
             .where(WaitlistEntry.id == entry_id, WaitlistEntry.breeder_id == breeder.id)
             .options(*_entry_options()).execution_options(populate_existing=True)
         )
+        if lock:
+            stmt = stmt.with_for_update(of=WaitlistEntry)
+        result = await db.execute(stmt)
         entry = result.scalar_one_or_none()
         if entry is None:
             raise _not_found()
@@ -591,15 +596,17 @@ class WaitlistService:
 
     async def match(self, db: AsyncSession, breeder: User, entry_id: uuid.UUID,
                     offspring_id: uuid.UUID) -> EntryRead:
-        entry = await self._load_owned(db, breeder, entry_id)
+        # Lock the entry so a double-submitted match can't reserve two puppies
+        entry = await self._load_owned(db, breeder, entry_id, lock=True)
         if not can_transition(entry.status, "match", entry.breeding_id is not None):
             raise _invalid_transition("matched")
-        offspring = await db.get(Offspring, offspring_id, populate_existing=True)
-        if (offspring is None or offspring.breeding_id != entry.breeding_id
-                or offspring.user_id != breeder.id or offspring.status != "Available"):
+        # Atomic, shared with litter applications: only one family can hold a puppy
+        reserved = (entry.breeding_id is not None and await reserve_offspring(
+            db, offspring_id=offspring_id, breeding_id=entry.breeding_id, breeder_id=breeder.id))
+        if not reserved:  # nothing was written; the request's session rolls back on the error
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                                 detail="Choose an available offspring from this litter")
-        offspring.status = "Reserved"
+        offspring = await db.get(Offspring, offspring_id, populate_existing=True)
         entry.status = "matched"
         entry.offspring_id = offspring.id
         if entry.deposit_status == "received":

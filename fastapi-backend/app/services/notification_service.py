@@ -16,6 +16,7 @@ from app.services.email_service import EmailService
 # Notification types that also go out by email (see Settings → Notifications)
 _EMAILED_TYPES = {
     "message_received", "favorite_added", "breeding_milestone", "waitlist_request", "waitlist_update",
+    "litter_application", "application_update",
 }
 _pending_emails: set = set()
 settings = Settings()
@@ -73,6 +74,17 @@ class NotificationService:
             url, label = f"{frontend}/messages?messageId={notification.related_id}", "Read message"
         elif notification.type == "breeding_milestone":
             url, label = f"{frontend}/milestones/{notification.related_id}", "View breeding"
+        elif notification.type in ("litter_application", "application_update"):
+            # related_id is the application; the link goes to its litter
+            from app.models.litter_application import LitterApplication
+            application = await db.get(LitterApplication, notification.related_id) if notification.related_id else None
+            breeding_id = application.breeding_id if application else None
+            if notification.type == "litter_application":  # to the breeder
+                path, label = (f"/breeding/{breeding_id}#applications", "Review application") if breeding_id \
+                    else ("/breedings", "View breedings")
+            else:  # to the family
+                path, label = (f"/litter/{breeding_id}", "View litter") if breeding_id else ("/", "Open Breedly")
+            url = f"{frontend}{path}"
         elif notification.type in ("waitlist_request", "waitlist_update"):
             path = "/my-waitlists" if notification.related_type == "waitlist_entry_seeker" else "/waitlist"
             label = "Review request" if notification.type == "waitlist_request" else "View waitlist"

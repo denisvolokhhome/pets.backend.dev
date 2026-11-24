@@ -480,8 +480,12 @@ async def respond_to_message(
         f"with new message {response_message.id} in thread {original_message.thread_id}"
     )
     
-    # TODO: Send notification to original sender
-    
+    # In-app notification + email (message_received), like every other send path
+    await notify_new_message(
+        session, original_message.sender_id, "New message",
+        f"You have a new message from {display_name(user)}", response_message.id,
+    )
+
     return response_message
 
 

@@ -115,6 +115,7 @@ class ApplicationFormRead(BaseModel):
     id: int
     breeding_id: int
     form_fields: List[ApplicationFormField]
+    accepting_litter_applications: bool = False
     created_at: datetime
     updated_at: Optional[datetime] = None
 
