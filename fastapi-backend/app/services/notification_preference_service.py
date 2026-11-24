@@ -75,6 +75,8 @@ class NotificationPreferenceService:
             preferences.breeding_reminder = preference_data.breeding_reminder
         if preference_data.waitlist_update is not None:
             preferences.waitlist_update = preference_data.waitlist_update
+        if preference_data.application_update is not None:
+            preferences.application_update = preference_data.application_update
         
         await db.commit()
         await db.refresh(preferences)
@@ -109,6 +111,8 @@ class NotificationPreferenceService:
             return preferences.breeding_reminder
         elif notification_type in ("waitlist_request", "waitlist_update"):
             return preferences.waitlist_update
+        elif notification_type in ("litter_application", "application_update"):
+            return preferences.application_update
         
         # Default to True for unknown types (backward compatibility)
         return True

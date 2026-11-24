@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 import uuid
 
-from sqlalchemy import Integer, DateTime, ForeignKey, func
+from sqlalchemy import Boolean, Integer, DateTime, ForeignKey, func, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -45,6 +45,13 @@ class BreedingApplicationForm(Base):
 
     # JSON array of field definitions
     form_fields: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+
+    # "Apply for this litter" on the public litter page. Off by default; closing it
+    # stops new litter submissions but keeps past ones. Puppy-page applications only
+    # need the form to exist (unchanged behaviour).
+    accepting_litter_applications: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
