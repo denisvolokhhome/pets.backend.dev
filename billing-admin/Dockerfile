@@ -11,7 +11,8 @@ COPY app.py db.py ./
 
 EXPOSE 8501
 
-HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
+# python:3.11-slim has no curl; use the interpreter that is already there
+HEALTHCHECK CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=5)" || exit 1
 
 CMD ["streamlit", "run", "app.py", \
      "--server.port=8501", \
