@@ -30,6 +30,7 @@ from app.models.service import Service, ServiceImage, service_locations
 from app.models.data_export import DataExport
 from app.models.litter_application import LitterApplication
 from app.models.heat_cycle import HeatCycle, BreederReminder
+from app.models.mobile_signin_token import MobileSigninToken
 
 __all__ = [
     "User",
@@ -68,4 +69,5 @@ __all__ = [
     "LitterApplication",
     "HeatCycle",
     "BreederReminder",
+    "MobileSigninToken",
 ]
