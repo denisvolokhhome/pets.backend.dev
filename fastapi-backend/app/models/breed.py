@@ -44,11 +44,12 @@ class Breed(Base):
         nullable=True
     )
 
-    # Relationships
+    # Relationships. pets/offsprings are lazy="select": "selectin" made every breed list
+    # (and every Pet/Offspring .breed) load all pets and offspring of those breeds.
     pets: Mapped[list["Pet"]] = relationship(
         "Pet",
         back_populates="breed",
-        lazy="selectin"
+        lazy="select"
     )
     colours: Mapped[list["BreedColour"]] = relationship(
         "BreedColour",
@@ -59,7 +60,7 @@ class Breed(Base):
     offsprings: Mapped[list["Offspring"]] = relationship(
         "Offspring",
         back_populates="breed",
-        lazy="selectin"
+        lazy="select"
     )
 
     def __repr__(self) -> str:
@@ -103,7 +104,8 @@ class BreedColour(Base):
         nullable=True
     )
 
-    # Relationships
+    # Relationships. pets/offsprings are lazy="select": "selectin" made every breed list
+    # (and every Pet/Offspring .breed) load all pets and offspring of those breeds.
     breed: Mapped["Breed"] = relationship(
         "Breed",
         back_populates="colours",

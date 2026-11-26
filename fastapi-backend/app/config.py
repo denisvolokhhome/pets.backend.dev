@@ -14,6 +14,18 @@ class Settings(BaseSettings):
         ...,
         description="PostgreSQL database URL with asyncpg driver"
     )
+    db_pool_size: int = Field(
+        default=5, ge=1, le=50,
+        description="SQLAlchemy pool size per worker process (DB_POOL_SIZE)"
+    )
+    db_max_overflow: int = Field(
+        default=10, ge=0, le=50,
+        description="Extra connections per worker beyond the pool (DB_MAX_OVERFLOW)"
+    )
+    db_pool_timeout: int = Field(
+        default=30, ge=1, le=120,
+        description="Seconds to wait for a free connection before failing (DB_POOL_TIMEOUT)"
+    )
 
     # Authentication Configuration
     secret_key: str = Field(

@@ -31,7 +31,7 @@ async def test_pet_user_relationship(async_session: AsyncSession, test_user: Use
     assert pet.user.email == test_user.email
     
     # Verify reverse relationship
-    await async_session.refresh(test_user)
+    await async_session.refresh(test_user, ["pets"])  # collection is lazy: load it explicitly
     assert len(test_user.pets) > 0
     assert any(p.id == pet.id for p in test_user.pets)
 
@@ -71,7 +71,7 @@ async def test_pet_breed_relationship(async_session: AsyncSession, test_user: Us
     assert pet.breed.name == "Test Breed"
     
     # Verify reverse relationship
-    await async_session.refresh(breed)
+    await async_session.refresh(breed, ["pets"])  # collection is lazy: load it explicitly
     assert len(breed.pets) > 0
     assert any(p.id == pet.id for p in breed.pets)
 
@@ -150,7 +150,7 @@ async def test_location_user_relationship(async_session: AsyncSession, test_user
     assert location.user.email == test_user.email
     
     # Verify reverse relationship
-    await async_session.refresh(test_user)
+    await async_session.refresh(test_user, ["locations"])  # collection is lazy: load it explicitly
     assert len(test_user.locations) > 0
     assert any(loc.id == location.id for loc in test_user.locations)
 
@@ -172,7 +172,7 @@ async def test_multiple_pets_same_user(async_session: AsyncSession, test_user: U
     await async_session.commit()
     
     # Refresh user to load relationships
-    await async_session.refresh(test_user)
+    await async_session.refresh(test_user, ["pets"])  # collection is lazy: load it explicitly
     
     # Verify all pets are associated with the user
     assert len(test_user.pets) >= 3

@@ -7,9 +7,10 @@ This module provides CRUD operations for dog breed management including:
 - Managing breed information (name, code, group)
 - Breed autocomplete search for user input
 """
+import time
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +27,16 @@ router = APIRouter(
         400: {"description": "Breed with this name already exists"},
     }
 )
+
+# The breed list is near-static and requested on most pages, so it is cached in-process.
+# Writes through this router clear it; with several workers (or seed scripts writing to the
+# DB) other processes may serve a stale list for at most LIST_CACHE_TTL_SECONDS.
+LIST_CACHE_TTL_SECONDS = 300
+_list_cache: dict[tuple, tuple[float, List[BreedRead]]] = {}
+
+
+def clear_breed_list_cache() -> None:
+    _list_cache.clear()
 
 
 @router.post("/", response_model=BreedRead, status_code=status.HTTP_201_CREATED)
@@ -78,12 +89,15 @@ async def create_breed(
     session.add(breed)
     await session.commit()
     await session.refresh(breed)
+    clear_breed_list_cache()
     
     return breed
 
 
+@router.get("", response_model=List[BreedRead], include_in_schema=False)  # no 307 hop
 @router.get("/", response_model=List[BreedRead])
 async def list_breeds(
+    response: Response,
     session: AsyncSession = Depends(get_async_session),
     skip: int = 0,
     limit: int = 100,
@@ -92,7 +106,7 @@ async def list_breeds(
         description="Filter breeds by pet type: 'dog' or 'cat'",
         pattern="^(dog|cat)$",
     ),
-) -> List[Breed]:
+) -> List[BreedRead]:
     """
     List all breeds, optionally filtered by pet type (kind).
 
@@ -104,6 +118,12 @@ async def list_breeds(
     - limit: Maximum number of records to return (default: 100)
     - kind: Optional filter — 'dog', 'cat', 'cow', or 'horse'
     """
+    response.headers["Cache-Control"] = f"public, max-age={LIST_CACHE_TTL_SECONDS}"
+    key = (skip, limit, kind)
+    cached = _list_cache.get(key)
+    if cached and time.monotonic() - cached[0] < LIST_CACHE_TTL_SECONDS:
+        return cached[1]
+
     query = select(Breed)
 
     if kind:
@@ -112,9 +132,9 @@ async def list_breeds(
     query = query.offset(skip).limit(limit).order_by(Breed.name)
 
     result = await session.execute(query)
-    breeds = result.scalars().all()
-
-    return list(breeds)
+    breeds = [BreedRead.model_validate(b, from_attributes=True) for b in result.scalars().all()]
+    _list_cache[key] = (time.monotonic(), breeds)
+    return breeds
 
 
 @router.get("/autocomplete", response_model=List[BreedRead])
@@ -267,6 +287,7 @@ async def update_breed(
         setattr(breed, field, value)
     
     await session.commit()
+    clear_breed_list_cache()
     await session.refresh(breed)
     
     return breed
@@ -297,3 +318,4 @@ async def delete_breed(
     # Delete the breed
     await session.delete(breed)
     await session.commit()
+    clear_breed_list_cache()

@@ -61,6 +61,10 @@ def setup_test_env() -> Generator[None, None, None]:
     from app.middleware.rate_limiter import rate_limiter
     rate_limiter.requests.clear()
 
+    # The breed list is cached in-process; tests write breeds straight to the DB
+    from app.routers.breeds import clear_breed_list_cache
+    clear_breed_list_cache()
+
     # Fresh, empty object storage for every test
     from app.services.object_storage import get_object_storage
     get_object_storage().clear()

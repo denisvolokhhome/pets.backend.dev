@@ -48,5 +48,10 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:8000/health', timeout=5).raise_for_status()" || exit 1
 
+# Uvicorn reads WEB_CONCURRENCY as its --workers count. One worker used a single CPU core
+# and capped the API at ~20 req/s in the Nov 2026 load test. Override per host in compose;
+# each worker opens its own DB pool (see DB_POOL_SIZE / DB_MAX_OVERFLOW in app/config.py).
+ENV WEB_CONCURRENCY=2
+
 # Run the application
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

@@ -30,8 +30,11 @@ def get_engine() -> AsyncEngine:
         settings.database_url,
         echo=settings.debug,  # Log SQL queries in debug mode
         pool_pre_ping=True,  # Verify connections before using them
-        pool_size=5,  # Number of connections to maintain
-        max_overflow=10,  # Maximum number of connections to create beyond pool_size
+        # Per worker process: total connections = WEB_CONCURRENCY x (pool_size + max_overflow).
+        # Keep that under Postgres max_connections (default 100) minus migrations/admin tools.
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+        pool_timeout=settings.db_pool_timeout,
     )
 
 
