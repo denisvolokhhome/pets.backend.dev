@@ -80,7 +80,7 @@ pipeline {
                     sshCommand remote: remote, command: 'cd /home/breedly/breedly-app && docker compose pull billing-admin'
 
                     echo "Restarting billing-admin service..."
-                    sshCommand remote: remote, command: 'cd /home/breedly/breedly-app && docker compose up -d billing-admin'
+                    sshCommand remote: remote, command: 'cd /home/breedly/breedly-app && docker compose up -d --no-deps billing-admin'
 
                     echo "Waiting for service to stabilize..."
                     sshCommand remote: remote, command: 'sleep 10 && cd /home/breedly/breedly-app && docker compose ps billing-admin'

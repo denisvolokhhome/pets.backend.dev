@@ -25,6 +25,7 @@ from app.routers.services import router as services_router
 from app.routers import breeding_planner
 from app.routers import waitlist
 from app.routers import litter_applications, heat_cycles
+from app.routers import mobile_signin
 from app.routers import documents, exports
 
 # Configure logging
@@ -360,6 +361,7 @@ async def root() -> dict:
 
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(mobile_signin.router)
 app.include_router(users.router, tags=["users"])
 app.include_router(pets.router, tags=["pets"])
 app.include_router(breeds.router, tags=["breeds"])
