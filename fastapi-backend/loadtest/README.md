@@ -12,6 +12,20 @@ DEBUG=false uvicorn app.main:app --host 127.0.0.1 --port 8001 --workers 4 --no-a
 python loadtest/seed_users.py --host http://localhost:8001
 ```
 
+### Shared servers (dev / staging)
+
+`seed_users.py` registers through the API, which sends a welcome and a verification email per
+account and is limited to 3 sign-ups per 10 minutes per IP. On a shared server create the
+accounts directly in the DB instead (verified, no emails), from inside the backend container:
+
+```bash
+docker exec -i -e LOADTEST_PASSWORD='...' breedly-backend python - < loadtest/seed_users_db.py
+docker exec -i breedly-backend python - --cleanup < loadtest/seed_users_db.py   # afterwards
+```
+
+Behind Cloudflare the API keys rate limits on `CF-Connecting-IP`, so the fake `X-Forwarded-For`
+below has no effect there: all simulated users share the load generator's IP.
+
 ## Run
 
 ```bash

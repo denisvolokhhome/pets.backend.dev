@@ -141,53 +141,56 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         nullable=True
     )
     
-    # Relationships (forward references to avoid circular imports)
+    # Relationships (forward references to avoid circular imports).
+    # Collections are lazy="select", not "selectin": every User load (including the auth
+    # lookup on each signed-in request, and every Pet/Offspring/Message .user) used to pull
+    # the whole account history. Load them explicitly with selectinload() where needed.
     pets: Mapped[list["Pet"]] = relationship(
         "Pet",
         back_populates="user",
-        lazy="selectin"
+        lazy="select"
     )
     breedings: Mapped[list["Breeding"]] = relationship(
         "Breeding",
         back_populates="user",
-        lazy="selectin"
+        lazy="select"
     )
     locations: Mapped[list["Location"]] = relationship(
         "Location",
         back_populates="user",
-        lazy="selectin"
+        lazy="select"
     )
     contacts: Mapped[list["UserContact"]] = relationship(
         "UserContact",
         back_populates="user",
-        lazy="selectin"
+        lazy="select"
     )
     messages_sent: Mapped[list["Message"]] = relationship(
         "Message",
         foreign_keys="Message.sender_id",
         back_populates="sender",
-        lazy="selectin"
+        lazy="select"
     )
     messages_received: Mapped[list["Message"]] = relationship(
         "Message",
         foreign_keys="Message.receiver_id",
         back_populates="receiver",
-        lazy="selectin"
+        lazy="select"
     )
     offsprings: Mapped[list["Offspring"]] = relationship(
         "Offspring",
         back_populates="user",
-        lazy="selectin"
+        lazy="select"
     )
     offspring_favorites: Mapped[list["OffspringFavorite"]] = relationship(
         "OffspringFavorite",
         back_populates="user",
-        lazy="selectin"
+        lazy="select"
     )
     notifications: Mapped[list["Notification"]] = relationship(
         "Notification",
         back_populates="user",
-        lazy="selectin"
+        lazy="select"
     )
     notification_preferences: Mapped[Optional["NotificationPreference"]] = relationship(
         "NotificationPreference",

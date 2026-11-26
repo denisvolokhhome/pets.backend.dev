@@ -1,21 +1,19 @@
 """
-Breeds router for managing breed records.
+Public, read-only breeds API: list, autocomplete, get by id.
 
-This module provides CRUD operations for dog breed management including:
-- Creating and updating breed records
-- Listing all available breeds
-- Managing breed information (name, code, group)
-- Breed autocomplete search for user input
+Breeds are seeded (db/seed_breeds.py) and managed from the admin dashboard through
+/api/admin/stats/breeds (X-Admin-Key). There are deliberately no public write routes.
 """
+import time
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_async_session
 from app.models.breed import Breed
-from app.schemas.breed import BreedCreate, BreedRead, BreedUpdate
+from app.schemas.breed import BreedRead
 
 
 router = APIRouter(
@@ -27,63 +25,24 @@ router = APIRouter(
     }
 )
 
-
-@router.post("/", response_model=BreedRead, status_code=status.HTTP_201_CREATED)
-async def create_breed(
-    breed_data: BreedCreate,
-    session: AsyncSession = Depends(get_async_session),
-) -> Breed:
-    """
-    Create a new breed record.
-    
-    Breed names must be unique across the system.
-    This endpoint is public and does not require authentication.
-    
-    **Required fields:**
-    - name: Breed name (must be unique)
-    
-    **Optional fields:**
-    - code: Breed code (e.g., FCI code)
-    - group: Breed group classification (e.g., "Sporting", "Working")
-    
-    **Example:**
-    ```json
-    {
-        "name": "Labrador Retriever",
-        "code": "122",
-        "group": "Sporting"
-    }
-    ```
-    
-    **Returns:** The created breed record with generated ID
-    """
-    # Check if breed with same name already exists
-    query = select(Breed).where(Breed.name == breed_data.name)
-    result = await session.execute(query)
-    existing_breed = result.scalar_one_or_none()
-    
-    if existing_breed:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Breed with name '{breed_data.name}' already exists"
-        )
-    
-    # Create new breed instance
-    breed = Breed(
-        name=breed_data.name,
-        code=breed_data.code,
-        group=breed_data.group,
-    )
-    
-    session.add(breed)
-    await session.commit()
-    await session.refresh(breed)
-    
-    return breed
+# The breed list is near-static and requested on most pages, so it is cached in-process.
+# Admin breed writes clear it; with several workers (or seed scripts writing to the DB)
+# other processes may serve a stale list for at most LIST_CACHE_TTL_SECONDS.
+# Only first pages (skip=0) are cached, and at most LIST_CACHE_MAX_ENTRIES of them, so odd
+# query strings can't grow the cache without bound.
+LIST_CACHE_TTL_SECONDS = 300
+LIST_CACHE_MAX_ENTRIES = 16
+_list_cache: dict[tuple, tuple[float, List[BreedRead]]] = {}
 
 
+def clear_breed_list_cache() -> None:
+    _list_cache.clear()
+
+
+@router.get("", response_model=List[BreedRead], include_in_schema=False)  # no 307 hop
 @router.get("/", response_model=List[BreedRead])
 async def list_breeds(
+    response: Response,
     session: AsyncSession = Depends(get_async_session),
     skip: int = 0,
     limit: int = 100,
@@ -92,7 +51,7 @@ async def list_breeds(
         description="Filter breeds by pet type: 'dog' or 'cat'",
         pattern="^(dog|cat)$",
     ),
-) -> List[Breed]:
+) -> List[BreedRead]:
     """
     List all breeds, optionally filtered by pet type (kind).
 
@@ -104,6 +63,13 @@ async def list_breeds(
     - limit: Maximum number of records to return (default: 100)
     - kind: Optional filter — 'dog', 'cat', 'cow', or 'horse'
     """
+    response.headers["Cache-Control"] = f"public, max-age={LIST_CACHE_TTL_SECONDS}"
+    key = (limit, kind)
+    now = time.monotonic()
+    cached = _list_cache.get(key) if skip == 0 else None
+    if cached and now - cached[0] < LIST_CACHE_TTL_SECONDS:
+        return cached[1]
+
     query = select(Breed)
 
     if kind:
@@ -112,9 +78,13 @@ async def list_breeds(
     query = query.offset(skip).limit(limit).order_by(Breed.name)
 
     result = await session.execute(query)
-    breeds = result.scalars().all()
-
-    return list(breeds)
+    breeds = [BreedRead.model_validate(b, from_attributes=True) for b in result.scalars().all()]
+    if skip == 0:
+        for stale in [k for k, (at, _) in _list_cache.items() if now - at >= LIST_CACHE_TTL_SECONDS]:
+            del _list_cache[stale]
+        if key in _list_cache or len(_list_cache) < LIST_CACHE_MAX_ENTRIES:
+            _list_cache[key] = (now, breeds)
+    return breeds
 
 
 @router.get("/autocomplete", response_model=List[BreedRead])
@@ -224,76 +194,3 @@ async def get_breed(
         )
     
     return breed
-
-
-@router.put("/{breed_id}", response_model=BreedRead)
-async def update_breed(
-    breed_id: int,
-    breed_update: BreedUpdate,
-    session: AsyncSession = Depends(get_async_session),
-) -> Breed:
-    """
-    Update a breed record.
-    
-    Only provided fields will be updated.
-    Breed names must remain unique.
-    """
-    # Fetch the breed
-    query = select(Breed).where(Breed.id == breed_id)
-    result = await session.execute(query)
-    breed = result.scalar_one_or_none()
-    
-    if breed is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Breed not found"
-        )
-    
-    # If updating name, check for uniqueness
-    if breed_update.name and breed_update.name != breed.name:
-        query = select(Breed).where(Breed.name == breed_update.name)
-        result = await session.execute(query)
-        existing_breed = result.scalar_one_or_none()
-        
-        if existing_breed:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Breed with name '{breed_update.name}' already exists"
-            )
-    
-    # Update fields that were provided
-    update_data = breed_update.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(breed, field, value)
-    
-    await session.commit()
-    await session.refresh(breed)
-    
-    return breed
-
-
-@router.delete("/{breed_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_breed(
-    breed_id: int,
-    session: AsyncSession = Depends(get_async_session),
-) -> None:
-    """
-    Delete a breed record.
-    
-    This is a hard delete. The breed will be permanently removed from the database.
-    Note: This will fail if there are pets associated with this breed due to foreign key constraints.
-    """
-    # Fetch the breed
-    query = select(Breed).where(Breed.id == breed_id)
-    result = await session.execute(query)
-    breed = result.scalar_one_or_none()
-    
-    if breed is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Breed not found"
-        )
-    
-    # Delete the breed
-    await session.delete(breed)
-    await session.commit()
