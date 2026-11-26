@@ -776,12 +776,13 @@ poetry run python -c "from app.config import settings; print(settings.model_dump
 - `GET /api/pets/breeder/{breeder_id}` - Get pets by breeder
 - `POST /api/pets/{pet_id}/image` - Upload pet image
 
-### Breeds
-- `POST /api/breeds` - Create breed
-- `GET /api/breeds` - List all breeds
+### Breeds (read-only)
+- `GET /api/breeds` - List all breeds (cached 5 min)
+- `GET /api/breeds/autocomplete` - Search breeds by name
 - `GET /api/breeds/{breed_id}` - Get breed details
-- `PUT /api/breeds/{breed_id}` - Update breed
-- `DELETE /api/breeds/{breed_id}` - Delete breed
+
+Breeds are seeded by `db/seed_breeds.py` and managed from the admin dashboard via
+`/api/admin/stats/breeds` (`X-Admin-Key`, internal network only).
 
 ### Litters
 - `POST /api/litters` - Create litter

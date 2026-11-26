@@ -1,4 +1,4 @@
-"""GET /api/breeds is cached in-process; writes through the API must invalidate it."""
+"""GET /api/breeds is cached in-process; admin writes invalidate it. The public API is read-only."""
 
 import pytest
 from httpx import AsyncClient
@@ -27,21 +27,51 @@ async def test_list_is_cached_and_sets_cache_control(
 
 
 @pytest.mark.asyncio
-async def test_api_writes_invalidate_the_cache(
+async def test_admin_writes_invalidate_the_cache(unauthenticated_client: AsyncClient, monkeypatch):
+    from app import admin_auth
+
+    monkeypatch.setattr(admin_auth.settings, "admin_api_key", "s3cret")
+    admin = {"X-Admin-Key": "s3cret"}
+    names = lambda r: [b["name"] for b in r.json()]  # noqa: E731
+
+    assert (await unauthenticated_client.get("/api/breeds/")).json() == []
+
+    created = await unauthenticated_client.post(
+        "/api/admin/stats/breeds", json={"name": "Beagle", "kind": "dog"}, headers=admin)
+    assert created.status_code == 200
+    breed_id = created.json()["id"]
+    assert names(await unauthenticated_client.get("/api/breeds/")) == ["Beagle"]
+
+    updated = await unauthenticated_client.put(
+        f"/api/admin/stats/breeds/{breed_id}", json={"name": "Beagle Harrier", "kind": "dog"}, headers=admin)
+    assert updated.status_code == 200
+    assert names(await unauthenticated_client.get("/api/breeds/")) == ["Beagle Harrier"]
+
+    imported = await unauthenticated_client.post(
+        "/api/admin/stats/breeds/bulk-import", json=[{"name": "Akita", "kind": "dog"}], headers=admin)
+    assert imported.json()["created"] == 1
+    assert names(await unauthenticated_client.get("/api/breeds/")) == ["Akita", "Beagle Harrier"]
+
+    deleted = await unauthenticated_client.delete(f"/api/admin/stats/breeds/{breed_id}", headers=admin)
+    assert deleted.status_code == 200
+    assert names(await unauthenticated_client.get("/api/breeds/")) == ["Akita"]
+
+
+@pytest.mark.asyncio
+async def test_public_breed_api_is_read_only(
     unauthenticated_client: AsyncClient, async_session: AsyncSession
 ):
     breed = Breed(name="Beagle", kind="dog")
     async_session.add(breed)
     await async_session.commit()
-    breed_id = breed.id
+
+    for method, path in [("POST", "/api/breeds/"), ("POST", "/api/breeds"),
+                         ("PUT", f"/api/breeds/{breed.id}"), ("PATCH", f"/api/breeds/{breed.id}"),
+                         ("DELETE", f"/api/breeds/{breed.id}")]:
+        resp = await unauthenticated_client.request(method, path, json={"name": "Hacked", "kind": "dog"})
+        assert resp.status_code == 405, (method, path, resp.status_code)
+
     assert [b["name"] for b in (await unauthenticated_client.get("/api/breeds/")).json()] == ["Beagle"]
-
-    updated = await unauthenticated_client.put(f"/api/breeds/{breed_id}", json={"name": "Beagle Harrier"})
-    assert updated.status_code == 200
-    assert [b["name"] for b in (await unauthenticated_client.get("/api/breeds/")).json()] == ["Beagle Harrier"]
-
-    await unauthenticated_client.delete(f"/api/breeds/{breed_id}")
-    assert (await unauthenticated_client.get("/api/breeds/")).json() == []
 
 
 @pytest.mark.asyncio

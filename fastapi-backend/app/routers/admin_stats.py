@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin_auth import verify_admin_key
 from app.database import get_async_session
+from app.routers.breeds import clear_breed_list_cache
 from app.models.user import User
 from app.models.pet import Pet
 from app.models.breeding import Breeding
@@ -567,6 +568,7 @@ async def create_breed(
     new_breed = Breed(name=name, kind=kind)
     session.add(new_breed)
     await session.commit()
+    clear_breed_list_cache()  # so the public list shows it at once
     await session.refresh(new_breed)
     return {"id": new_breed.id, "name": new_breed.name, "kind": new_breed.kind}
 
@@ -600,6 +602,7 @@ async def update_breed(
         existing.kind = breed["kind"]
 
     await session.commit()
+    clear_breed_list_cache()  # so the public list shows it at once
     await session.refresh(existing)
     return {"id": existing.id, "name": existing.name, "kind": existing.kind}
 
@@ -621,6 +624,7 @@ async def delete_breed(
     try:
         await session.delete(existing)
         await session.commit()
+        clear_breed_list_cache()  # so the public list shows it at once
     except Exception:
         await session.rollback()
         raise HTTPException(status_code=400, detail="Cannot delete breed — it is in use by pets or offsprings")
@@ -659,4 +663,5 @@ async def bulk_import_breeds(
         created += 1
 
     await session.commit()
+    clear_breed_list_cache()  # so the public list shows it at once
     return {"created": created, "skipped": skipped, "errors": errors}
