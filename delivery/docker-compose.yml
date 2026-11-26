@@ -231,6 +231,29 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  # Administration portal (Streamlit, repo breedly-administration). LAN only: published on the
+  # dev host's port 8502 and NOT routed through the Cloudflare tunnel. Talks to the backend over
+  # the internal network; the backend refuses /api/admin/* requests that came through Cloudflare.
+  administration:
+    image: 192.168.68.110:80/breedly/breedly-administration:latest
+    container_name: breedly-administration
+    ports:
+      - "8502:8501"
+    environment:
+      API_BASE_URL: http://backend:8000
+      ADMIN_API_KEY: ${ADMIN_API_KEY}
+      # dev reuses the billing-admin password unless ADMINISTRATION_PASSWORD is added to the dev .env
+      ADMIN_PASSWORD: ${ADMINISTRATION_PASSWORD:-${BILLING_ADMIN_PASSWORD}}
+    networks:
+      - breedly-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
 volumes:
   postgres_data:
     driver: local
