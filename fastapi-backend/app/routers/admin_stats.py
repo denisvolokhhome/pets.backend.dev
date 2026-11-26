@@ -2,11 +2,11 @@
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, func, case, and_, extract
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import Settings
+from app.admin_auth import verify_admin_key
 from app.database import get_async_session
 from app.models.user import User
 from app.models.pet import Pet
@@ -19,14 +19,7 @@ from app.models.location import Location
 from app.models.user_contact import UserContact
 
 router = APIRouter(prefix="/api/admin/stats", tags=["admin-stats"])
-settings = Settings()
 
-
-async def verify_admin_key(x_admin_key: str = Header(...)):
-    """Verify the admin API key from request header."""
-    if not settings.admin_api_key or x_admin_key != settings.admin_api_key:
-        raise HTTPException(status_code=403, detail="Invalid admin API key")
-    return True
 
 
 @router.get("/overview")

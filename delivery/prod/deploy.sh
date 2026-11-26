@@ -4,7 +4,8 @@
 #
 #   ./deploy.sh backend  <tag>   pg_dump + storage backup -> alembic upgrade head -> seed -> switch backend -> health check
 #   ./deploy.sh frontend <tag>   switch frontend -> health check
-#   ./deploy.sh rollback <backend|frontend>   go back to the tag deployed before the current one
+#   ./deploy.sh administration <tag>   switch the LAN-only admin portal -> health check
+#   ./deploy.sh rollback <backend|frontend|administration>   go back to the tag deployed before the current one
 #
 # If the new container fails its health check, the previous tag is restored automatically.
 # The DATABASE is not rolled back automatically: alembic runs in one transaction, so a failed
@@ -127,9 +128,19 @@ deploy_frontend() {
   switch_service frontend FRONTEND_TAG "$tag" || die "frontend $tag failed health check and was rolled back"
 }
 
+deploy_administration() {
+  local tag=$1 var
+  for var in ADMIN_API_KEY ADMINISTRATION_PASSWORD; do
+    grep -qE "^${var}=.+" .env || die "$var is not set in .env - the administration portal needs it"
+  done
+  log "pulling administration $tag"
+  ADMINISTRATION_TAG=$tag "${COMPOSE[@]}" pull administration
+  switch_service administration ADMINISTRATION_TAG "$tag" || die "administration $tag failed health check and was rolled back"
+}
+
 rollback() {
   local svc=$1 var prev
-  case $svc in backend) var=BACKEND_TAG ;; frontend) var=FRONTEND_TAG ;; *) die "rollback backend|frontend" ;; esac
+  case $svc in backend) var=BACKEND_TAG ;; frontend) var=FRONTEND_TAG ;; administration) var=ADMINISTRATION_TAG ;; *) die "rollback backend|frontend|administration" ;; esac
   prev=$(get_tag "${var}_PREVIOUS")
   [ -n "$prev" ] || die "no previous $svc tag recorded"
   log "rolling $svc back to $prev (database is NOT touched)"
@@ -139,9 +150,10 @@ rollback() {
 case "${1:-}" in
   backend)  [ -n "${2:-}" ] || die "usage: $0 backend <tag>";  deploy_backend "$2" ;;
   frontend) [ -n "${2:-}" ] || die "usage: $0 frontend <tag>"; deploy_frontend "$2" ;;
+  administration) [ -n "${2:-}" ] || die "usage: $0 administration <tag>"; deploy_administration "$2" ;;
   rollback) rollback "${2:-}" ;;
   status)   cat releases.env; "${COMPOSE[@]}" ps ;;
-  *) die "usage: $0 backend <tag> | frontend <tag> | rollback <backend|frontend> | status" ;;
+  *) die "usage: $0 backend <tag> | frontend <tag> | administration <tag> | rollback <backend|frontend|administration> | status" ;;
 esac
 
 docker image prune -f --filter "until=168h" >/dev/null 2>&1 || true

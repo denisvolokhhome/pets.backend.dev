@@ -10,6 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `Jenkinsfile` — builds the image, pushes to Harbor, deploys to the dev server (api-dev.breedly.us).
 - `Jenkinsfile.prod` — production pipeline for `master` (api.breedly.us): builds the image, runs `deploy/ci/backend-tests.sh` against it (single alembic head, `alembic upgrade head` on an empty DB, pytest), pushes an immutable `prod-<build>-<sha>` tag, then runs `delivery/prod/deploy.sh backend <tag>` on prod-docker (192.168.68.114).
 - `delivery/docker-compose.prod.yml` + `delivery/prod/deploy.sh` — production stack and deploy script: pg_dump backup → `migration` → `seed` → switch backend → health check, automatic rollback to the previous tag. Deployed tags live in `releases.env` on the server; `deploy.sh rollback backend|frontend` reverts one service (the DB is never rolled back automatically). Production feature flags (`ENABLE_*`) are set in this compose file.
+- `administration` compose service — the LAN-only admin portal from the separate `breedly-administration` repo (dev :8502 on 192.168.68.113, prod 192.168.68.114:8502, `deploy.sh administration <tag>`). It calls `/api/admin/*` with `X-Admin-Key`; `app/admin_auth.py` answers 404 to any admin request carrying `CF-Connecting-IP` (i.e. arriving through the Cloudflare tunnel).
 - `billing-admin/` — separate Streamlit billing dashboard reading the same DB directly (`app.py`, `db.py`, own Dockerfile/Jenkinsfile).
 
 ## Commands (from `fastapi-backend/`)
