@@ -28,8 +28,10 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - breedly-network
+    # Loopback only: the app reaches postgres over breedly-network. For a GUI client use an SSH tunnel:
+    #   ssh -L 5432:127.0.0.1:5432 <user>@192.168.68.113
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U breedly_user -d breedly_db"]
       interval: 10s
