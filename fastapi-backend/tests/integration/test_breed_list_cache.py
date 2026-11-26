@@ -59,3 +59,14 @@ async def test_cache_is_keyed_by_query(unauthenticated_client: AsyncClient, asyn
 async def test_no_trailing_slash_is_served_without_redirect(unauthenticated_client: AsyncClient):
     resp = await unauthenticated_client.get("/api/breeds", follow_redirects=False)
     assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_cache_size_is_bounded(unauthenticated_client: AsyncClient):
+    from app.routers import breeds
+
+    for limit in range(1, breeds.LIST_CACHE_MAX_ENTRIES + 10):
+        assert (await unauthenticated_client.get("/api/breeds/", params={"limit": limit})).status_code == 200
+    await unauthenticated_client.get("/api/breeds/", params={"skip": 5})
+    assert len(breeds._list_cache) == breeds.LIST_CACHE_MAX_ENTRIES
+    assert all(limit < breeds.LIST_CACHE_MAX_ENTRIES + 1 for limit, _ in breeds._list_cache)
