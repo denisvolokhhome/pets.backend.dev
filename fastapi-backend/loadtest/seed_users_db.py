@@ -3,10 +3,10 @@ Create verified load-test accounts directly in the database: no emails, no rate 
 
 Use this on shared servers (dev/staging) instead of seed_users.py, which registers through
 the API and so sends a welcome + verification email per account. Run it inside the backend
-container, which already has DATABASE_URL:
+container (the image ships loadtest/), which already has DATABASE_URL:
 
-    docker exec -i -e LOADTEST_PASSWORD='...' breedly-backend python - < loadtest/seed_users_db.py
-    docker exec -i breedly-backend python - --cleanup < loadtest/seed_users_db.py   # remove them
+    docker exec -e LOADTEST_PASSWORD='...' breedly-backend python loadtest/seed_users_db.py
+    docker exec breedly-backend python loadtest/seed_users_db.py --cleanup   # remove them
 
 Accounts are loadtest.seeker.N / loadtest.breeder.N @loadtest.breedly.dev, matching
 accounts.json. Re-running is safe: existing accounts are kept. --cleanup deletes every
@@ -16,6 +16,12 @@ Never run against production.
 import asyncio
 import os
 import sys
+from pathlib import Path
+
+# Run as a file, sys.path[0] is loadtest/: put the backend root first so `app` imports.
+# Piped through stdin (`python -`) there is no __file__ and the working directory is already it.
+if "__file__" in globals():
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi_users.password import PasswordHelper
 from sqlalchemy import delete, select

@@ -19,8 +19,8 @@ account and is limited to 3 sign-ups per 10 minutes per IP. On a shared server c
 accounts directly in the DB instead (verified, no emails), from inside the backend container:
 
 ```bash
-docker exec -i -e LOADTEST_PASSWORD='...' breedly-backend python - < loadtest/seed_users_db.py
-docker exec -i breedly-backend python - --cleanup < loadtest/seed_users_db.py   # afterwards
+docker exec -e LOADTEST_PASSWORD='...' breedly-backend python loadtest/seed_users_db.py
+docker exec breedly-backend python loadtest/seed_users_db.py --cleanup   # afterwards
 ```
 
 Behind Cloudflare the API keys rate limits on `CF-Connecting-IP`, so the fake `X-Forwarded-For`
