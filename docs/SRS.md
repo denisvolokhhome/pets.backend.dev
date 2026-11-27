@@ -50,7 +50,7 @@ flowchart TB
     staff["Admin staff<br/>office LAN"]
     cf["Cloudflare<br/>DNS, TLS, tunnel"]
 
-    subgraph host["Docker host (dev 192.168.68.110 / prod 192.168.68.114)"]
+    subgraph host["Docker host (dev 192.168.68.113 / prod 192.168.68.114)"]
         cfd["cloudflared"]
         fe["Frontend<br/>nginx + Angular SPA"]
         be["Backend API<br/>FastAPI, uvicorn x2"]
@@ -422,7 +422,7 @@ The frontend and the backend share no generated client. `breedly-administration/
 | SMTP provider | Welcome, verification, reset, notification emails | `SMTP_*` |
 | Google OAuth | Sign in with Google | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI` |
 | Sentry | Frontend error reporting | `environment.sentryDsn` |
-| Harbor (`192.168.68.110:80`) | Private Docker registry | Jenkins credentials `harbor-username`, `harbor-password` |
+| Harbor (`192.168.68.110:80`, its own host) | Private Docker registry | Jenkins credentials `harbor-username`, `harbor-password` |
 
 ## 8. Non-functional requirements
 
@@ -462,7 +462,8 @@ Before the 2026-11-26 fixes the same server handled about 50 users, with p95 abo
 
 | | Dev | Production |
 | --- | --- | --- |
-| Host | `192.168.68.110` | `192.168.68.114` (prod-docker) |
+| Host | `192.168.68.113` | `192.168.68.114` (prod-docker) |
+| CPU / RAM / swap | 4 cores, 3 GiB, 512 MiB | 4 cores, 4 GiB, 1 GiB |
 | Web | `https://dev.breedly.us` | `https://breedly.us` (+ `www` redirect) |
 | API | `https://api-dev.breedly.us` | `https://api.breedly.us` |
 | Source branches | backend `develop`, frontend `develop` | backend `master`, frontend `main` |
@@ -519,9 +520,11 @@ flowchart LR
 
 ### 9.4 Hardware and capacity
 
-The dev host handles about 400 active users with 2 workers (section 8.1). Each worker opens up to 15 Postgres connections (`DB_POOL_SIZE` 5 + `DB_MAX_OVERFLOW` 10). Keep `WEB_CONCURRENCY × 15` well under Postgres `max_connections` (default 100). Raise `WEB_CONCURRENCY` only on a host with more than 2 free CPU cores.
+Both hosts have 4 CPU cores (dev 3 GiB RAM, prod 4 GiB), recorded on 2026-11-26. The Harbor registry runs on a separate host, `192.168.68.110`.
 
-Open item: CPU and RAM of both hosts are not recorded yet (section 12).
+The dev host handles about 400 active users with 2 workers (section 8.1). The 502 errors at about 600 users were not caused by memory: swap stayed almost unused and the container never restarted. They most likely came from 2 workers saturating 2 of the 4 cores. Each worker opens up to 15 Postgres connections (`DB_POOL_SIZE` 5 + `DB_MAX_OVERFLOW` 10). So 4 workers would use up to 60 of Postgres's default 100. After the 2026-11-26 release, prod idled at 8 connections.
+
+**Next capacity step:** set `WEB_CONCURRENCY=4` in compose on both hosts, then re-run the load test with live `docker stats` capture.
 
 ### 9.5 Local development
 
@@ -594,8 +597,7 @@ Follow `fastapi-backend/loadtest/README.md`. On shared servers, create test acco
 
 | Item | Impact | Next step |
 | --- | --- | --- |
-| 502 errors from about 600 concurrent users on dev | Capacity ceiling | Check `docker stats` and backend logs during a test; size `WEB_CONCURRENCY` to the host's cores |
-| Host CPU and RAM not documented | Capacity planning | Record `nproc` and `free -h` for both hosts in section 9.4 |
+| 502 errors from about 600 concurrent users on dev | Capacity ceiling | Try `WEB_CONCURRENCY=4` (4 cores) and re-run the load test with `docker stats` captured live; the original container's logs were lost on redeploy |
 | Login p95 up to 4 s under load | Slow sign-in at peaks | Review the password-hash cost; consider a separate worker pool |
 | `GET /api/offsprings/public/{id}` p95 1.1 s at 600 users | Slowest public page | Profile its queries |
 | 6 failing tests in `e2e/service-account-mobile.spec.ts` (frontend) | Red e2e run | Fix or gate them behind the service-provider flag |
